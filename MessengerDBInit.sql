@@ -5,7 +5,7 @@ CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,
     name VARCHAR(100) NOT NULL,
-    surname VARCHAR(100) NOT NULL,
+    surname VARCHAR(100),
     second_name VARCHAR(100),
     date_of_birth DATE,
     gender genders_type,
@@ -13,7 +13,7 @@ CREATE TABLE users (
     phone_number VARCHAR(50) UNIQUE,
     country VARCHAR(100),
     city VARCHAR(100),
-    about TEXT,
+    about VARCHAR(5000),
     avatar_photo_path VARCHAR(500),
     login VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -26,6 +26,9 @@ CREATE INDEX idx_users_name ON users (UPPER(name));
 CREATE INDEX idx_users_surname ON users (UPPER(surname));
 CREATE INDEX idx_users_second_name ON users (UPPER(second_name));
 CREATE INDEX idx_users_name_surname_second_name ON users (UPPER(name), UPPER(surname), UPPER(second_name));
+CREATE INDEX idx_users_login ON users (login);
+CREATE INDEX idx_users_email_address ON users (email_address);
+CREATE INDEX idx_users_phone_number ON users (phone_number);
 
 CREATE TABLE user_friends (
     id BIGSERIAL PRIMARY KEY,

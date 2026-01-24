@@ -1,9 +1,8 @@
 import enum
+import os
 from datetime import datetime, date
-
-import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm
-
+import sqlalchemy.dialects
 
 class Gender(enum.Enum):
     male = "Male"
@@ -24,18 +23,18 @@ class User(Base):
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True)
     username: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100), nullable=False)
     name: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100), nullable=False)
-    surname: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100), nullable=False)
-    second_name: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100), nullable=False)
+    surname: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
+    second_name: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
     date_of_birth: sqlalchemy.orm.Mapped[date | None] = sqlalchemy.orm.mapped_column(sqlalchemy.Date)
     gender: sqlalchemy.orm.Mapped[Gender | None] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(Gender))
     email_address: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(260), nullable=False)
     phone_number: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(50), nullable=False)
-    country: sqlalchemy.orm.Mapped[str| None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
-    city: sqlalchemy.orm.Mapped[str| None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
-    about: sqlalchemy.orm.Mapped[str| None] = sqlalchemy.orm.mapped_column(sqlalchemy.Text)
-    avatar_photo_path: sqlalchemy.orm.Mapped[str| None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(500))
+    country: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
+    city: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
+    about: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(5000))
+    avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(500))
     login: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100), nullable=False)
-    password_hash: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(255), nullable=False)
+    password: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(255), nullable=False)
     date_and_time_registered: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     messenger_role: sqlalchemy.orm.Mapped[SystemRoles] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(SystemRoles), nullable=False)
     __table_args__ = (sqlalchemy.UniqueConstraint('username', name="users_username_key"),
@@ -46,7 +45,10 @@ class User(Base):
                       sqlalchemy.Index('idx_users_name', 'UPPER(name)'),
                       sqlalchemy.Index('idx_users_surname', 'UPPER(surname)'),
                       sqlalchemy.Index('idx_users_second_name', 'UPPER(second_name)'),
-                      sqlalchemy.Index('idx_users_name_surname_second_name', 'UPPER(name)', 'UPPER(surname)', 'UPPER(second_name)'))
+                      sqlalchemy.Index('idx_users_name_surname_second_name', 'UPPER(name)', 'UPPER(surname)', 'UPPER(second_name)'),
+                      sqlalchemy.Index('idx_users_login', 'login'),
+                      sqlalchemy.Index('idx_users_email_address', 'email_address'),
+                      sqlalchemy.Index('idx_users_phone_number', 'phone_number'))
 
 
 class UserFriend(Base):
@@ -123,3 +125,17 @@ class ReceivedMessage(Base):
     received_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     date_and_time_received: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     __table_args__ = (sqlalchemy.UniqueConstraint('message_id', 'received_user_id', name='received_messages_message_id_received_user_id_key'),)
+
+
+database_url: str = "postgresql://" + os.getenv("POSTGRES_USER") + ":" + os.getenv("POSTGRES_PASSWORD") + "@" + os.getenv("POSTGRES_HOST") + ":" + os.getenv("POSTGRES_PORT") + "/" + os.getenv("POSTGRES_DB")
+db_engine: sqlalchemy.Engine = sqlalchemy.create_engine(database_url)
+Base.metadata.create_all(db_engine)
+session_maker: sqlalchemy.orm.session.sessionmaker = sqlalchemy.orm.sessionmaker(bind=db_engine)
+
+
+def get_db():
+    db = session_maker()
+    try:
+        yield db
+    finally:
+        db.close()
