@@ -8,7 +8,7 @@ class RegisterModel(pydantic.BaseModel):
     name: str = pydantic.Field(max_length = 100)
     email_address: str = pydantic.EmailStr()
     login: str = pydantic.Field(max_length = 100)
-    password: str = pydantic.Field(max_length = 100)
+    password: str = pydantic.Field(min_length = 10, max_length = 100)
     surname: str | None = pydantic.Field(max_length = 100)
     second_name: str | None = pydantic.Field(max_length = 100)
 
@@ -16,6 +16,10 @@ class RegisterModel(pydantic.BaseModel):
 class LoginModel(pydantic.BaseModel):
     login: str = pydantic.Field(max_length = 100)
     password: str = pydantic.Field(max_length = 100)
+
+
+class SessionModel(pydantic.BaseModel):
+    session_id: str = pydantic.Field(max_length = 100)
 
 
 class UserUpdateModel(pydantic.BaseModel):
@@ -26,7 +30,7 @@ class UserUpdateModel(pydantic.BaseModel):
     date_of_birth: date | None = pydantic.Field()
     gender: backend.storage.database.Gender | None = pydantic.Field()
     email_address: str = pydantic.EmailStr()
-    phone_number: str | None = pydantic.Field(pattern = r"^\+\d(\d\d\d)\d\d\d-\d\d-\d\d$")
+    phone_number: str | None = pydantic.Field(pattern = r"^\+\d{10,15}$")
     country: str | None = pydantic.Field(max_length = 100)
     city: str | None = pydantic.Field(max_length = 100)
     about: str | None = pydantic.Field(max_length = 5000)
@@ -41,7 +45,7 @@ class UserUpdatePasswordModel(pydantic.BaseModel):
     password: str = pydantic.Field(max_length = 100)
 
 
-class UserIDModel(pydantic.BaseModel):
+class IDModel(pydantic.BaseModel):
     id: int = pydantic.Field(ge = 0)
 
 

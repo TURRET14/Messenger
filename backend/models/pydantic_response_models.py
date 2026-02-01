@@ -9,9 +9,16 @@ class UserInListModel(pydantic.BaseModel):
     surname: str | None = pydantic.Field(max_length = 100)
     second_name: str | None = pydantic.Field(max_length = 100)
 
+    class Config:
+        orm_mode = True
+
 
 class FriendRequestUserInListModel(UserInListModel):
+    friend_request_id: int = pydantic.Field(ge = 0)
     date_and_time_sent: datetime = pydantic.Field()
+
+    class Config:
+        orm_mode = True
 
 
 class UserModel(pydantic.BaseModel):
@@ -30,6 +37,12 @@ class UserModel(pydantic.BaseModel):
     date_and_time_registered: datetime = pydantic.Field()
     messenger_role: backend.storage.database.SystemRoles = pydantic.Field()
 
+    class Config:
+        orm_mode = True
+
 
 class UserLoginModel(pydantic.BaseModel):
     login: str = pydantic.Field(max_length = 100)
+
+    class Config:
+        orm_mode = True

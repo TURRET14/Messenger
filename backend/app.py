@@ -3,6 +3,7 @@ import fastapi
 import fastapi.middleware.cors
 import uvicorn
 import backend.handles.authorization
+import backend.handles.users
 import dotenv
 
 dotenv.load_dotenv()
@@ -15,7 +16,8 @@ app.add_middleware(fastapi.middleware.cors.CORSMiddleware,
                 allow_headers = ["session_id"],
                 expose_headers = ["session_id"])
 
-app.include_router(backend.handles.handles_authorization.authorization_router)
+app.include_router(backend.handles.authorization.authorization_router)
+app.include_router(backend.handles.users.users_router)
 
 
 @app.exception_handler(fastapi.exceptions.HTTPException)
