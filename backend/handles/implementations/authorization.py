@@ -3,6 +3,8 @@ import sqlalchemy
 import sqlalchemy.orm
 import secrets
 import datetime
+import redis
+import asyncio
 
 import backend.models.pydantic_request_models
 import backend.storage.redis
@@ -14,15 +16,15 @@ async def post_user(
     data: backend.models.pydantic_request_models.RegisterModel,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if db.execute(sqlalchemy.select(backend.storage.database.User).where(backend.storage.database.User.username == data.username)).scalar() is not None:
+    if db.execute(sqlalchemy.select(backend.storage.database.User).where(backend.storage.database.User.username == data.username)).scalars().first() is not None:
         raise fastapi.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = "USERNAME_ALREADY_TAKEN_ERROR")
 
     if db.execute(sqlalchemy.select(backend.storage.database.User).where(
-            backend.storage.database.User.email_address == data.email_address)).scalar() is not None:
+            backend.storage.database.User.email_address == data.email_address)).scalars().first() is not None:
         raise fastapi.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = "EMAIL_ALREADY_TAKEN_ERROR")
 
     if db.execute(sqlalchemy.select(backend.storage.database.User).where(
-            backend.storage.database.User.login == data.login)).scalar() is not None:
+            backend.storage.database.User.login == data.login)).scalars().first() is not None:
         raise fastapi.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = "LOGIN_ALREADY_TAKEN_ERROR")
 
     new_user: backend.storage.database.User = backend.storage.database.User(
@@ -46,18 +48,28 @@ async def post_login(
     data: backend.models.pydantic_request_models.LoginModel,
     response: fastapi.responses.Response,
     db: sqlalchemy.orm.session.Session,
-    redis_client: backend.storage.redis.RedisClient) -> fastapi.responses.JSONResponse:
+    redis_client: redis.Redis) -> fastapi.responses.JSONResponse:
 
-    selected_user: backend.storage.database.User | None = (db.execute(sqlalchemy.select(backend.storage.database.User)
-    .where(backend.storage.database.User.login == data.login)).scalar())
+    selected_user: backend.storage.database.User | None = db.execute(sqlalchemy.select(backend.storage.database.User)
+    .where(backend.storage.database.User.login == data.login)).scalars().first()
 
     if not selected_user:
         raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = "LOGIN_DOES_NOT_EXIST_ERROR")
 
     if backend.authorization.password_hashing.verify_password(selected_user.password, data.password):
+        # Добавление сессии в Redis (Новая запись в словарь сессий + Новое значение во множестве сессий пользователя)
         session_id = secrets.token_urlsafe(64)
-        await redis_client.add_user_session(selected_user.id, session_id)
+        expiration_date: int = int(datetime.datetime.now().timestamp()) + int(datetime.timedelta(seconds = backend.parameters.redis_session_expiration_time_seconds).total_seconds())
+        coroutines: list = list()
+        coroutines.append(redis_client.sadd(f"user:{selected_user.id}:sessions", session_id))
+        coroutines.append(redis_client.hset(f"session:{session_id}:data",
+        mapping={"user_id": selected_user.id, "expiration_date": expiration_date}))
+        coroutines.append(redis_client.expireat(f"user:{selected_user.id}:sessions", expiration_date))
+        coroutines.append(redis_client.expireat(f"user:{selected_user.id}:sessions", expiration_date))
+        await asyncio.gather(*coroutines)
+
         response.set_cookie("session_id", value = session_id, max_age = backend.parameters.redis_session_expiration_time_seconds, httponly = True, secure = True, samesite = "strict")
+
         return fastapi.responses.JSONResponse({"STATUS": "SUCCESS"}, status_code = fastapi.status.HTTP_200_OK)
     else:
         raise fastapi.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = "PASSWORD_IS_INCORRECT_ERROR")
@@ -66,20 +78,32 @@ async def post_login(
 async def delete_session(
     data: backend.models.pydantic_request_models.SessionModel,
     selected_user: backend.storage.database.User,
-    redis_client: backend.storage.redis.RedisClient) -> fastapi.responses.JSONResponse:
+    redis_client: redis.Redis) -> fastapi.responses.JSONResponse:
 
-    session_data = await redis_client.get_session_data(data.session_id)
+    # Удаление сессии из Redis (Удаление сессии из словаря сессий + Удаление значения сессии из множества сессий пользователя)
+    # Сначала проверяется, принадлежит ли сессия пользователю
+    session_data: dict[str, str] = await redis_client.hgetall(f"session:{data.session_id}:data")
     if session_data["user_id"] != selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = "INCORRECT_SESSION_ID_ERROR")
-    await redis_client.remove_user_session(data.session_id)
+
+    coroutines: list = list()
+    coroutines.append(redis_client.srem(f"user:{selected_user.id}:sessions", data.session_id))
+    coroutines.append(redis_client.delete(f"session:{data.session_id}:data"))
+    await asyncio.gather(*coroutines)
 
     return fastapi.responses.JSONResponse({"STATUS": "SUCCESS"}, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def delete_all_sessions(
     selected_user: backend.storage.database.User,
-    redis_client: backend.storage.redis.RedisClient) -> fastapi.responses.JSONResponse:
+    redis_client: redis.Redis) -> fastapi.responses.JSONResponse:
 
-    await redis_client.clear_user_sessions(selected_user.id)
+    # Удаление всех сессий пользователя из Redis (Удаление всех сессий пользователя из словаря сессий + Удаление множества сессий пользователя)
+    user_sessions: set = await redis_client.smembers(f"user:{selected_user.id}:sessions")
+    coroutines: list = list()
+    for session_id in user_sessions:
+        coroutines.append(redis_client.delete(f"session:{session_id}:data"))
+    await asyncio.gather(*coroutines)
+    await redis_client.delete(f"user:{selected_user.id}:sessions")
 
     return fastapi.responses.JSONResponse({"STATUS": "SUCCESS"}, status_code = fastapi.status.HTTP_200_OK)

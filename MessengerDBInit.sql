@@ -58,9 +58,10 @@ CREATE TABLE chats (
     id BIGSERIAL PRIMARY KEY,
     is_group_chat BOOLEAN NOT NULL,
     name VARCHAR(100),
-    owner_user_id BIGINT REFERENCES users ON DELETE SET NULL,
+    owner_user_id BIGINT REFERENCES users ON DELETE CASCADE,
     date_and_time_created TIMESTAMPTZ NOT NULL,
-    avatar_photo_path VARCHAR(500)
+    avatar_photo_path VARCHAR(500),
+    friendship_id BIGINT REFERENCES user_friends ON DELETE CASCADE
 );
 
 CREATE INDEX idx_chats_name ON chats (UPPER(name));

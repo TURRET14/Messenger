@@ -81,9 +81,10 @@ class Chat(Base):
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
     is_group_chat: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
     name: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
-    owner_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    owner_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=True)
     date_and_time_created: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(500))
+    friendship_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('user_friends.id', ondelete='CASCADE'), nullable=True)
     __table_args__ = (sqlalchemy.Index('idx_chats_name', 'UPPER(name)', ))
 
 
@@ -93,7 +94,7 @@ class ChatUser(Base):
     chat_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
     chat_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     date_and_time_added: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
-    is_user_admin: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
+    is_user_admin: sqlalchemy.orm.Mapped[bool | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
     __table_args__ = (sqlalchemy.UniqueConstraint('chat_id', 'chat_user_id', name='chat_users_chat_id_chat_user_id_key'),)
 
 
@@ -103,7 +104,7 @@ class Message(Base):
     chat_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
     sender_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     date_and_time_sent: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
-    message_text: sqlalchemy.orm.Mapped[str| None] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
+    message_text: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
     message_text_tsvector = sqlalchemy.orm.mapped_column(sqlalchemy.dialects.postgresql.TSVECTOR, sqlalchemy.Computed("TO_TSVECTOR('russian', message_text)", persisted=True))
     __table_args__ = (sqlalchemy.Index("idx_messages_chat_id", "chat_id"),
                       sqlalchemy.Index('idx_messages_chat_id_date_and_time_sent', 'chat_id', 'date_and_time_sent'),

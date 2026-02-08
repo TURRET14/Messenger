@@ -1,4 +1,5 @@
 import fastapi
+import redis
 import sqlalchemy
 import sqlalchemy.orm
 import backend.storage.redis
@@ -8,9 +9,9 @@ from datetime import datetime
 async def get_session_user(
     session_id: str = fastapi.Cookie(),
     db: sqlalchemy.orm.Session = fastapi.Depends(backend.storage.database.get_db),
-    redis_client: backend.storage.redis.RedisClient = fastapi.Depends(backend.storage.redis.get_redis_client)) -> backend.storage.database.User:
+    redis_client: redis.Redis = fastapi.Depends(backend.storage.redis.get_redis_client)) -> backend.storage.database.User:
 
-    session: dict[str, str] | None = await redis_client.get_session_data(session_id)
+    session: dict[str, str] | None = await redis_client.hgetall(f"session_id:{session_id}")
     if session is not None:
         if int(session["expiration_date"]) > int(datetime.now().timestamp()):
             session_user = db.execute(sqlalchemy.select(backend.storage.database.User).where(backend.storage.database.User.id == session["user_id"])).scalar()

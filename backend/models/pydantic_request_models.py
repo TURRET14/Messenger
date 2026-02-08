@@ -1,5 +1,6 @@
-from datetime import date
+import datetime
 import pydantic
+
 import backend.storage.database
 
 
@@ -15,7 +16,7 @@ class RegisterModel(pydantic.BaseModel):
 
 class LoginModel(pydantic.BaseModel):
     login: str = pydantic.Field(max_length = 100)
-    password: str = pydantic.Field(max_length = 100)
+    password: str = pydantic.Field(min_length = 10, max_length = 100)
 
 
 class SessionModel(pydantic.BaseModel):
@@ -27,13 +28,24 @@ class UserUpdateModel(pydantic.BaseModel):
     name: str = pydantic.Field(max_length = 100)
     surname: str | None = pydantic.Field(max_length = 100)
     second_name: str | None = pydantic.Field(max_length = 100)
-    date_of_birth: date | None = pydantic.Field()
+    date_of_birth: datetime.date | None = pydantic.Field()
     gender: backend.storage.database.Gender | None = pydantic.Field()
     email_address: str = pydantic.EmailStr()
     phone_number: str | None = pydantic.Field(pattern = r"^\+\d{10,15}$")
     country: str | None = pydantic.Field(max_length = 100)
     city: str | None = pydantic.Field(max_length = 100)
     about: str | None = pydantic.Field(max_length = 5000)
+
+    @pydantic.field_validator("date_of_birth")
+    @classmethod
+    def date_validator(cls, v):
+        if v is None:
+            return v
+
+        if v > datetime.date.today():
+            raise ValueError("INCORRECT_DATE_OF_BIRTH_ERROR")
+        else:
+            return v
 
 
 class UserUpdateLoginModel(pydantic.BaseModel):
@@ -42,22 +54,16 @@ class UserUpdateLoginModel(pydantic.BaseModel):
 
 class UserUpdatePasswordModel(pydantic.BaseModel):
     old_password: str = pydantic.Field(max_length = 100)
-    password: str = pydantic.Field(max_length = 100)
+    password: str = pydantic.Field(min_length = 10, max_length = 100)
 
 
 class IDModel(pydantic.BaseModel):
     id: int = pydantic.Field(ge = 0)
 
 
-class OffsetMultiplierModel(pydantic.BaseModel):
-    offset_multiplier: int = pydantic.Field(ge = 0, default = 0)
-
-
-class UserUsernameOffsetModel(OffsetMultiplierModel):
-    username: str = pydantic.Field(max_length = 100)
-
-
-class UserNamesOffsetModel(OffsetMultiplierModel):
+class GroupChatModel(pydantic.BaseModel):
     name: str | None = pydantic.Field(max_length = 100)
-    surname: str | None = pydantic.Field(max_length = 100)
-    second_name: str | None = pydantic.Field(max_length = 100)
+
+
+class MessageModel(pydantic.BaseModel):
+    message_text: str | None = pydantic.Field()

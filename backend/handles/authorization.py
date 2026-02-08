@@ -1,4 +1,5 @@
 import fastapi
+import redis
 import sqlalchemy.orm
 
 import backend.models.pydantic_request_models
@@ -25,23 +26,23 @@ async def post_login(
     data: backend.models.pydantic_request_models.LoginModel = fastapi.Body(),
     response: fastapi.responses.Response = fastapi.responses.Response(),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db),
-    redis_client: backend.storage.redis.RedisClient = fastapi.Depends(backend.storage.redis.get_redis_client)) -> fastapi.responses.JSONResponse:
+    redis_client: redis.Redis = fastapi.Depends(backend.storage.redis.get_redis_client)) -> fastapi.responses.JSONResponse:
 
     return await backend.handles.implementations.authorization.post_login(data, response, db, redis_client)
 
 
-@authorization_router.delete("/users/me/session", response_class=fastapi.responses.JSONResponse)
+@authorization_router.delete("/users/me/sessions/selected", response_class=fastapi.responses.JSONResponse)
 async def delete_current_user_session(
     data: backend.models.pydantic_request_models.SessionModel = fastapi.Body(),
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
-    redis_client: backend.storage.redis.RedisClient = fastapi.Depends(backend.storage.redis.get_redis_client)) -> fastapi.responses.JSONResponse:
+    redis_client: redis.Redis = fastapi.Depends(backend.storage.redis.get_redis_client)) -> fastapi.responses.JSONResponse:
 
     return await backend.handles.implementations.authorization.delete_session(data, current_user, redis_client)
 
 
-@authorization_router.delete("/users/me/sessions", response_class = fastapi.responses.JSONResponse)
+@authorization_router.delete("/users/me/sessions/all", response_class = fastapi.responses.JSONResponse)
 async def delete_all_current_user_sessions(
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
-    redis_client: backend.storage.redis.RedisClient = fastapi.Depends(backend.storage.redis.get_redis_client)) -> fastapi.responses.JSONResponse:
+    redis_client: redis.Redis = fastapi.Depends(backend.storage.redis.get_redis_client)) -> fastapi.responses.JSONResponse:
 
     return await backend.handles.implementations.authorization.delete_all_sessions(current_user, redis_client)

@@ -1,4 +1,5 @@
 import fastapi
+import minio
 import sqlalchemy.orm
 
 import backend.models.pydantic_request_models
@@ -11,16 +12,16 @@ import backend.authorization.sessions
 users_router = fastapi.APIRouter()
 
 
-@users_router.get("/users/id/{user_id}/data", response_class=fastapi.responses.JSONResponse, response_model=backend.models.pydantic_response_models.UserModel)
-async def get_user_by_id(
+@users_router.get("/users/id/{user_id}", response_class=fastapi.responses.JSONResponse, response_model=backend.models.pydantic_response_models.UserModel)
+async def get_user(
     user_id: int = fastapi.Path(ge = 0),
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.handles.implementations.users.get_user_by_id(user_id, db)
+    return await backend.handles.implementations.users.get_user(user_id, db)
 
 
-@users_router.get("/users/me/data", response_class=fastapi.responses.JSONResponse, response_model=backend.models.pydantic_response_models.UserModel)
+@users_router.get("/users/me", response_class=fastapi.responses.JSONResponse, response_model=backend.models.pydantic_response_models.UserModel)
 async def get_current_user(
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user)) -> fastapi.responses.JSONResponse:
 
@@ -50,10 +51,9 @@ async def get_current_user_login(
     status_code = fastapi.status.HTTP_200_OK)
 
 
-@users_router.patch("/users/me/data", response_class=fastapi.responses.JSONResponse)
+@users_router.patch("/users/me", response_class=fastapi.responses.JSONResponse)
 async def update_current_user(
     data: backend.models.pydantic_request_models.UserUpdateModel = fastapi.Body(),
-    session_id: str = fastapi.Cookie(),
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
 
@@ -72,34 +72,34 @@ async def update_current_user_login(
 @users_router.put("/users/me/password", response_class=fastapi.responses.JSONResponse)
 async def update_current_user_password(
     data: backend.models.pydantic_request_models.UserUpdatePasswordModel = fastapi.Body(),
-    session_id: str = fastapi.Cookie(),
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.handles.implementations.users.update_user_password(data, current_user, db)
 
 @users_router.get("/users/id/{user_id}/avatar", response_class=fastapi.responses.StreamingResponse)
-async def get_user_avatar_by_id(
+async def get_user_avatar(
     user_id: int = fastapi.Path(ge = 0),
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
-    minio_client: backend.storage.minio.MinioClient = fastapi.Depends(backend.storage.minio.get_minio_client)) -> fastapi.responses.StreamingResponse:
+    minio_client: minio.Minio = fastapi.Depends(backend.storage.minio.get_minio_client),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.StreamingResponse:
 
-    return await backend.handles.implementations.users.get_user_avatar_by_id(user_id, minio_client)
+    return await backend.handles.implementations.users.get_user_avatar(db.execute(sqlalchemy.select(backend.storage.database.User).where(backend.storage.database.User.id == user_id)), minio_client)
 
 
 @users_router.get("/users/me/avatar", response_class=fastapi.responses.StreamingResponse)
 async def get_current_user_avatar(
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
-    minio_client: backend.storage.minio.MinioClient = fastapi.Depends(backend.storage.minio.get_minio_client)) -> fastapi.responses.StreamingResponse:
+    minio_client: minio.Minio = fastapi.Depends(backend.storage.minio.get_minio_client)) -> fastapi.responses.StreamingResponse | fastapi.responses.FileResponse:
 
-    return await backend.handles.implementations.users.get_user_avatar_by_id(current_user, minio_client)
+    return await backend.handles.implementations.users.get_user_avatar(current_user, minio_client)
 
 
 @users_router.put("/users/me/avatar", response_class=fastapi.responses.JSONResponse)
 async def update_current_user_avatar(
     file: fastapi.UploadFile = fastapi.File(),
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
-    minio_client: backend.storage.minio.MinioClient = fastapi.Depends(backend.storage.minio.get_minio_client),
+    minio_client: minio.Minio = fastapi.Depends(backend.storage.minio.get_minio_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.handles.implementations.users.update_user_avatar(current_user, file, minio_client, db)
@@ -108,13 +108,13 @@ async def update_current_user_avatar(
 @users_router.delete("/users/me", response_class=fastapi.responses.JSONResponse)
 async def delete_current_user(
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
-    minio_client: backend.storage.minio.MinioClient = fastapi.Depends(backend.storage.minio.get_minio_client),
+    minio_client: minio.Minio = fastapi.Depends(backend.storage.minio.get_minio_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.handles.implementations.users.delete_user(current_user, minio_client, db)
 
 
-@users_router.get("/users/search/username", response_class=fastapi.responses.JSONResponse, response_model=list[backend.models.pydantic_response_models.UserInListModel])
+@users_router.get("/users/search/by-username", response_class=fastapi.responses.JSONResponse, response_model=list[backend.models.pydantic_response_models.UserInListModel])
 async def get_users_by_username(
     offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
     username: str = fastapi.Query(),
@@ -124,7 +124,7 @@ async def get_users_by_username(
     return backend.handles.implementations.users.get_users_by_username(offset_multiplier, username, db)
 
 
-@users_router.get("/users/search/names", response_class=fastapi.responses.JSONResponse, response_model=list[backend.models.pydantic_response_models.UserInListModel])
+@users_router.get("/users/search/by-names", response_class=fastapi.responses.JSONResponse, response_model=list[backend.models.pydantic_response_models.UserInListModel])
 async def get_users_by_names(
     offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
     name: str | None = fastapi.Query(),
@@ -190,10 +190,19 @@ async def current_user_decline_received_friend_request(
     return await backend.handles.implementations.users.decline_received_friend_request(friend_request_id, current_user, db)
 
 
-@users_router.delete("/users/me/friends/requests/sent/{friend_request_id}", response_class=fastapi.responses.JSONResponse)
+@users_router.delete("/users/me/friends/requests/sent/id/{friend_request_id}", response_class=fastapi.responses.JSONResponse)
 async def current_user_delete_sent_friend_request(
     friend_request_id: int = fastapi.Path(ge = 0),
     current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.handles.implementations.users.delete_sent_friend_request(friend_request_id, current_user, db)
+
+
+@users_router.delete("/users/me/friends/id/{friend_user_id}", response_class = fastapi.responses.JSONResponse)
+async def delete_friend(
+    friend_user_id: int = fastapi.Path(ge = 0),
+    current_user: backend.storage.database.User = fastapi.Depends(backend.authorization.sessions.get_session_user),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.handles.implementations.users.delete_friend(friend_user_id, current_user, db)

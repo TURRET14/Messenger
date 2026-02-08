@@ -6,6 +6,7 @@ import minio.datatypes
 import sqlalchemy
 import sqlalchemy.orm
 import pathlib
+import io
 
 import backend.models.pydantic_request_models
 import backend.models.pydantic_response_models
@@ -16,7 +17,7 @@ import backend.storage.minio
 import backend.parameters
 
 
-async def get_user_by_id(
+async def get_user(
     user_id: int,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
@@ -35,7 +36,7 @@ async def get_user_by_id(
     backend.storage.database.User.about,
     backend.storage.database.User.date_and_time_registered,
     backend.storage.database.User.messenger_role)
-    .where(backend.storage.database.User.id == user_id)).scalar())
+    .where(backend.storage.database.User.id == user_id)).scalars().first())
 
     if not selected_user:
         raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_404_NOT_FOUND, detail="USER_NOT_FOUND_ERROR")
@@ -52,13 +53,13 @@ async def update_user(
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "USER_NOT_FOUND_ERROR")
 
     if db.execute(sqlalchemy.select(backend.storage.database.User)
-    .where(sqlalchemy.and_(backend.storage.database.User.username == data.username, backend.storage.database.User.id != selected_user.id))).scalar() is not None:
+    .where(sqlalchemy.and_(backend.storage.database.User.username == data.username, backend.storage.database.User.id != selected_user.id))).scalars().first() is not None:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = "USERNAME_ALREADY_TAKEN_ERROR")
     if db.execute(sqlalchemy.select(backend.storage.database.User)
-    .where(sqlalchemy.and_(backend.storage.database.User.email_address == data.email_address, backend.storage.database.User.id != selected_user.id))).scalar() is not None:
+    .where(sqlalchemy.and_(backend.storage.database.User.email_address == data.email_address, backend.storage.database.User.id != selected_user.id))).scalars().first() is not None:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = "EMAIL_ALREADY_TAKEN_ERROR")
     if db.execute(sqlalchemy.select(backend.storage.database.User)
-    .where(sqlalchemy.and_(backend.storage.database.User.phone_number == data.phone_number, backend.storage.database.User.id != selected_user.id))).scalar() is not None:
+    .where(sqlalchemy.and_(backend.storage.database.User.phone_number == data.phone_number, backend.storage.database.User.id != selected_user.id))).scalars().first() is not None:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = "PHONE_NUMBER_ALREADY_TAKEN_ERROR")
 
     selected_user.username = data.username
@@ -86,7 +87,7 @@ async def update_user_login(
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "USER_NOT_FOUND_ERROR")
 
     if db.execute(sqlalchemy.select(backend.storage.database.User)
-    .where(backend.storage.database.User.login == selected_user.login)).scalar() is not None:
+    .where(backend.storage.database.User.login == selected_user.login)).scalars().first() is not None:
         raise fastapi.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = "LOGIN_ALREADY_TAKEN_ERROR")
 
     selected_user.login = data.login
@@ -110,20 +111,18 @@ async def update_user_password(
 
     return fastapi.responses.JSONResponse("SUCCESS", status_code=fastapi.status.HTTP_200_OK)
 
-async def get_user_avatar_by_id(
+async def get_user_avatar(
     selected_user: backend.storage.database.User,
-    minio_client: backend.storage.minio.MinioClient) -> fastapi.responses.StreamingResponse:
+    minio_client: minio.Minio) -> fastapi.responses.StreamingResponse | fastapi.responses.FileResponse:
 
     if not selected_user:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "USER_NOT_FOUND_ERROR")
+
     if not selected_user.avatar_photo_path:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "AVATAR_NOT_FOUND_ERROR")
+        return fastapi.responses.FileResponse("/images/avatar.png", status_code=fastapi.status.HTTP_200_OK)
 
-    file_coroutine = minio_client.get_user_avatar_object(selected_user.avatar_photo_path)
-    file_stat_coroutine = minio_client.get_user_avatar_stat(selected_user.avatar_photo_path)
-
-    file: minio.datatypes.BaseHTTPResponse = await file_coroutine
-    file_stat: minio.datatypes.Object = await file_stat_coroutine
+    file = minio_client.get_object("users:avatars", selected_user.avatar_photo_path)
+    file_stat = minio_client.stat_object("users:avatars", selected_user.avatar_photo_path)
 
     return fastapi.responses.StreamingResponse(file.stream(), media_type=file_stat.content_type, headers={"Content-Disposition": "inline"}, status_code=fastapi.status.HTTP_200_OK)
 
@@ -131,7 +130,7 @@ async def get_user_avatar_by_id(
 async def update_user_avatar(
     selected_user: backend.storage.database.User,
     file: fastapi.UploadFile,
-    minio_client: backend.storage.minio.MinioClient,
+    minio_client: minio.Minio,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if not selected_user:
@@ -148,11 +147,14 @@ async def update_user_avatar(
     if file.size > backend.parameters.max_avatar_size_bytes:
         raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_400_BAD_REQUEST, detail="IMAGE_SIZE_TOO_LARGE_ERROR")
 
-    minio_file_name: str = f"{selected_user.id}/{uuid.uuid4().hex.upper()}{image_extension}"
-    await backend.storage.minio.get_minio_client().upload_user_avatar(minio_file_name, file)
+    #MinIO - Загрузка аватара
+    minio_file_name: str = f"users/{selected_user.id}/{uuid.uuid4().hex.upper()}{image_extension}"
+    file_content = await file.read()
+    minio_client.put_object("users:avatars", minio_file_name, io.BytesIO(file_content), len(file_content), file.content_type)
 
+    # MinIO - Удаление старого аватара
     if selected_user.avatar_photo_path is not None:
-        await minio_client.delete_user_avatar(selected_user.avatar_photo_path)
+        minio_client.remove_object("users:avatars", selected_user.avatar_photo_path)
 
     selected_user.avatar_photo_path = minio_file_name
     db.commit()
@@ -162,14 +164,14 @@ async def update_user_avatar(
 
 async def delete_user(
     selected_user: backend.storage.database.User,
-    minio_client: backend.storage.minio.MinioClient,
+    minio_client: minio.Minio,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if not selected_user:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "USER_NOT_FOUND_ERROR")
 
     if selected_user.avatar_photo_path:
-        await minio_client.delete_user_avatar(selected_user.avatar_photo_path)
+        minio_client.remove_object("user_avatars", selected_user.avatar_photo_path)
 
     db.delete(selected_user)
     db.commit()
@@ -222,7 +224,7 @@ async def get_users_by_names(
     .offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
     .limit(backend.parameters.number_of_table_entries_in_selection))
 
-    users_list = db.execute(select_request).scalars().all()
+    users_list = db.execute(select_request).all()
 
     return fastapi.responses.JSONResponse(users_list, status_code = fastapi.status.HTTP_200_OK)
 
@@ -323,13 +325,13 @@ async def send_friend_request(
 
     if (db.execute(sqlalchemy.select(backend.storage.database.UserFriendRequest).where(
     sqlalchemy.and_(backend.storage.database.UserFriendRequest.sender_user_id == selected_user.id,
-    backend.storage.database.UserFriendRequest.receiver_user_id == data.id))).scalar()
+    backend.storage.database.UserFriendRequest.receiver_user_id == data.id))).scalars().first()
     is not None or db.execute(sqlalchemy.select(backend.storage.database.UserFriendRequest)
     .where(sqlalchemy.and_(backend.storage.database.UserFriendRequest.sender_user_id == data.id,
-    backend.storage.database.UserFriendRequest.receiver_user_id == selected_user.id))).scalar() is not None):
+    backend.storage.database.UserFriendRequest.receiver_user_id == selected_user.id))).scalars().first() is not None):
         raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_400_BAD_REQUEST, detail="FRIEND_REQUEST_ALREADY_EXISTS_ERROR")
 
-    if db.execute(sqlalchemy.select(backend.storage.database.User).where(backend.storage.database.User.id == data.id)).scalar() is None:
+    if db.execute(sqlalchemy.select(backend.storage.database.User).where(backend.storage.database.User.id == data.id)).scalars().first() is None:
         raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_404_NOT_FOUND, detail="USER_NOT_FOUND_ERROR")
 
     friend_request = backend.storage.database.UserFriendRequest(
@@ -353,7 +355,7 @@ async def accept_friend_request(
 
     friend_request = db.execute(sqlalchemy.select(backend.storage.database.UserFriendRequest)
     .where(sqlalchemy.and_(backend.storage.database.UserFriendRequest.id == friend_request_id,
-    backend.storage.database.UserFriendRequest.receiver_user_id == selected_user.id))).scalar()
+    backend.storage.database.UserFriendRequest.receiver_user_id == selected_user.id))).scalars().first()
 
     if not friend_request:
         raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_404_NOT_FOUND, detail="FRIEND_REQUEST_NOT_FOUND_ERROR")
@@ -379,9 +381,9 @@ async def decline_received_friend_request(
     if not selected_user:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "USER_NOT_FOUND_ERROR")
 
-    friend_request: backend.storage.database.UserFriendRequest = db.execute(sqlalchemy.select(backend.storage.database.UserFriendRequest)
+    friend_request = db.execute(sqlalchemy.select(backend.storage.database.UserFriendRequest)
     .where(sqlalchemy.and_(backend.storage.database.UserFriendRequest.id == friend_request_id,
-    backend.storage.database.UserFriendRequest.receiver_user_id == selected_user.id))).scalar()
+    backend.storage.database.UserFriendRequest.receiver_user_id == selected_user.id))).scalars().first()
 
     if not friend_request:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "FRIEND_REQUEST_NOT_FOUND_ERROR")
@@ -401,14 +403,41 @@ async def delete_sent_friend_request(
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "USER_NOT_FOUND_ERROR")
 
 
-    friend_request: backend.storage.database.UserFriendRequest = db.execute(sqlalchemy.select(backend.storage.database.UserFriendRequest)
+    friend_request = db.execute(sqlalchemy.select(backend.storage.database.UserFriendRequest)
     .where(sqlalchemy.and_(backend.storage.database.UserFriendRequest.id == friend_request_id,
-    backend.storage.database.UserFriendRequest.sender_user_id == selected_user.id))).scalar()
+    backend.storage.database.UserFriendRequest.sender_user_id == selected_user.id))).scalars().first()
 
     if not friend_request:
         raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_404_NOT_FOUND, detail="FRIEND_REQUEST__NOT_FOUND_ERROR")
 
     db.delete(friend_request)
+    db.commit()
+
+    return fastapi.responses.JSONResponse("SUCCESS", status_code=fastapi.status.HTTP_200_OK)
+
+
+async def delete_friend(
+    friend_user_id: int,
+    selected_user: backend.storage.database.User,
+    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+
+    if not selected_user:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "USER_NOT_FOUND_ERROR")
+
+    friendship: backend.storage.database.UserFriend = db.execute(sqlalchemy.select(backend.storage.database.UserFriend)
+    .where(sqlalchemy.or_(sqlalchemy.and_(backend.storage.database.UserFriend.user_id == selected_user.id, backend.storage.database.UserFriend.friend_user_id == friend_user_id),
+    sqlalchemy.and_(backend.storage.database.UserFriend.user_id == friend_user_id, backend.storage.database.UserFriend.friend_user_id == selected_user.id)))).scalars().first()
+
+    if not friendship:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = "FRIEND_NOT_FOUND_ERROR")
+
+    db.delete(friendship)
+
+    chat: backend.storage.database.Chat = db.execute(sqlalchemy.select(backend.storage.database.Chat).where(backend.storage.database.Chat.friendship_id == friendship.id)).scalars().first()
+
+    if chat:
+        db.delete(chat)
+
     db.commit()
 
     return fastapi.responses.JSONResponse("SUCCESS", status_code=fastapi.status.HTTP_200_OK)
