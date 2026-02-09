@@ -16,8 +16,8 @@ def verify_password(hashed_password: str, password: str) -> bool:
     try:
         return password_hasher.verify(hashed_password, password)
     except argon2.exceptions.VerifyMismatchError:
-        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR, detail="VERIFY_MISMATCH_ERROR")
+        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_401_UNAUTHORIZED, detail="INCORRECT_PASSWORD_ERROR")
     except argon2.exceptions.VerificationError:
-        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR, detail="VERIFICATION_ERROR")
+        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_401_UNAUTHORIZED, detail="INCORRECT_PASSWORD_ERROR")
     except argon2.exceptions.InvalidHashError:
-        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR, detail="INVALID_HASH_ERROR")
+        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_401_UNAUTHORIZED, detail="INCORRECT_PASSWORD_ERROR")

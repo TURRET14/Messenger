@@ -1,5 +1,4 @@
 CREATE TYPE genders_type AS ENUM ('Male', 'Female');
-CREATE TYPE system_roles_type AS ENUM ('User', 'Admin');
 
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
@@ -11,14 +10,11 @@ CREATE TABLE users (
     gender genders_type,
     email_address VARCHAR(260) NOT NULL UNIQUE,
     phone_number VARCHAR(50) UNIQUE,
-    country VARCHAR(100),
-    city VARCHAR(100),
     about VARCHAR(5000),
     avatar_photo_path VARCHAR(500),
     login VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    date_and_time_registered TIMESTAMPTZ NOT NULL,
-    messenger_role system_roles_type NOT NULL
+    date_and_time_registered TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX idx_users_username ON users (UPPER(username));

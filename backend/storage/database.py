@@ -9,11 +9,6 @@ class Gender(enum.Enum):
     female = "Female"
 
 
-class SystemRoles(enum.Enum):
-    user = "User"
-    admin = "Admin"
-
-
 class Base(sqlalchemy.orm.DeclarativeBase):
     pass
 
@@ -29,14 +24,11 @@ class User(Base):
     gender: sqlalchemy.orm.Mapped[Gender | None] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(Gender))
     email_address: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(260), nullable=False)
     phone_number: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(50))
-    country: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
-    city: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
     about: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(5000))
     avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(500))
     login: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100), nullable=False)
     password: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(255), nullable=False)
     date_and_time_registered: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
-    messenger_role: sqlalchemy.orm.Mapped[SystemRoles] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(SystemRoles), nullable=False)
     __table_args__ = (sqlalchemy.UniqueConstraint('username', name="users_username_key"),
                       sqlalchemy.UniqueConstraint('email_address', name="users_email_address_key"),
                       sqlalchemy.UniqueConstraint('phone_number', name="users_phone_number_key"),

@@ -7,12 +7,12 @@ import pathlib
 import uuid
 import io
 
-import backend.authorization.sessions
+import backend.dependencies
 import backend.models.pydantic_request_models
 import backend.models.pydantic_response_models
-import backend.storage.minio
+import backend.storage.minio_handler
 import backend.storage.database
-import backend.storage.redis
+import backend.storage.redis_handler
 import backend.parameters
 
 
