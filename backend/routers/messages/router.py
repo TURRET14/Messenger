@@ -1,52 +1,79 @@
-import fastapi
-import sqlalchemy.orm
+import asyncio
 
-import backend.routers.messages.implementation
+import fastapi
+import minio
+import sqlalchemy.orm
+import redis
+
+from models import *
+import implementation
 import backend.dependencies
-import backend.models.pydantic_request_models
-import backend.models.pydantic_response_models
-import backend.storage.minio_handler
-import backend.storage.database
-import backend.storage.redis_handler
-from backend import dependencies
+from backend.storage import *
+from backend.routers.connection_manager import *
 
 messages_router = fastapi.APIRouter()
 
-@messages_router.get("/chats/id/{chat_id}/messages", response_class = fastapi.responses.JSONResponse, response_model=backend.models.pydantic_response_models.MessageModel)
+@messages_router.get("/chats/id/{chat_id}/messages", response_class = fastapi.responses.JSONResponse)
 async def get_chat_messages(
-    chat_id: int = fastapi.Path(ge = 0),
     offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
-    current_user: backend.storage.database.User = fastapi.Depends(dependencies.get_session_user),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
+    selected_chat: Chat = fastapi.Depends(backend.dependencies.get_chat_by_path_id),
+    current_user: User = fastapi.Depends(backend.dependencies.get_session_user),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.messages.implementation.get_chat_messages(chat_id, offset_multiplier, current_user, db)
+    return await backend.routers.messages.implementation.get_chat_messages(offset_multiplier, selected_chat, current_user, db)
 
 
 @messages_router.post("/chats/id/{chat_id}/messages", response_class = fastapi.responses.JSONResponse)
 async def post_message(
-    chat_id: int = fastapi.Path(ge = 0),
-    data: backend.models.pydantic_request_models.MessageModel = fastapi.Body(),
-    current_user: backend.storage.database.User = fastapi.Depends(dependencies.get_session_user),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
+    selected_chat: Chat = fastapi.Depends(backend.dependencies.get_chat_by_path_id),
+    data: MessageModel = fastapi.Body(),
+    current_user: User = fastapi.Depends(backend.dependencies.get_session_user),
+    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.messages.implementation.post_message(chat_id, data, current_user, db)
+    return await backend.routers.messages.implementation.post_message(selected_chat, data, current_user, redis_client, db)
 
 
 @messages_router.delete("/chats/id/{chat_id}/messages/id/{message_id}", response_class = fastapi.responses.JSONResponse)
 async def delete_message(
-    chat_id: int = fastapi.Path(ge = 0),
-    message_id: int = fastapi.Path(ge = 0),
-    current_user: backend.storage.database.User = fastapi.Depends(dependencies.get_session_user),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
+    selected_chat: Chat = fastapi.Depends(backend.dependencies.get_chat_by_path_id),
+    selected_message: Message = fastapi.Depends(backend.dependencies.get_message_by_path_id),
+    current_user: User = fastapi.Depends(backend.dependencies.get_session_user),
+    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.messages.implementation.post_message(chat_id, message_id, current_user, db)
+    return await backend.routers.messages.implementation.delete_message(selected_chat, selected_message, current_user, redis_client, db)
 
 @messages_router.put("/chats/id/{chat_id}/messages/id/{message_id}", response_class = fastapi.responses.JSONResponse)
 async def update_message(
-    chat_id: int = fastapi.Path(ge = 0),
-    message_id: int = fastapi.Path(ge = 0),
-    data: backend.models.pydantic_request_models.MessageModel = fastapi.Body(),
-    current_user: backend.storage.database.User = fastapi.Depends(dependencies.get_session_user),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(backend.storage.database.get_db)) -> fastapi.responses.JSONResponse:
+    selected_chat: Chat = fastapi.Depends(backend.dependencies.get_chat_by_path_id),
+    selected_message: Message = fastapi.Depends(backend.dependencies.get_message_by_path_id),
+    data: MessageModel = fastapi.Body(),
+    current_user: User = fastapi.Depends(backend.dependencies.get_session_user),
+    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.messages.implementation.update_message(chat_id, message_id, data, current_user, db)
+    return await backend.routers.messages.implementation.update_message(selected_chat, selected_message, data, current_user, redis_client, db)
+
+@messages_router.on_startup()
+async def websocket_messages_post_subscriber(
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db),
+    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    websocket_connection_manager: WebsocketConnectionManager = fastapi.Depends(get_websocket_connection_manager)):
+
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("messages_post")
+    for selected_message_id in pubsub.listen():
+        asyncio.run(websocket_connection_manager.messages_post(selected_message_id, db))
+
+
+@messages_router.on_startup()
+async def websocket_messages_put_subscriber(
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db),
+    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    websocket_connection_manager: WebsocketConnectionManager = fastapi.Depends(get_websocket_connection_manager)):
+
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("messages_put")
+    for selected_message_id in pubsub.listen():
+        asyncio.run(websocket_connection_manager.messages_put(selected_message_id, db))

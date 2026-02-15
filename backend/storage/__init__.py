@@ -10,5 +10,6 @@ from database import ChatUser
 from database import Message
 from database import FileAttachment
 from database import ReceivedMessage
-from database import SystemRoles
 from database import Gender
+from database import ChatKind
+from database import ChatRole

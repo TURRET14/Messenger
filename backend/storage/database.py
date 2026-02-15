@@ -8,6 +8,15 @@ class Gender(enum.Enum):
     male = "Male"
     female = "Female"
 
+class ChatKind(enum.Enum):
+    private = "Private"
+    group = "Group"
+
+class ChatRole(enum.Enum):
+    user = "User"
+    admin = "Admin"
+    owner = "Owner"
+
 
 class Base(sqlalchemy.orm.DeclarativeBase):
     pass
@@ -23,9 +32,9 @@ class User(Base):
     date_of_birth: sqlalchemy.orm.Mapped[date | None] = sqlalchemy.orm.mapped_column(sqlalchemy.Date)
     gender: sqlalchemy.orm.Mapped[Gender | None] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(Gender))
     email_address: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(260), nullable=False)
-    phone_number: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(50))
+    phone_number: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(50))
     about: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(5000))
-    avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(500))
+    avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(250))
     login: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100), nullable=False)
     password: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(255), nullable=False)
     date_and_time_registered: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
@@ -71,12 +80,12 @@ class UserFriendRequest(Base):
 class Chat(Base):
     __tablename__ = 'chats'
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
-    is_group_chat: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
+    chat_kind: sqlalchemy.orm.Mapped[ChatKind] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(ChatKind), nullable=False)
     name: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
-    owner_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=True)
+    owner_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'))
     date_and_time_created: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
-    avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(500))
-    friendship_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('user_friends.id', ondelete='CASCADE'), nullable=True)
+    avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(250))
+    friendship_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('user_friends.id', ondelete='CASCADE'))
     __table_args__ = (sqlalchemy.Index('idx_chats_name', 'UPPER(name)', ))
 
 
@@ -86,7 +95,7 @@ class ChatUser(Base):
     chat_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
     chat_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     date_and_time_added: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
-    is_user_admin: sqlalchemy.orm.Mapped[bool | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
+    chat_role: sqlalchemy.orm.Mapped[ChatRole] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(ChatRole), nullable=False)
     __table_args__ = (sqlalchemy.UniqueConstraint('chat_id', 'chat_user_id', name='chat_users_chat_id_chat_user_id_key'),)
 
 
@@ -94,8 +103,9 @@ class Message(Base):
     __tablename__ = 'messages'
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
     chat_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
-    sender_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    sender_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'))
     date_and_time_sent: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
+    date_and_time_edited: sqlalchemy.orm.Mapped[datetime | None] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True))
     message_text: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
     message_text_tsvector = sqlalchemy.orm.mapped_column(sqlalchemy.dialects.postgresql.TSVECTOR, sqlalchemy.Computed("TO_TSVECTOR('russian', message_text)", persisted=True))
     __table_args__ = (sqlalchemy.Index("idx_messages_chat_id", "chat_id"),
@@ -107,7 +117,7 @@ class FileAttachment(Base):
     __tablename__ = 'file_attachments'
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
     message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('messages.id', ondelete='CASCADE'), nullable=False)
-    attachment_file_path: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(500), nullable=False)
+    attachment_file_path: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(250), nullable=False)
     __table_args__ = (sqlalchemy.UniqueConstraint('message_id', 'attachment_file_path', name='file_attachments_message_id_attachments_file_path_key'),)
 
 
@@ -115,7 +125,7 @@ class ReceivedMessage(Base):
     __tablename__ = 'received_messages'
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
     message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('messages.id', ondelete='CASCADE'), nullable=False)
-    received_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    receiver_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     date_and_time_received: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     __table_args__ = (sqlalchemy.UniqueConstraint('message_id', 'received_user_id', name='received_messages_message_id_received_user_id_key'),)
 

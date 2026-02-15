@@ -5,6 +5,7 @@ import uvicorn
 import backend.routers.users.router
 import backend.routers.chats.router
 import backend.routers.messages.router
+import backend.routers.message_attachments.router
 import dotenv
 
 dotenv.load_dotenv()
@@ -20,6 +21,7 @@ app.add_middleware(fastapi.middleware.cors.CORSMiddleware,
 app.include_router(backend.routers.users.router.users_router)
 app.include_router(backend.routers.chats.router.chats_router)
 app.include_router(backend.routers.messages.router.messages_router)
+app.include_router(backend.routers.message_attachments.router.message_attachments_router)
 
 
 @app.exception_handler(fastapi.exceptions.HTTPException)
