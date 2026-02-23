@@ -5,9 +5,9 @@ import redis
 import sqlalchemy
 import sqlalchemy.orm
 
-from backend.common_models import *
+from backend.routers.common_models import *
 from backend.storage import *
-from backend.return_details import *
+import backend.routers.return_details
 
 
 async def get_session_user(
@@ -22,11 +22,11 @@ async def get_session_user(
             if session_user:
                 return session_user
             else:
-                raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.invalid_session_id_error)
+                raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INVALID_SESSION_ID_ERROR)
         else:
-            raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.invalid_session_id_error)
+            raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INVALID_SESSION_ID_ERROR)
     else:
-        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.invalid_session_id_error)
+        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INVALID_SESSION_ID_ERROR)
 
 
 async def get_user_by_path_user_id(
@@ -36,7 +36,7 @@ async def get_user_by_path_user_id(
     selected_user: User = db.execute(sqlalchemy.select(User).where(User.id == user_id)).scalars().first()
 
     if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.user_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.USER_NOT_FOUND_ERROR)
     else:
         return selected_user
 
@@ -48,7 +48,7 @@ async def get_user_by_data_id(
     selected_user: User = db.execute(sqlalchemy.select(User).where(User.id == user_id_model.id)).scalars().first()
 
     if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.user_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.USER_NOT_FOUND_ERROR)
     else:
         return selected_user
 
@@ -60,7 +60,7 @@ async def get_chat_by_path_id(
     selected_chat: Chat = db.execute(sqlalchemy.select(Chat).where(Chat.id == chat_id)).scalars().first()
 
     if not selected_chat:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.chat_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.CHAT_NOT_FOUND_ERROR)
     else:
         return selected_chat
 
@@ -72,7 +72,7 @@ async def get_message_by_path_id(
     selected_message: Message = db.execute(sqlalchemy.select(Message).where(Message.id == message_id)).scalars().first()
 
     if not selected_message:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.message_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.MESSAGE_NOT_FOUND_ERROR)
     else:
         return selected_message
 
@@ -84,6 +84,6 @@ async def get_message_attachment_by_id(
     selected_attachment: FileAttachment = db.execute(sqlalchemy.select(FileAttachment).where(FileAttachment.id == attachment_id)).scalars().first()
 
     if not selected_attachment:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.object_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
     else:
         return selected_attachment

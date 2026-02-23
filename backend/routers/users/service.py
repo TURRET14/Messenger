@@ -13,32 +13,33 @@ import redis
 import secrets
 import asyncio
 
-import backend.dependencies
-import backend.password_hashing
-import backend.parameters
-from backend.return_details import *
+import backend.routers.dependencies
+import backend.routers.password_hashing
+import backend.routers.parameters
+import backend.routers.return_details
 from backend.storage import *
-import models
+from models import *
+import utils
 
 async def create_user(
-    data: models.RegisterModel,
+    data: RegisterModel,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if db.execute(sqlalchemy.select(User).where(User.username == data.username)).scalars().first() is not None:
-        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.username_already_taken_error)
+    if await utils.is_username_already_taken(data.username, db):
+        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.USERNAME_ALREADY_TAKEN_ERROR)
 
-    if db.execute(sqlalchemy.select(User).where(User.email_address == data.email_address)).scalars().first() is not None:
-        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.email_already_taken_error)
+    if await utils.is_email_already_taken(data.email_address, db):
+        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.EMAIL_ALREADY_TAKEN_ERROR)
 
-    if db.execute(sqlalchemy.select(User).where(User.login == data.login)).scalars().first() is not None:
-        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.login_already_taken_error)
+    if await utils.is_login_already_taken(data.login, db):
+        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.LOGIN_ALREADY_TAKEN_ERROR)
 
     new_user: User = User(
     username = data.username,
     name = data.name,
     email_address = data.email_address,
     login = data.login,
-    password = backend.password_hashing.hash_password(data.password),
+    password = backend.routers.password_hashing.hash_password(data.password),
     surname = data.surname,
     second_name = data.second_name,
     date_and_time_registered = datetime.datetime.now(datetime.timezone.utc))
@@ -51,21 +52,23 @@ async def create_user(
 
 
 async def login(
-    data: models.LoginModel,
+    data: LoginModel,
     response: fastapi.responses.Response,
     db: sqlalchemy.orm.session.Session,
     redis_client: redis.Redis) -> fastapi.responses.JSONResponse:
 
-    selected_user: User = db.execute(sqlalchemy.select(User)
-    .where(User.login == data.login)).scalars().first()
+    selected_user: User = (db.execute(
+    sqlalchemy.select(User)
+    .where(User.login == data.login))
+    .scalars().first())
 
     if not selected_user:
-        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.incorrect_login_error)
+        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INCORRECT_LOGIN_ERROR)
 
-    if backend.password_hashing.verify_password(selected_user.password, data.password):
+    if backend.routers.password_hashing.verify_password(selected_user.password, data.password):
         # Добавление сессии в Redis (Новая запись в словарь сессий + Новое значение во множестве сессий пользователя)
         session_id = secrets.token_urlsafe(64)
-        expiration_date: int = int(datetime.datetime.now().timestamp()) + int(datetime.timedelta(seconds = backend.parameters.redis_session_expiration_time_seconds).total_seconds())
+        expiration_date: int = int(datetime.datetime.now().timestamp()) + int(datetime.timedelta(seconds = backend.routers.parameters.redis_session_expiration_time_seconds).total_seconds())
 
         coroutines: list = list()
         coroutines.append(redis_client.sadd(f"user:{selected_user.id}:sessions", session_id))
@@ -76,15 +79,15 @@ async def login(
 
         await asyncio.gather(*coroutines)
 
-        response.set_cookie("session_id", value = session_id, max_age = backend.parameters.redis_session_expiration_time_seconds, httponly = True, secure = True, samesite = "strict")
+        response.set_cookie("session_id", value = session_id, max_age = backend.routers.parameters.redis_session_expiration_time_seconds, httponly = True, secure = True, samesite ="strict")
 
-        return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+        return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
     else:
-        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.incorrect_password_error)
+        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INCORRECT_PASSWORD_ERROR)
 
 
 async def delete_session(
-    data: models.SessionModel,
+    data: SessionModel,
     selected_user: User,
     redis_client: redis.Redis) -> fastapi.responses.JSONResponse:
 
@@ -93,7 +96,7 @@ async def delete_session(
     session: dict[str, str] = await redis_client.hgetall(f"session:{data.session_id}:data")
 
     if session["user_id"] != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.invalid_session_id_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INVALID_SESSION_ID_ERROR)
 
     coroutines: list = list()
     coroutines.append(redis_client.srem(f"user:{selected_user.id}:sessions", data.session_id))
@@ -101,7 +104,7 @@ async def delete_session(
 
     await asyncio.gather(*coroutines)
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def delete_all_sessions(
@@ -118,26 +121,26 @@ async def delete_all_sessions(
     await asyncio.gather(*coroutines)
     await redis_client.delete(f"user:{selected_user.id}:sessions")
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def get_user(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    selected_user: dict = {
-        "id": selected_user.id,
-        "username": selected_user.username,
-        "name": selected_user.name,
-        "surname": selected_user.surname,
-        "second_name": selected_user.second_name,
-        "date_of_birth": selected_user.date_of_birth,
-        "gender": selected_user.gender,
-        "email_address": selected_user.email_address,
-        "phone_number": selected_user.phone_number,
-        "about": selected_user.about,
-        "date_and_time_registered": selected_user.date_and_time_registered
-    }
+    selected_user: UserResponseModel = UserResponseModel(
+        id =  selected_user.id,
+        username = selected_user.username,
+        name = selected_user.name,
+        surname = selected_user.surname,
+        second_name = selected_user.second_name,
+        date_of_birth = selected_user.date_of_birth,
+        gender = selected_user.gender,
+        email_address = selected_user.email_address,
+        phone_number = selected_user.phone_number,
+        about = selected_user.about,
+        date_and_time_registered = selected_user.date_and_time_registered
+    )
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(selected_user), status_code = fastapi.status.HTTP_200_OK)
 
@@ -146,27 +149,24 @@ async def get_user_login(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    user_login: dict = {"login": selected_user.login}
+    user_login: LoginResponseModel = LoginResponseModel(login = selected_user.login)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_login), status_code = fastapi.status.HTTP_200_OK)
 
 
 async def update_user(
-    data: models.UserUpdateModel,
+    data: UserUpdateModel,
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if db.execute(sqlalchemy.select(User)
-    .where(sqlalchemy.and_(User.username == data.username, User.id != selected_user.id))).scalars().first() is not None:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.username_already_taken_error)
+    if data.username != selected_user.username and await utils.is_username_already_taken(data.username, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.USERNAME_ALREADY_TAKEN_ERROR)
 
-    if db.execute(sqlalchemy.select(User)
-    .where(sqlalchemy.and_(User.email_address == data.email_address, User.id != selected_user.id))).scalars().first() is not None:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.email_already_taken_error)
+    if data.email_address != selected_user.email_address and await utils.is_email_already_taken(data.email_address, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.EMAIL_ALREADY_TAKEN_ERROR)
 
-    if db.execute(sqlalchemy.select(User)
-    .where(sqlalchemy.and_(User.phone_number == data.phone_number, User.id != selected_user.id))).scalars().first() is not None:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.phone_number_already_taken_error)
+    if data.phone_number != selected_user.phone_number and await utils.is_phone_number_already_taken(data.phone_number, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.PHONE_NUMBER_ALREADY_TAKEN_ERROR)
 
     selected_user.username = data.username
     selected_user.name = data.name
@@ -179,34 +179,32 @@ async def update_user(
     selected_user.about = data.about
     db.commit()
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def update_user_login(
-    data: models.UserUpdateLoginModel,
+    data: UserUpdateLoginModel,
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if db.execute(sqlalchemy.select(User)
-    .where(sqlalchemy.and_(User.login == selected_user.login, User.id != selected_user.id))).scalars().first() is not None:
-        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.login_already_taken_error)
+    if data.login != selected_user.login and await utils.is_login_already_taken(data.login, db):
+        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.LOGIN_ALREADY_TAKEN_ERROR)
 
     selected_user.login = data.login
     db.commit()
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def update_user_password(
-    data: models.UserUpdatePasswordModel,
+    data: UserUpdatePasswordModel,
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if backend.password_hashing.verify_password(selected_user.password, data.old_password):
-        selected_user.password = backend.password_hashing.hash_password(data.new_password)
+    if backend.routers.password_hashing.verify_password(selected_user.password, data.old_password):
+        selected_user.password = backend.routers.password_hashing.hash_password(data.new_password)
         db.commit()
-
-        return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+        return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
     else:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = "INCORRECT_PASSWORD_ERROR")
 
@@ -215,7 +213,7 @@ async def get_user_avatar(
     minio_client: minio.Minio) -> fastapi.responses.StreamingResponse | fastapi.responses.FileResponse:
 
     if not selected_user.avatar_photo_path:
-        return fastapi.responses.FileResponse(backend.parameters.default_avatar_path, status_code = fastapi.status.HTTP_200_OK)
+        return fastapi.responses.FileResponse(backend.routers.parameters.default_avatar_path, status_code = fastapi.status.HTTP_200_OK)
 
     file = minio_client.get_object("users:avatars", selected_user.avatar_photo_path)
     file_stat = minio_client.stat_object("users:avatars", selected_user.avatar_photo_path)
@@ -229,16 +227,16 @@ async def update_user_avatar(
     minio_client: minio.Minio,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if file.content_type not in backend.parameters.allowed_image_content_types:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = ExceptionDetails.image_type_not_allowed_error)
+    if file.content_type not in backend.routers.parameters.allowed_image_content_types:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_TYPE_NOT_ALLOWED_ERROR)
 
     image_extension: str = pathlib.Path(file.filename).suffix.upper()
 
-    if image_extension not in backend.parameters.allowed_image_extensions:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = ExceptionDetails.image_type_not_allowed_error)
+    if image_extension not in backend.routers.parameters.allowed_image_extensions:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_TYPE_NOT_ALLOWED_ERROR)
 
-    if file.size > backend.parameters.max_avatar_size_bytes:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = ExceptionDetails.image_size_too_large_error)
+    if file.size > backend.routers.parameters.max_avatar_size_bytes:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_SIZE_TOO_LARGE_ERROR)
 
     #MinIO - Загрузка аватара
     minio_file_name: str = f"users/{selected_user.id}/{uuid.uuid4().hex.upper()}{image_extension}"
@@ -252,7 +250,7 @@ async def update_user_avatar(
     selected_user.avatar_photo_path = minio_file_name
     db.commit()
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code=fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code=fastapi.status.HTTP_200_OK)
 
 
 async def delete_user(
@@ -263,30 +261,45 @@ async def delete_user(
     if selected_user.avatar_photo_path:
         minio_client.remove_object("users:avatars", selected_user.avatar_photo_path)
 
-    user_chats: Sequence[Chat] = db.execute(sqlalchemy.select(Chat).where(Chat.owner_user_id == selected_user.id)).scalars().all()
+    user_group_chats: Sequence[Chat] = db.execute(sqlalchemy.select(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind == ChatKind.group))).scalars().all()
 
-    for chat in user_chats:
-        if chat.avatar_photo_path:
-            minio_client.remove_object("groups:avatars", chat.avatar_photo_path)
+    for chat in user_group_chats:
+        if not db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_user_id != selected_user.id))).scalars().first():
+            db.delete(chat)
+        else:
+            chat_new_owner: ChatUser = db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_role == ChatRole.admin)).order_by(ChatUser.date_and_time_added)).scalars().first()
+            if not chat_new_owner:
+                chat_new_owner = db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_role != ChatRole.owner)).order_by(ChatUser.date_and_time_added)).scalars().first()
+
+            chat.owner_user_id = chat_new_owner.id
+
+    user_private_chats: Sequence[Chat] = db.execute(sqlalchemy.select(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind == ChatKind.private))).scalars().all()
+
+    for chat in user_private_chats:
+        if not db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_user_id != selected_user.id))).scalars().first():
+            db.delete(chat)
 
     db.delete(selected_user)
     db.commit()
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def get_users(
     offset_multiplier: int,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    users_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
+    users_list: Sequence[sqlalchemy.RowMapping] = (db.execute(
+    sqlalchemy.select(
     User.id,
     User.username,
     User.name,
     User.surname,
     User.second_name)
-    .order_by(User.id).offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
-    .limit(backend.parameters.number_of_table_entries_in_selection)).mappings().all()
+    .order_by(User.id)
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
+    .mappings().all())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(users_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -296,15 +309,16 @@ async def search_users_by_username(
     username: str,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    users_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
+    users_list: Sequence[sqlalchemy.RowMapping] = (db.execute(sqlalchemy.select(
     User.id,
     User.username,
     User.name,
     User.surname,
     User.second_name)
     .where(User.username.like(f"%{username}"))
-    .order_by(User.id).offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
-    .limit(backend.parameters.number_of_table_entries_in_selection)).mappings().all()
+    .order_by(User.id).offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
+    .mappings().all())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(users_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -316,7 +330,7 @@ async def search_users_by_names(
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if name is None and surname is None and second_name is None:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = ExceptionDetails.bad_request_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     select_request = sqlalchemy.select(
     User.id,
@@ -332,9 +346,11 @@ async def search_users_by_names(
     if second_name is not None:
         select_request = select_request.where(User.second_name.like(f"%{second_name}"))
 
-    users_list: Sequence[sqlalchemy.RowMapping] = db.execute(select_request.order_by(User.id)
-    .offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
-    .limit(backend.parameters.number_of_table_entries_in_selection)).mappings().all()
+    users_list: Sequence[sqlalchemy.RowMapping] = (db.execute(
+    select_request.order_by(User.id)
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
+    .mappings().all())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(users_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -343,7 +359,7 @@ async def get_friends(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    friends_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
+    friends_list: Sequence[sqlalchemy.RowMapping] = (db.execute(sqlalchemy.select(
     User.id,
     User.username,
     User.name,
@@ -363,8 +379,9 @@ async def get_friends(
     .where(UserFriend.friend_user_id == selected_user.id)
     .join(User, User.id == UserFriend.user_id))
     .order_by(User.id)
-    .offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
-    .limit(backend.parameters.number_of_table_entries_in_selection)).mappings().all()
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
+    .mappings().all())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -375,7 +392,7 @@ async def search_friends_by_username(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    friends_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
+    friends_list: Sequence[sqlalchemy.RowMapping] = (db.execute(sqlalchemy.select(
     User.id,
     User.username,
     User.name,
@@ -397,8 +414,9 @@ async def search_friends_by_username(
     .join(User, User.id == UserFriend.user_id)
     .where(User.username.like(f"%{username}")))
     .order_by(User.id)
-    .offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
-    .limit(backend.parameters.number_of_table_entries_in_selection)).mappings().all()
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
+    .mappings().all())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -412,7 +430,7 @@ async def search_friends_by_names(
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if name is None and surname is None and second_name is None:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = ExceptionDetails.bad_request_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     if not name:
         name = str()
@@ -421,7 +439,8 @@ async def search_friends_by_names(
     if not second_name:
         second_name = str()
 
-    friends_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
+    friends_list: Sequence[sqlalchemy.RowMapping] = (db.execute(
+    sqlalchemy.select(
     User.id,
     User.username,
     User.name,
@@ -449,8 +468,9 @@ async def search_friends_by_names(
     User.surname.like(f"%{surname}"),
     User.second_name.like(f"%{second_name}"))))
     .order_by(User.id)
-    .offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
-    .limit(backend.parameters.number_of_table_entries_in_selection)).mappings().all()
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
+    .mappings().all())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -460,11 +480,10 @@ async def get_user_sent_friend_requests(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.user_not_found_error)
-
-    friend_requests_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
-    UserFriendRequest.id,
+    friend_requests_list: Sequence[sqlalchemy.RowMapping] = (db.execute(
+    sqlalchemy.select(
+    UserFriendRequest.id.label("friend_request_id"),
+    User.id,
     User.username,
     User.name,
     User.surname,
@@ -474,8 +493,9 @@ async def get_user_sent_friend_requests(
     .where(UserFriendRequest.sender_user_id == selected_user.id)
     .join(User, User.id == UserFriendRequest.sender_user_id)
     .order_by(User.id)
-    .offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
-    .limit(backend.parameters.number_of_table_entries_in_selection)).mappings().all()
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
+    .mappings().all())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friend_requests_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -485,11 +505,10 @@ async def get_user_received_friend_requests(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.user_not_found_error)
-
-    friend_requests_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
-    UserFriendRequest.id,
+    friend_requests_list: Sequence[sqlalchemy.RowMapping] = (db.execute(
+    sqlalchemy.select(
+    UserFriendRequest.id.label("friend_request_id"),
+    User.id,
     User.username,
     User.name,
     User.surname,
@@ -499,8 +518,9 @@ async def get_user_received_friend_requests(
     .where(UserFriendRequest.receiver_user_id == selected_user.id)
     .join(User, User.id == UserFriendRequest.sender_user_id)
     .order_by(User.id)
-    .offset(offset_multiplier * backend.parameters.number_of_table_entries_in_selection)
-    .limit(backend.parameters.number_of_table_entries_in_selection)).mappings().all()
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
+    .mappings().all())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friend_requests_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -511,22 +531,14 @@ async def send_friend_request(
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if receiver.id == selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = ExceptionDetails.bad_request_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
 
-    if (db.execute(sqlalchemy.select(UserFriendRequest).where(
-    sqlalchemy.and_(UserFriendRequest.sender_user_id == selected_user.id,
-    UserFriendRequest.receiver_user_id == receiver.id))).scalars().first() or
-    db.execute(sqlalchemy.select(UserFriendRequest)
-    .where(sqlalchemy.and_(UserFriendRequest.sender_user_id == receiver.id,
-    UserFriendRequest.receiver_user_id == selected_user.id))).scalars().first() is not None):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.conflict_error)
+    if utils.does_friend_request_already_exist(receiver.id, selected_user.id, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
 
-    if db.execute(sqlalchemy.select(UserFriend)
-    .where(sqlalchemy.or_(sqlalchemy.and_(UserFriend.user_id == selected_user.id,
-    UserFriend.friend_user_id == receiver.id), sqlalchemy.and_(UserFriend.user_id == receiver.id,
-    UserFriend.friend_user_id == selected_user.id)))).scalars().first():
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = ExceptionDetails.conflict_error)
+    if utils.are_users_already_friends(receiver.id, selected_user.id, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
 
     friend_request = UserFriendRequest(
     sender_user_id = selected_user.id,
@@ -549,10 +561,10 @@ async def accept_friend_request(
     .where(UserFriendRequest.id == friend_request_id)).scalars().first()
 
     if not friend_request:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.object_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
 
     if friend_request.receiver_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.unauthorized_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.UNAUTHORIZED_ERROR)
 
     friendship: UserFriend = UserFriend(
     user_id = friend_request.sender_user_id,
@@ -573,21 +585,21 @@ async def decline_received_friend_request(
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.user_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.USER_NOT_FOUND_ERROR)
 
     friend_request: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest)
     .where(UserFriendRequest.id == friend_request_id)).scalars().first()
 
     if not friend_request:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.object_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
 
     if friend_request.receiver_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.unauthorized_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.UNAUTHORIZED_ERROR)
 
     db.delete(friend_request)
     db.commit()
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def delete_sent_friend_request(
@@ -596,21 +608,21 @@ async def delete_sent_friend_request(
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.user_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.USER_NOT_FOUND_ERROR)
 
     friend_request: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest)
     .where(UserFriendRequest.id == friend_request_id)).scalars().first()
 
     if not friend_request:
-        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.object_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
 
     if friend_request.sender_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = ExceptionDetails.unauthorized_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.UNAUTHORIZED_ERROR)
 
     db.delete(friend_request)
     db.commit()
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def delete_friend(
@@ -618,14 +630,15 @@ async def delete_friend(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    friendship: UserFriend = db.execute(sqlalchemy.select(UserFriend)
+    friendship: UserFriend = (db.execute(sqlalchemy.select(UserFriend)
     .where(sqlalchemy.or_(sqlalchemy.and_(UserFriend.user_id == selected_user.id, UserFriend.friend_user_id == friend.id),
-    sqlalchemy.and_(UserFriend.user_id == friend.id, UserFriend.friend_user_id == selected_user.id)))).scalars().first()
+    sqlalchemy.and_(UserFriend.user_id == friend.id, UserFriend.friend_user_id == selected_user.id))))
+    .scalars().first())
 
     if not friendship:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = ExceptionDetails.object_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
 
     db.delete(friendship)
     db.commit()
 
-    return fastapi.responses.JSONResponse(success_return_message, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)

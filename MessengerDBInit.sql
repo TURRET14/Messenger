@@ -56,10 +56,10 @@ CREATE TABLE chats (
     id BIGSERIAL PRIMARY KEY,
     chat_kind chat_kinds_type NOT NULL,
     name VARCHAR(100),
-    owner_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
+    owner_user_id BIGINT REFERENCES users ON DELETE CASCADE,
     date_and_time_created TIMESTAMPTZ NOT NULL,
     avatar_photo_path VARCHAR(250),
-    friendship_id BIGINT REFERENCES user_friends ON DELETE CASCADE
+    is_read_only BOOLEAN NOT NULL
 );
 
 CREATE INDEX idx_chats_name ON chats (UPPER(name));
@@ -70,6 +70,7 @@ CREATE TABLE chat_users (
     chat_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
     date_and_time_added TIMESTAMPTZ NOT NULL,
     chat_role chat_roles_type NOT NULL,
+    is_active BOOLEAN NOT NULL
     UNIQUE(chat_id, chat_user_id)
 );
 
@@ -79,7 +80,7 @@ CREATE INDEX idx_chat_users_user_id ON chat_users (chat_user_id);
 CREATE TABLE messages (
     id BIGSERIAL PRIMARY KEY,
     chat_id BIGINT REFERENCES chats ON DELETE CASCADE NOT NULL,
-    sender_user_id BIGINT REFERENCES users ON DELETE CASCADE,
+    sender_user_id BIGINT REFERENCES users ON DELETE SET NULL,
     date_and_time_sent TIMESTAMPTZ NOT NULL,
     date_and_time_edited TIMESTAMPTZ,
     message_text TEXT,

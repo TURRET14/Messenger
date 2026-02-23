@@ -8,6 +8,7 @@ class MinioClient:
         self.client = minio.Minio(endpoint, access_key, secret_key, secure = True)
         self.client.make_bucket("users:avatars")
         self.client.make_bucket("groups:avatars")
+        self.client.make_bucket("messages:attachments")
 
 
 minio_client: MinioClient = MinioClient(os.getenv("MINIO_ENDPOINT"), os.getenv("MINIO_ACCESS_KEY"), os.getenv("MINIO_SECRET_KEY"))

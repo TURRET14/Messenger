@@ -1,80 +1,56 @@
 import fastapi
-import sqlalchemy
 from fastapi import WebSocketException
 
-import backend.dependencies
-import backend.routers.connection_manager
+import backend.routers.dependencies
+import websocket_connection_manager
 from backend.storage import *
 
 messages_websockets = fastapi.APIRouter()
 
-@messages_websockets.websocket("/messages/post")
-async def websocket_messages_post(
+async def websocket_connection_body(
     websocket: fastapi.WebSocket,
-    websocket_connection_manager: backend.routers.connection_manager.WebsocketConnectionManager = fastapi.Depends(backend.routers.connection_manager.get_websocket_connection_manager),
-    selected_user: User = fastapi.Depends(backend.dependencies.get_session_user)):
+    websockets_list: dict[User, set[fastapi.WebSocket]],
+    selected_user: User):
 
     await websocket.accept()
 
-    if not websocket_connection_manager.messages_post_websockets[selected_user]:
-        websocket_connection_manager.messages_post_websockets[selected_user] = set()
+    if not websockets_list[selected_user]:
+        websockets_list[selected_user] = set()
 
-    websocket_connection_manager.messages_post_websockets[selected_user].add(websocket)
+    websockets_list[selected_user].add(websocket)
 
     try:
         while True:
             await websocket.receive()
 
     except WebSocketException:
-        websocket_connection_manager.messages_post_websockets[selected_user].remove(websocket)
-        if len(websocket_connection_manager.messages_post_websockets[selected_user]) == 0:
-            websocket_connection_manager.messages_post_websockets.pop(selected_user)
+        websockets_list[selected_user].remove(websocket)
+        if len(websockets_list[selected_user]) == 0:
+            websockets_list.pop(selected_user)
         await websocket.close()
+
+@messages_websockets.websocket("/messages/post")
+async def websocket_messages_post(
+    websocket: fastapi.WebSocket,
+    messages_websocket_connection_manager: websocket_connection_manager.MessagesWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_messages_websocket_connection_manager),
+    selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user)):
+
+    await websocket_connection_body(websocket, messages_websocket_connection_manager.messages_post_websockets, selected_user)
 
 
 @messages_websockets.websocket("/messages/put")
 async def websocket_messages_put(
     websocket: fastapi.WebSocket,
-    websocket_connection_manager: backend.routers.connection_manager.WebsocketConnectionManager = fastapi.Depends(backend.routers.connection_manager.get_websocket_connection_manager),
-    selected_user: User = fastapi.Depends(backend.dependencies.get_session_user)):
+    messages_websocket_connection_manager: websocket_connection_manager.MessagesWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_messages_websocket_connection_manager),
+    selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user)):
 
-    await websocket.accept()
-
-    if not websocket_connection_manager.messages_put_websockets[selected_user]:
-        websocket_connection_manager.messages_put_websockets[selected_user] = set()
-
-    websocket_connection_manager.messages_put_websockets[selected_user].add(websocket)
-
-    try:
-        while True:
-            await websocket.receive()
-
-    except WebSocketException:
-        websocket_connection_manager.messages_put_websockets[selected_user].remove(websocket)
-        if len(websocket_connection_manager.messages_put_websockets[selected_user]) == 0:
-            websocket_connection_manager.messages_put_websockets.pop(selected_user)
-        await websocket.close()
+    await websocket_connection_body(websocket, messages_websocket_connection_manager.messages_put_websockets, selected_user)
 
 
 @messages_websockets.websocket("/messages/delete")
 async def websocket_messages_delete(
     websocket: fastapi.WebSocket,
-    websocket_connection_manager: backend.routers.connection_manager.WebsocketConnectionManager = fastapi.Depends(backend.routers.connection_manager.get_websocket_connection_manager),
-    selected_user: User = fastapi.Depends(backend.dependencies.get_session_user)):
+    messages_websocket_connection_manager: websocket_connection_manager.MessagesWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_messages_websocket_connection_manager),
+    selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user)):
 
-    await websocket.accept()
-
-    if not websocket_connection_manager.messages_delete_websockets[selected_user]:
-        websocket_connection_manager.messages_delete_websockets[selected_user] = set()
-
-    websocket_connection_manager.messages_delete_websockets[selected_user].add(websocket)
-
-    try:
-        while True:
-            await websocket.receive()
-
-    except WebSocketException:
-        websocket_connection_manager.messages_delete_websockets[selected_user].remove(websocket)
-        if len(websocket_connection_manager.messages_delete_websockets[selected_user]) == 0:
-            websocket_connection_manager.messages_delete_websockets.pop(selected_user)
-        await websocket.close()
+    await websocket_connection_body(websocket, messages_websocket_connection_manager.messages_delete_websockets, selected_user)
