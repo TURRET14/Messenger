@@ -16,6 +16,7 @@ import backend.routers.return_details
 import backend.routers.dependencies
 import backend.routers.parameters
 import utils
+import backend.routers.users.utils
 
 
 async def get_all_chats(
@@ -33,7 +34,7 @@ async def get_all_chats(
     sqlalchemy.select(
     Chat.id,
     Chat.chat_kind,
-    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(ChatUser).where )),
+    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(User.username).select_from(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == Chat.id, ChatUser.chat_user_id != selected_user.id)).join(User, User.id == ChatUser.chat_user_id))),
     Chat.owner_user_id,
     Chat.date_and_time_created,
     Chat.is_read_only)
@@ -167,6 +168,9 @@ async def create_or_join_private_chat(
     redis_client: redis.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
+    if backend.routers.users.utils.get_user_block(selected_user, friend_user, db) or backend.routers.users.utils.get_user_block(friend_user, selected_user, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+
     private_chat: Chat = await utils.get_users_private_chat(selected_user, friend_user, db)
 
     if not private_chat:
@@ -220,7 +224,7 @@ async def create_group_chat(
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     new_chat: Chat = Chat(
-    is_group_chat = True,
+    chat_kind = ChatKind.group,
     owner_user_id = selected_user.id,
     name = data.name,
     date_and_time_created = datetime.datetime.now(datetime.timezone.utc))
@@ -239,7 +243,7 @@ async def create_group_chat(
     db.commit()
     db.refresh(membership)
 
-    asyncio.run(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = False))))
+    asyncio.run(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = True))))
 
     return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -342,7 +346,7 @@ async def add_chat_admin(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if not selected_chat.chat_kind == ChatKind.group:
+    if selected_chat.chat_kind not in [ChatKind.group, ChatKind.community]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     if not await utils.is_chat_user_owner(selected_chat, selected_user):
@@ -365,7 +369,7 @@ async def delete_chat_admin(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if not selected_chat.chat_kind == ChatKind.group:
+    if selected_chat.chat_kind not in [ChatKind.group, ChatKind.community]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     if not await utils.is_chat_user_owner(selected_chat, selected_user):
@@ -388,7 +392,7 @@ async def add_chat_user(
     redis_client: redis.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if not selected_chat.chat_kind == ChatKind.group:
+    if selected_chat.chat_kind not in [ChatKind.group, ChatKind.community]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     if not await utils.is_chat_user_owner_or_admin(selected_chat, selected_user, db):
@@ -422,7 +426,7 @@ async def delete_chat_user(
     redis_client: redis.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if not selected_chat.chat_kind == ChatKind.group:
+    if selected_chat.chat_kind not in [ChatKind.group, ChatKind.community]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     if not await utils.is_chat_user_owner_or_admin(selected_chat, selected_user, db):
@@ -473,7 +477,7 @@ async def delete_chat(
     redis_client: redis.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    if not selected_chat.chat_kind == ChatKind.group:
+    if selected_chat.chat_kind not in [ChatKind.group, ChatKind.community]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     if not await utils.is_chat_user_owner(selected_chat, selected_user):
@@ -488,3 +492,63 @@ async def delete_chat(
     asyncio.run(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+
+
+async def create_community(
+    data: GroupChatModel,
+    selected_user: User,
+    redis_client: redis.Redis,
+    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+
+    new_chat: Chat = Chat(
+    chat_kind = ChatKind.community,
+    owner_user_id = selected_user.id,
+    name = data.name,
+    date_and_time_created = datetime.datetime.now(datetime.timezone.utc))
+    db.add(new_chat)
+    db.commit()
+    db.refresh(new_chat)
+
+    membership: ChatUser = ChatUser(
+    chat_id = new_chat.id,
+    chat_user_id = selected_user.id,
+    date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
+    chat_role = ChatRole.owner,
+    is_active = True)
+
+    db.add(membership)
+    db.commit()
+    db.refresh(membership)
+
+    asyncio.run(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = True))))
+
+    return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
+
+
+async def get_discussion_by_community_message_id(
+    selected_message: Message,
+    selected_chat: Chat,
+    selected_user: User,
+    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+
+    if not await utils.get_chat_user_membership(selected_chat, selected_user, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+
+    if selected_message.chat_id != selected_chat.id:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+
+    if selected_chat.chat_kind != ChatKind.community:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+
+    message_discussion: Chat = (db.execute(sqlalchemy.select(
+    Chat.id,
+    Chat.chat_kind,
+    Chat.name,
+    Chat.owner_user_id,
+    Chat.date_and_time_created,
+    Chat.is_read_only)
+    .select_from(Chat)
+    .where(Chat.discussion_message_id == selected_message.id))
+    .scalars().first())
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(message_discussion), status_code = fastapi.status.HTTP_200_OK)

@@ -18,6 +18,7 @@ import backend.routers.password_hashing
 import backend.routers.parameters
 import backend.routers.return_details
 from backend.storage import *
+import backend.routers.chats.utils
 from models import *
 import utils
 
@@ -47,6 +48,8 @@ async def create_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    user_wall: Chat = Chat(owner_user_id = new_user.id, chat_kind = ChatKind.wall)
 
     return fastapi.responses.JSONResponse({"id": new_user.id}, status_code = fastapi.status.HTTP_201_CREATED)
 
@@ -261,9 +264,9 @@ async def delete_user(
     if selected_user.avatar_photo_path:
         minio_client.remove_object("users:avatars", selected_user.avatar_photo_path)
 
-    user_group_chats: Sequence[Chat] = db.execute(sqlalchemy.select(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind == ChatKind.group))).scalars().all()
+    user_group_chats_and_communities: Sequence[Chat] = db.execute(sqlalchemy.select(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind.in_([ChatKind.group, ChatKind.community])))).scalars().all()
 
-    for chat in user_group_chats:
+    for chat in user_group_chats_and_communities:
         if not db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_user_id != selected_user.id))).scalars().first():
             db.delete(chat)
         else:
@@ -278,6 +281,8 @@ async def delete_user(
     for chat in user_private_chats:
         if not db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_user_id != selected_user.id))).scalars().first():
             db.delete(chat)
+
+    db.delete(db.execute(sqlalchemy.select(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind == ChatKind.wall))).scalars().first())
 
     db.delete(selected_user)
     db.commit()
@@ -540,6 +545,9 @@ async def send_friend_request(
     if utils.are_users_already_friends(receiver.id, selected_user.id, db):
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
 
+    if utils.get_user_block(selected_user, receiver, db) or utils.get_user_block(receiver, selected_user, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+
     friend_request = UserFriendRequest(
     sender_user_id = selected_user.id,
     receiver_user_id = receiver.id,
@@ -565,6 +573,13 @@ async def accept_friend_request(
 
     if friend_request.receiver_user_id != selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.UNAUTHORIZED_ERROR)
+
+    sender_user: User = db.execute(sqlalchemy.select(User).where(User.id == friend_request.sender_user_id)).scalars().first()
+
+    if utils.get_user_block(selected_user, sender_user, db) or utils.get_user_block(sender_user, selected_user, db):
+        db.delete(friend_request)
+        db.commit()
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
     friendship: UserFriend = UserFriend(
     user_id = friend_request.sender_user_id,
@@ -639,6 +654,56 @@ async def delete_friend(
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
 
     db.delete(friendship)
+    db.commit()
+
+    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+
+
+async def add_blocked_user(
+    blocked_user: User,
+    selected_user: User,
+    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+
+    if utils.get_user_block(selected_user, blocked_user, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
+
+    new_block: BlockedUser = BlockedUser(user_id = selected_user.id, blocked_user_id = blocked_user.id, date_and_time_blocked = datetime.datetime.now(datetime.timezone.utc))
+
+    friendship: UserFriend = db.execute(sqlalchemy.select(UserFriend).where(sqlalchemy.or_(sqlalchemy.and_(UserFriend.user_id == selected_user, UserFriend.friend_user_id == blocked_user), sqlalchemy.and_(UserFriend.user_id == blocked_user, UserFriend.friend_user_id == selected_user)))).scalars().first()
+
+    if friendship:
+        db.delete(friendship)
+
+    users_chat: Chat = await backend.routers.chats.utils.get_users_private_chat(selected_user, blocked_user, db)
+    if users_chat:
+        db.delete(users_chat)
+
+    friend_request_to_blocked: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest).where(sqlalchemy.and_(UserFriendRequest.sender_user_id == selected_user.id, UserFriendRequest.receiver_user_id == blocked_user.id))).scalar()
+    if friend_request_to_blocked:
+        db.delete(friend_request_to_blocked)
+
+    friend_request_from_blocked: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest).where(sqlalchemy.and_(UserFriendRequest.sender_user_id == blocked_user.id, UserFriendRequest.receiver_user_id == selected_user.id))).scalar()
+    if friend_request_from_blocked:
+        db.delete(friend_request_from_blocked)
+
+    db.add(new_block)
+    db.commit()
+    db.refresh(new_block)
+
+    return fastapi.responses.JSONResponse({"id": new_block.id}, status_code = fastapi.status.HTTP_201_CREATED)
+
+
+async def delete_blocked_user(
+    blocked_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
+    selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    user_block: BlockedUser = await utils.get_user_block(selected_user, blocked_user, db)
+
+    if not user_block:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
+
+    db.delete(user_block)
     db.commit()
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)

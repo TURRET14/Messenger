@@ -65,3 +65,11 @@ async def are_users_already_friends(
         return True
     else:
         return False
+
+
+async def get_user_block(
+    selected_user: User,
+    blocked_user: User,
+    db: sqlalchemy.orm.session.Session) -> BlockedUser:
+
+    return db.execute(sqlalchemy.select(BlockedUser).where(sqlalchemy.or_(sqlalchemy.and_(BlockedUser.user_id == selected_user.id, BlockedUser.blocked_user_id == blocked_user.id)))).scalar()

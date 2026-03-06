@@ -12,3 +12,5 @@ from database import FileAttachment
 from database import Gender
 from database import ChatKind
 from database import ChatRole
+from database import ReceivedMessage
+from database import BlockedUser

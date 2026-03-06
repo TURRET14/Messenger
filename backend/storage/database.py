@@ -11,6 +11,9 @@ class Gender(enum.Enum):
 class ChatKind(enum.Enum):
     private = "Private"
     group = "Group"
+    community = "Community"
+    discussion = "Discussion"
+    wall = "Wall"
 
 class ChatRole(enum.Enum):
     user = "User"
@@ -86,6 +89,7 @@ class Chat(Base):
     date_and_time_created: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(250))
     is_read_only: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN(), nullable = False)
+    discussion_message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT(), sqlalchemy.ForeignKey('messages.id', ondelete='CASCADE'))
     __table_args__ = (sqlalchemy.UniqueConstraint("private_chat_key", name='private_chat_key_key'),
                       sqlalchemy.Index('idx_chats_name', 'UPPER(name)'),)
 
@@ -108,6 +112,7 @@ class Message(Base):
     sender_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='SET NULL'))
     date_and_time_sent: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     date_and_time_edited: sqlalchemy.orm.Mapped[datetime | None] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True))
+    reply_message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('messages.id', ondelete='SET NULL'), nullable=False)
     message_text: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
     message_text_tsvector = sqlalchemy.orm.mapped_column(sqlalchemy.dialects.postgresql.TSVECTOR, sqlalchemy.Computed("TO_TSVECTOR('russian', message_text)", persisted=True))
     __table_args__ = (sqlalchemy.Index("idx_messages_chat_id", "chat_id"),
@@ -129,7 +134,19 @@ class ReceivedMessage(Base):
     message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('messages.id', ondelete='CASCADE'), nullable=False)
     receiver_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     date_and_time_received: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
-    __table_args__ = (sqlalchemy.UniqueConstraint('message_id', 'received_user_id', name='received_messages_message_id_received_user_id_key'),)
+    __table_args__ = (sqlalchemy.UniqueConstraint('message_id', 'receiver_user_id', name='received_messages_message_id_receiver_user_id_key'),)
+
+
+class BlockedUser(Base):
+    __tablename__ = 'blocked_users'
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
+    user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    blocked_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    date_and_time_blocked: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
+    __table_args__ = (sqlalchemy.UniqueConstraint("user_id", "blocked_user_id", name="blocked_users_user_id_blocked_user_id_key"),
+                    sqlalchemy.Index('idx_blocked_users_user_id', 'user_id'),
+                    sqlalchemy.Index('idx_blocked_users_blocked_user_id', 'blocked_user_id'),
+                    sqlalchemy.Index('idx_blocked_users_user_id_blocked_user_id', 'user_id', 'blocked_user_id'),)
 
 
 database_url: str = "postgresql://" + os.getenv("POSTGRES_USER") + ":" + os.getenv("POSTGRES_PASSWORD") + "@" + os.getenv("POSTGRES_HOST") + ":" + os.getenv("POSTGRES_PORT") + "/" + os.getenv("POSTGRES_DB")

@@ -255,3 +255,21 @@ async def delete_friend(
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.users.service.delete_friend(friend, current_user, db)
+
+
+@users_router.post("/users/me/blocked-users", response_class = fastapi.responses.JSONResponse)
+async def add_blocked_user(
+    blocked_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.routers.users.service.add_blocked_user(blocked_user, current_user, db)
+
+
+@users_router.delete("/users/me/blocked-users", response_class = fastapi.responses.JSONResponse)
+async def delete_blocked_user(
+    blocked_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.routers.users.service.delete_blocked_user(blocked_user, current_user, db)

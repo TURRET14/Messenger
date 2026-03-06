@@ -3,6 +3,7 @@ import datetime
 
 class MessageModel(pydantic.BaseModel):
     message_text: str | None = pydantic.Field()
+    reply_message_id: int | None = pydantic.Field(ge = 0)
 
 
 class MessageResponseModel(pydantic.BaseModel):
@@ -16,6 +17,7 @@ class MessageResponseModel(pydantic.BaseModel):
     sender_name: str = pydantic.Field(max_length = 100)
     sender_surname: str | None = pydantic.Field(max_length = 100)
     sender_second_name: str | None = pydantic.Field(max_length = 100)
+    reply_message_id: int | None = pydantic.Field(ge = 0)
 
 
     class Config:

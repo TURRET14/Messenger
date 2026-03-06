@@ -1,5 +1,5 @@
 CREATE TYPE genders_type AS ENUM ('Male', 'Female');
-CREATE TYPE chat_kinds_type AS ENUM ('Private', 'Group');
+CREATE TYPE chat_kinds_type AS ENUM ('Private', 'Group', 'Community', 'Discussion', 'Wall');
 CREATE TYPE chat_roles_type AS ENUM ('User', 'Admin', 'Owner');
 
 CREATE TABLE users (
@@ -59,7 +59,8 @@ CREATE TABLE chats (
     owner_user_id BIGINT REFERENCES users ON DELETE CASCADE,
     date_and_time_created TIMESTAMPTZ NOT NULL,
     avatar_photo_path VARCHAR(250),
-    is_read_only BOOLEAN NOT NULL
+    is_read_only BOOLEAN NOT NULL,
+    discussion_message_id BIGINT REFERENCES messages ON DELETE CASCADE UNIQUE
 );
 
 CREATE INDEX idx_chats_name ON chats (UPPER(name));
@@ -70,7 +71,7 @@ CREATE TABLE chat_users (
     chat_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
     date_and_time_added TIMESTAMPTZ NOT NULL,
     chat_role chat_roles_type NOT NULL,
-    is_active BOOLEAN NOT NULL
+    is_active BOOLEAN NOT NULL,
     UNIQUE(chat_id, chat_user_id)
 );
 
@@ -83,6 +84,7 @@ CREATE TABLE messages (
     sender_user_id BIGINT REFERENCES users ON DELETE SET NULL,
     date_and_time_sent TIMESTAMPTZ NOT NULL,
     date_and_time_edited TIMESTAMPTZ,
+    reply_message_id BIGINT REFERENCES messages ON DELETE SET NULL,
     message_text TEXT,
     message_text_tsvector TSVECTOR GENERATED ALWAYS AS (TO_TSVECTOR('russian', message_text)) STORED
 );
@@ -105,9 +107,22 @@ CREATE TABLE received_messages (
     message_id BIGINT REFERENCES messages ON DELETE CASCADE NOT NULL,
     receiver_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
     date_and_time_received TIMESTAMPTZ NOT NULL,
-    UNIQUE(message_id, received_user_id)
+    UNIQUE(message_id, receiver_user_id)
 );
 
 CREATE INDEX idx_received_messages_message_id ON received_messages (message_id);
-CREATE INDEX idx_received_messages_received_user_id ON received_messages (received_user_id);
-CREATE INDEX idx_received_messages_message_id_received_user_id ON received_messages (message_id, received_user_id);
+CREATE INDEX idx_received_messages_received_user_id ON received_messages (receiver_user_id);
+CREATE INDEX idx_received_messages_message_id_receiver_user_id ON received_messages (message_id, receiver_user_id);
+
+
+CREATE TABLE blocked_users (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
+    blocked_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
+    date_and_time_blocked TIMESTAMPTZ NOT NULL,
+    UNIQUE(user_id, blocked_user_id)
+);
+
+CREATE INDEX idx_blocked_users_user_id ON blocked_users (user_id);
+CREATE INDEX idx_blocked_users_blocked_user_id ON blocked_users (blocked_user_id);
+CREATE INDEX idx_blocked_users_user_id_blocked_user_id ON blocked_users (user_id, blocked_user_id);

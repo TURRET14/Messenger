@@ -4,6 +4,7 @@ import minio
 import redis
 
 from backend.storage import *
+from models import *
 import service
 import backend.routers.dependencies
 from websocket_listeners_router import message_websocket_attachments_router
@@ -11,7 +12,7 @@ from websocket_listeners_router import message_websocket_attachments_router
 message_attachments_router = fastapi.APIRouter()
 message_attachments_router.include_router(message_websocket_attachments_router)
 
-@message_attachments_router.get("/chats/id/{chat_id}/messages/id/{message_id}/attachments", response_class = fastapi.responses.JSONResponse)
+@message_attachments_router.get("/chats/id/{chat_id}/messages/id/{message_id}/attachments", response_class = fastapi.responses.JSONResponse, response_model = list[MessageAttachmentModel])
 async def get_message_attachments_list(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),

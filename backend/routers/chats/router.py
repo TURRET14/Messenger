@@ -5,6 +5,7 @@ import sqlalchemy.orm
 
 from backend.storage import *
 from models import *
+from backend.routers.common_models import *
 from backend.routers.messages.models import MessageResponseModel
 import service
 import backend.routers.dependencies
@@ -175,3 +176,23 @@ async def delete_chat(
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.delete_chat(selected_chat, current_user, minio_client, redis_client, db)
+
+
+@chats_router.post("/chats/communities", response_class = fastapi.responses.JSONResponse)
+async def create_community(
+    data: GroupChatModel = fastapi.Body(),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.routers.chats.service.create_community(data, current_user, redis_client, db)
+
+
+@chats_router.get("/chats/id/{chat_id}/messages/id/{message_id}/discussion")
+async def get_discussion_by_community_message_id(
+    selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
+    selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.routers.chats.service.get_discussion_by_community_message_id(selected_chat, selected_message, current_user, db)

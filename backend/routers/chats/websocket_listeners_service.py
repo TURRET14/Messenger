@@ -13,7 +13,7 @@ async def websocket_chats_post_subscriber(
     pubsub = redis_client.pubsub()
     pubsub.subscribe("chats_post")
     for selected_chat_with_receivers in pubsub.listen():
-        data: ChatWithReceiversModel = ChatWithReceiversModel.model_validate(json.loads(selected_chat_with_receivers))
+        data: ChatWithReceiversModel = ChatWithReceiversModel.model_validate(selected_chat_with_receivers)
         asyncio.run(messages_websocket_connection_manager.chats_post_update(data, True))
 
 
