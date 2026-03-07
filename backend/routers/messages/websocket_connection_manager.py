@@ -55,7 +55,8 @@ class MessagesWebsocketConnectionManager:
                 sender_username = sender.username,
                 sender_name = sender.name,
                 sender_surname = sender.surname,
-                sender_second_name = sender.second_name)))
+                sender_second_name = sender.second_name,
+                reply_message_id = selected_message.reply_message_id)))
 
 
     async def messages_delete(

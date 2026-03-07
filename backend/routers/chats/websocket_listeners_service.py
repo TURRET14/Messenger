@@ -14,7 +14,7 @@ async def websocket_chats_post_subscriber(
     pubsub.subscribe("chats_post")
     for selected_chat_with_receivers in pubsub.listen():
         data: ChatWithReceiversModel = ChatWithReceiversModel.model_validate(selected_chat_with_receivers)
-        asyncio.run(messages_websocket_connection_manager.chats_post_update(data, True))
+        asyncio.create_task(messages_websocket_connection_manager.chats_post_update(data, True))
 
 
 async def websocket_chats_put_subscriber(
@@ -25,7 +25,7 @@ async def websocket_chats_put_subscriber(
     pubsub.subscribe("chats_put")
     for selected_chat_with_receivers in pubsub.listen():
         data: ChatWithReceiversModel = ChatWithReceiversModel.model_validate(json.loads(selected_chat_with_receivers))
-        asyncio.run(messages_websocket_connection_manager.chats_post_update(data, False))
+        asyncio.create_task(messages_websocket_connection_manager.chats_post_update(data, False))
 
 
 async def websocket_chats_delete_subscriber(
@@ -36,4 +36,4 @@ async def websocket_chats_delete_subscriber(
     pubsub.subscribe("chats_delete")
     for selected_chat_with_receivers in pubsub.listen():
         data: ChatWithReceiversModel = ChatWithReceiversModel.model_validate(json.loads(selected_chat_with_receivers))
-        asyncio.run(messages_websocket_connection_manager.chats_delete(data))
+        asyncio.create_task(messages_websocket_connection_manager.chats_delete(data))

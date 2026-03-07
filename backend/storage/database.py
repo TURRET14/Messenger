@@ -155,7 +155,7 @@ Base.metadata.create_all(db_engine)
 session_maker: sqlalchemy.orm.session.sessionmaker = sqlalchemy.orm.sessionmaker(bind=db_engine)
 
 
-def get_db():
+async def get_db():
     db = session_maker()
     try:
         yield db

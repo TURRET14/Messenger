@@ -9,5 +9,5 @@ class RedisClient:
 redis_client: RedisClient = RedisClient("redis", os.getenv("REDIS_PORT"), os.getenv("REDIS_PASSWORD"))
 
 
-def get_redis_client() -> redis.Redis:
+async def get_redis_client() -> redis.Redis:
     return redis_client.client

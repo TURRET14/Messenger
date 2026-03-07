@@ -33,7 +33,7 @@ async def websocket_connection_body(
 @chats_websockets.websocket("/chats/post")
 async def websocket_chats_post(
     websocket: fastapi.WebSocket,
-    messages_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_messages_websocket_connection_manager),
+    messages_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_chats_websocket_connection_manager),
     selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user)):
 
     await websocket_connection_body(websocket, messages_websocket_connection_manager.chats_post_websockets, selected_user)
@@ -42,7 +42,7 @@ async def websocket_chats_post(
 @chats_websockets.websocket("/chats/put")
 async def websocket_chats_put(
     websocket: fastapi.WebSocket,
-    messages_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_messages_websocket_connection_manager),
+    messages_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_chats_websocket_connection_manager),
     selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user)):
 
     await websocket_connection_body(websocket, messages_websocket_connection_manager.chats_put_websockets, selected_user)
@@ -51,7 +51,7 @@ async def websocket_chats_put(
 @chats_websockets.websocket("/chats/delete")
 async def websocket_chats_delete(
     websocket: fastapi.WebSocket,
-    messages_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_messages_websocket_connection_manager),
+    messages_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.get_chats_websocket_connection_manager),
     selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user)):
 
     await websocket_connection_body(websocket, messages_websocket_connection_manager.chats_delete_websockets, selected_user)

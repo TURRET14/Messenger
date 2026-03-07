@@ -128,7 +128,7 @@ async def add_message_attachment_file(
     db.commit()
     db.refresh(new_attachment)
 
-    asyncio.run(redis_client.publish("message_attachments_post", MessageAttachmentModel(message_attachment_id = new_attachment.id, chat_id = selected_chat.id, message_id = selected_message.id).model_dump_json()))
+    asyncio.create_task(redis_client.publish("message_attachments_post", MessageAttachmentModel(message_attachment_id = new_attachment.id, chat_id = selected_chat.id, message_id = selected_message.id).model_dump_json()))
 
     return fastapi.responses.JSONResponse({"id": new_attachment.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -163,7 +163,7 @@ async def delete_message_attachment_file(
 
     minio_client.remove_object("messages:attachments", selected_attachment.attachment_file_path)
 
-    asyncio.run(redis_client.publish("message_attachments_delete", MessageAttachmentModel(message_attachment_id = selected_attachment.id, chat_id = selected_chat.id, message_id = selected_message.id).model_dump_json()))
+    asyncio.create_task(redis_client.publish("message_attachments_delete", MessageAttachmentModel(message_attachment_id = selected_attachment.id, chat_id = selected_chat.id, message_id = selected_message.id).model_dump_json()))
 
     db.delete(selected_attachment)
     db.commit()

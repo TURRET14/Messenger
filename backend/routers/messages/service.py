@@ -122,7 +122,7 @@ async def post_message(
         db.add(new_discussion)
         db.commit()
 
-    asyncio.run(redis_client.publish("messages_post", new_message.id))
+    asyncio.create_task(redis_client.publish("messages_post", new_message.id))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
@@ -155,7 +155,7 @@ async def delete_message(
     elif selected_chat.chat_kind == ChatKind.wall and selected_chat.owner_user_id != selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
-    asyncio.run(redis_client.publish("messages_delete", json.dumps(MessageDeleteModel(id = selected_message.id, chat_id = selected_message.chat_id))))
+    asyncio.create_task(redis_client.publish("messages_delete", json.dumps(MessageDeleteModel(id = selected_message.id, chat_id = selected_message.chat_id))))
 
     db.delete(selected_message)
     db.commit()
@@ -200,7 +200,7 @@ async def update_message(
     selected_message.reply_message_id = data.reply_message_id
     db.commit()
 
-    asyncio.run(redis_client.publish("messages_update", selected_message.id))
+    asyncio.create_task(redis_client.publish("messages_update", selected_message.id))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 

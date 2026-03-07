@@ -198,7 +198,7 @@ async def create_or_join_private_chat(
         db.add(second_chat_user)
         db.commit()
 
-        asyncio.run(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user, friend_user], is_avatar_changed = False))))
+        asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user, friend_user], is_avatar_changed = False))))
 
         return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
     else:
@@ -208,7 +208,7 @@ async def create_or_join_private_chat(
             private_chat.is_read_only = False
             db.commit()
 
-            asyncio.run(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = private_chat, receivers = [selected_user], is_avatar_changed = False))))
+            asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = private_chat, receivers = [selected_user], is_avatar_changed = False))))
 
             return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_200_OK)
         else:
@@ -243,7 +243,7 @@ async def create_group_chat(
     db.commit()
     db.refresh(membership)
 
-    asyncio.run(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = True))))
+    asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = True))))
 
     return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -285,7 +285,7 @@ async def update_chat_avatar(
     selected_chat.avatar_photo_path = minio_file_name
     db.commit()
 
-    asyncio.run(redis_client.publish("chats_put", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
+    asyncio.create_task(redis_client.publish("chats_put", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code=fastapi.status.HTTP_200_OK)
 
@@ -306,7 +306,7 @@ async def update_chat_name(
     selected_chat.name = data.name
     db.commit()
 
-    asyncio.run(redis_client.publish("chats_put", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
+    asyncio.create_task(redis_client.publish("chats_put", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
@@ -414,7 +414,7 @@ async def add_chat_user(
     db.add(membership)
     db.commit()
 
-    asyncio.run(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [new_user], is_avatar_changed = False))))
+    asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [new_user], is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -442,7 +442,7 @@ async def delete_chat_user(
     db.delete(membership)
     db.commit()
 
-    asyncio.run(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [chat_user], is_avatar_changed = False))))
+    asyncio.create_task(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [chat_user], is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code=fastapi.status.HTTP_200_OK)
 
@@ -465,7 +465,7 @@ async def leave_chat(
 
     db.commit()
 
-    asyncio.run(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [selected_user], is_avatar_changed = False))))
+    asyncio.create_task(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [selected_user], is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
@@ -489,7 +489,7 @@ async def delete_chat(
     db.delete(selected_chat)
     db.commit()
 
-    asyncio.run(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
+    asyncio.create_task(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
@@ -520,14 +520,14 @@ async def create_community(
     db.commit()
     db.refresh(membership)
 
-    asyncio.run(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = True))))
+    asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = True))))
 
     return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def get_discussion_by_community_message_id(
-    selected_message: Message,
     selected_chat: Chat,
+    selected_message: Message,
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
@@ -552,3 +552,25 @@ async def get_discussion_by_community_message_id(
     .scalars().first())
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(message_discussion), status_code = fastapi.status.HTTP_200_OK)
+
+
+async def get_user_wall(
+    wall_user: User,
+    selected_user: User,
+    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+
+    wall: sqlalchemy.RowMapping = (db.execute(sqlalchemy.select(
+    Chat.id,
+    Chat.chat_kind,
+    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(User.username).select_from(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == Chat.id, ChatUser.chat_user_id != selected_user.id)).join(User, User.id == ChatUser.chat_user_id))),
+    Chat.owner_user_id,
+    Chat.date_and_time_created,
+    Chat.is_read_only)
+    .select_from(Chat)
+    .where(sqlalchemy.and_(Chat.owner_user_id == wall_user.id, Chat.chat_kind == ChatKind.wall)))
+    .mappings().first())
+
+    if not wall:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(wall), status_code = fastapi.status.HTTP_200_OK)

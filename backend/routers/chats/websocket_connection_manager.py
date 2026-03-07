@@ -44,7 +44,7 @@ class ChatsWebsocketConnectionManager:
                 await websocket.send_json(fastapi.encoders.jsonable_encoder(IDModel(id = data.chat.id)))
 
 
-messages_websocket_connection_manager_instance: ChatsWebsocketConnectionManager = ChatsWebsocketConnectionManager()
+chats_websocket_connection_manager_instance: ChatsWebsocketConnectionManager = ChatsWebsocketConnectionManager()
 
-async def get_messages_websocket_connection_manager():
-    return messages_websocket_connection_manager_instance
+async def get_chats_websocket_connection_manager():
+    return chats_websocket_connection_manager_instance

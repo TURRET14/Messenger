@@ -1,0 +1,11 @@
+fastapi
+pydantic
+sqlalchemy
+psycopg
+uvicorn
+email-validator
+redis
+minio
+argon2-cffi
+python-dotenv
+booktype

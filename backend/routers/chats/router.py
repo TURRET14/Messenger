@@ -196,3 +196,12 @@ async def get_discussion_by_community_message_id(
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.get_discussion_by_community_message_id(selected_chat, selected_message, current_user, db)
+
+
+@chats_router.get("/chats/walls/users/id/{user_id}", response_class = fastapi.responses.JSONResponse, response_model = ChatResponseModel)
+async def get_user_wall(
+    wall_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_path_user_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.routers.chats.service.get_user_wall(wall_user, current_user, db)

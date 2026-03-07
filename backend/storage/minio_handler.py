@@ -13,5 +13,5 @@ class MinioClient:
 
 minio_client: MinioClient = MinioClient(os.getenv("MINIO_ENDPOINT"), os.getenv("MINIO_ACCESS_KEY"), os.getenv("MINIO_SECRET_KEY"))
 
-def get_minio_client() -> minio.Minio:
+async def get_minio_client() -> minio.Minio:
     return minio_client.client
