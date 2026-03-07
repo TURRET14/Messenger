@@ -1,9 +1,9 @@
 import fastapi
 import fastapi.encoders
+import sqlalchemy.orm
 
 from models import *
 from backend.routers.common_models import *
-
 from backend.storage import *
 
 class ChatsWebsocketConnectionManager:
@@ -11,12 +11,17 @@ class ChatsWebsocketConnectionManager:
     chats_put_websockets: dict[User, set[fastapi.WebSocket]] = {}
     chats_delete_websockets: dict[User, set[fastapi.WebSocket]] = {}
 
+    chat_users_post_websockets: dict[User, dict[Chat, set[fastapi.WebSocket]]] = {}
+    chat_users_put_websockets: dict[User, dict[Chat, set[fastapi.WebSocket]]] = {}
+    chat_users_delete_websockets: dict[User, dict[Chat, set[fastapi.WebSocket]]] = {}
+
     async def chats_post_update(
         self,
-        data: ChatWithReceiversModel,
-        is_post: bool):
+        chat_with_receivers: ChatWithReceiversModel,
+        is_post: bool,
+        db: sqlalchemy.orm.session.Session):
 
-        for receiver in data.receivers:
+        for receiver in db.execute(sqlalchemy.select(User).where(User.id.in_(chat_with_receivers.receivers))).scalars().all():
             websockets_container: dict[User, set[fastapi.WebSocket]]
 
             if is_post:
@@ -25,23 +30,51 @@ class ChatsWebsocketConnectionManager:
                 websockets_container = self.chats_put_websockets
 
             for websocket in websockets_container[receiver]:
-                await websocket.send_json(fastapi.encoders.jsonable_encoder(ChatResponseModelWithAvatarData(
-                id = data.chat.id,
-                chat_kind = data.chat.chat_kind,
-                name = data.chat.name,
-                owner_user_id = data.chat.owner_user_id,
-                date_and_time_created = data.chat.date_and_time_created,
-                is_read_only = data.chat.is_read_only,
-                is_avatar_changed = data.is_avatar_changed)))
+                await websocket.send_json(fastapi.encoders.jsonable_encoder(ChatIDModelWithAvatarData(
+                id = chat_with_receivers.chat_id,
+                is_avatar_changed = chat_with_receivers.is_avatar_changed)))
 
 
     async def chats_delete(
         self,
-        data: ChatWithReceiversModel):
+        chat_with_receivers: ChatWithReceiversModel,
+        db: sqlalchemy.orm.session.Session):
 
-        for receiver in data.receivers:
+        for receiver in db.execute(sqlalchemy.select(User).where(User.id.in_(chat_with_receivers.receivers))).scalars().all():
             for websocket in self.chats_delete_websockets[receiver]:
-                await websocket.send_json(fastapi.encoders.jsonable_encoder(IDModel(id = data.chat.id)))
+                await websocket.send_json(fastapi.encoders.jsonable_encoder(ChatIDModelWithAvatarData(
+                id = chat_with_receivers.chat_id,
+                is_avatar_changed = chat_with_receivers.is_avatar_changed)))
+
+
+    async def chat_users_post_update(
+        self,
+        chat_user_with_receivers: ChatUserWithReceiversModel,
+        is_post: bool,
+        db: sqlalchemy.orm.session.Session):
+
+        for receiver in db.execute(sqlalchemy.select(User).where(User.id.in_(chat_user_with_receivers.receivers))).scalars().all():
+            websockets_container: dict[User, dict[Chat, set[fastapi.WebSocket]]]
+
+            if is_post:
+                websockets_container = self.chat_users_post_websockets
+            else:
+                websockets_container = self.chat_users_put_websockets
+
+            for websocket in websockets_container[receiver][db.execute(sqlalchemy.select(Chat).where(Chat.id == chat_user_with_receivers.chat_id)).scalars().first()]:
+                await websocket.send_json(fastapi.encoders.jsonable_encoder(IDModel(
+                id = chat_user_with_receivers.id)))
+
+
+    async def chat_users_delete(
+        self,
+        chat_user_with_receivers: ChatUserWithReceiversModel,
+        db: sqlalchemy.orm.session.Session):
+
+        for receiver in db.execute(sqlalchemy.select(User).where(User.id.in_(chat_user_with_receivers.receivers))).scalars().all():
+            for websocket in self.chat_users_delete_websockets[receiver][db.execute(sqlalchemy.select(Chat).where(Chat.id == chat_user_with_receivers.chat_id)).scalars().first()]:
+                await websocket.send_json(fastapi.encoders.jsonable_encoder(IDModel(
+                id = chat_user_with_receivers.id)))
 
 
 chats_websocket_connection_manager_instance: ChatsWebsocketConnectionManager = ChatsWebsocketConnectionManager()

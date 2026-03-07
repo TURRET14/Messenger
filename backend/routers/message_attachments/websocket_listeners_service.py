@@ -15,7 +15,7 @@ async def websocket_message_attachments_post_subscriber(
     pubsub = redis_client.pubsub()
     pubsub.subscribe("message_attachments_post")
     for selected_message_attachment_data in pubsub.listen():
-        message_attachment_data: MessageAttachmentModel = MessageAttachmentModel.model_validate(json.loads(selected_message_attachment_data))
+        message_attachment_data: MessageAttachmentModelWithReceivers = MessageAttachmentModelWithReceivers.model_validate(json.loads(selected_message_attachment_data))
         asyncio.create_task(messages_websocket_connection_manager.message_attachments_post(message_attachment_data, db))
 
 
@@ -27,5 +27,5 @@ async def websocket_message_attachments_delete_subscriber(
     pubsub = redis_client.pubsub()
     pubsub.subscribe("message_attachments_delete")
     for selected_message_attachment_data in pubsub.listen():
-        message_attachment_data = MessageAttachmentModel.model_validate(json.loads(selected_message_attachment_data))
+        message_attachment_data: MessageAttachmentModelWithReceivers = MessageAttachmentModelWithReceivers.model_validate(json.loads(selected_message_attachment_data))
         asyncio.create_task(messages_websocket_connection_manager.message_attachments_delete(message_attachment_data, db))

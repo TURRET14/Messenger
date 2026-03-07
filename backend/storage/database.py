@@ -2,7 +2,9 @@ import enum
 import os
 from datetime import datetime, date
 import sqlalchemy.orm
+import sqlalchemy.event
 import sqlalchemy.dialects
+import database_triggers
 
 class Gender(enum.Enum):
     male = "Male"
@@ -148,6 +150,17 @@ class BlockedUser(Base):
                     sqlalchemy.Index('idx_blocked_users_blocked_user_id', 'blocked_user_id'),
                     sqlalchemy.Index('idx_blocked_users_user_id_blocked_user_id', 'user_id', 'blocked_user_id'),)
 
+
+sqlalchemy.event.listen(ChatUser, "after_insert", database_triggers.chat_user_after_insert)
+sqlalchemy.event.listen(ChatUser, "after_delete", database_triggers.chat_user_after_delete)
+sqlalchemy.event.listen(ChatUser, "after_update", database_triggers.chat_user_after_update)
+sqlalchemy.event.listen(Chat, "after_update", database_triggers.chat_after_update)
+sqlalchemy.event.listen(Message, "after_insert", database_triggers.message_after_insert)
+sqlalchemy.event.listen(Message, "after_update", database_triggers.message_after_update)
+sqlalchemy.event.listen(Message, "after_delete", database_triggers.message_after_delete)
+sqlalchemy.event.listen(ReceivedMessage, "after_insert", database_triggers.message_read_mark_after_insert)
+sqlalchemy.event.listen(ReceivedMessage, "after_insert", database_triggers.message_attachment_after_insert)
+sqlalchemy.event.listen(ReceivedMessage, "after_delete", database_triggers.message_attachment_after_delete)
 
 database_url: str = "postgresql://" + os.getenv("POSTGRES_USER") + ":" + os.getenv("POSTGRES_PASSWORD") + "@" + os.getenv("POSTGRES_HOST") + ":" + os.getenv("POSTGRES_PORT") + "/" + os.getenv("POSTGRES_DB")
 db_engine: sqlalchemy.Engine = sqlalchemy.create_engine(database_url)

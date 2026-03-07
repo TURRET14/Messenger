@@ -2,6 +2,7 @@ import pydantic
 import datetime
 
 import sqlalchemy
+from backend.routers.common_models import *
 
 import backend.storage
 
@@ -36,10 +37,18 @@ class ChatUserModel(pydantic.BaseModel):
 
 
 class ChatWithReceiversModel(pydantic.BaseModel):
-    chat: backend.storage.Chat = pydantic.Field()
-    receivers: list[backend.storage.User] = pydantic.Field()
+    chat_id: int = pydantic.Field(ge = 0)
+    receivers: list[int] = pydantic.Field()
     is_avatar_changed: bool = pydantic.Field()
+    class Config:
+        orm_mode = True
 
 
-class ChatResponseModelWithAvatarData(ChatResponseModel):
+class ChatUserWithReceiversModel(pydantic.BaseModel):
+    id: int = pydantic.Field(ge = 0)
+    chat_id: int = pydantic.Field(ge = 0)
+    receivers: list[int] = pydantic.Field()
+
+
+class ChatIDModelWithAvatarData(IDModel):
     is_avatar_changed: bool = pydantic.Field()

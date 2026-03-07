@@ -87,3 +87,15 @@ async def get_message_attachment_by_id(
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
     else:
         return selected_attachment
+
+
+async def get_chat_user_by_path_id(
+    chat_user_id: int = fastapi.Path(ge = 0),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> ChatUser:
+
+    chat_user: ChatUser = db.execute(sqlalchemy.select(ChatUser).where(ChatUser.id == chat_user_id)).scalars().first()
+
+    if not chat_user:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
+    else:
+        return chat_user

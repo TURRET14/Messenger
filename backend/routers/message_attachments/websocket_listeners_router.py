@@ -26,7 +26,7 @@ async def websocket_message_attachments_delete_listener(
 
 
 @contextlib.asynccontextmanager
-async def on_startup(app: fastapi.FastAPI):
+async def on_startup(app):
     post_task = asyncio.create_task(websocket_message_attachments_post_listener(await get_db(), await redis_handler.get_redis_client(), await websocket_connection_manager.get_websocket_connection_manager()))
     delete_task = asyncio.create_task(websocket_message_attachments_delete_listener(await get_db(), await websocket_connection_manager.get_websocket_connection_manager()))
 

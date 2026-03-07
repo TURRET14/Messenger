@@ -73,3 +73,12 @@ async def search_messages_in_chat(
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.messages.service.search_messages_in_chat(offset_multiplier, message_text, selected_chat, current_user, db)
+
+@messages_router.post("/chats/id/{chat_id}/messages/id/{message_id}/read", response_class = fastapi.responses.JSONResponse)
+async def mark_message_as_read(
+    selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
+    selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.routers.messages.service.mark_message_as_read(selected_chat, selected_message, current_user, db)

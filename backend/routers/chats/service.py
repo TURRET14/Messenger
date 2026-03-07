@@ -198,8 +198,6 @@ async def create_or_join_private_chat(
         db.add(second_chat_user)
         db.commit()
 
-        asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user, friend_user], is_avatar_changed = False))))
-
         return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
     else:
         membership: ChatUser = await utils.get_user_chat_membership(private_chat, selected_user, db)
@@ -208,13 +206,9 @@ async def create_or_join_private_chat(
             private_chat.is_read_only = False
             db.commit()
 
-            asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = private_chat, receivers = [selected_user], is_avatar_changed = False))))
-
             return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_200_OK)
         else:
             raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
-
-
 
 
 async def create_group_chat(
@@ -242,8 +236,6 @@ async def create_group_chat(
     db.add(membership)
     db.commit()
     db.refresh(membership)
-
-    asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = True))))
 
     return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -285,8 +277,6 @@ async def update_chat_avatar(
     selected_chat.avatar_photo_path = minio_file_name
     db.commit()
 
-    asyncio.create_task(redis_client.publish("chats_put", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
-
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code=fastapi.status.HTTP_200_OK)
 
 
@@ -305,8 +295,6 @@ async def update_chat_name(
 
     selected_chat.name = data.name
     db.commit()
-
-    asyncio.create_task(redis_client.publish("chats_put", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
@@ -414,8 +402,6 @@ async def add_chat_user(
     db.add(membership)
     db.commit()
 
-    asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [new_user], is_avatar_changed = False))))
-
     return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_200_OK)
 
 
@@ -442,8 +428,6 @@ async def delete_chat_user(
     db.delete(membership)
     db.commit()
 
-    asyncio.create_task(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [chat_user], is_avatar_changed = False))))
-
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code=fastapi.status.HTTP_200_OK)
 
 
@@ -464,8 +448,6 @@ async def leave_chat(
         db.delete(membership)
 
     db.commit()
-
-    asyncio.create_task(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = [selected_user], is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
@@ -488,8 +470,6 @@ async def delete_chat(
 
     db.delete(selected_chat)
     db.commit()
-
-    asyncio.create_task(redis_client.publish("chats_delete", json.dumps(ChatWithReceiversModel(chat = selected_chat, receivers = list(db.execute(sqlalchemy.select(User).select_from(ChatUser).where(ChatUser.chat_id == selected_chat.id).join(User, User.id == ChatUser.chat_user_id)).scalars().all()), is_avatar_changed = False))))
 
     return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
 
@@ -519,8 +499,6 @@ async def create_community(
     db.add(membership)
     db.commit()
     db.refresh(membership)
-
-    asyncio.create_task(redis_client.publish("chats_post", json.dumps(ChatWithReceiversModel(chat = new_chat, receivers = [selected_user], is_avatar_changed = True))))
 
     return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -574,3 +552,30 @@ async def get_user_wall(
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(wall), status_code = fastapi.status.HTTP_200_OK)
+
+
+async def get_chat_user(
+    selected_chat: Chat,
+    selected_chat_user: ChatUser,
+    selected_user: User,
+    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+
+    if not await utils.get_chat_user_membership(selected_chat, selected_user, db):
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+
+    if selected_chat_user.chat_id != selected_chat.id:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+
+    user: User = db.execute(sqlalchemy.select(User).where(User.id == selected_chat_user.chat_user_id)).scalars().first()
+
+    chat_user: ChatUserModel = ChatUserModel(
+    id = selected_chat_user.id,
+    chat_id = selected_chat_user.chat_id,
+    username = user.username,
+    name = user.name,
+    surname = user.surname,
+    second_name = user.second_name,
+    date_and_time_added = selected_chat_user.date_and_time_added,
+    chat_role = selected_chat_user.chat_role)
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chat_user), status_code = fastapi.status.HTTP_200_OK)
