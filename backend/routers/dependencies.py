@@ -1,7 +1,7 @@
 from datetime import datetime
 
 import fastapi
-import redis
+import redis.asyncio
 import sqlalchemy
 import sqlalchemy.orm
 
@@ -13,7 +13,7 @@ import backend.routers.return_details
 async def get_session_user(
     session_id: str = fastapi.Cookie(),
     db: sqlalchemy.orm.Session = fastapi.Depends(database.get_db),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> User:
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> User:
 
     session: dict[str, str] | None = await redis_client.hgetall(f"session_id:{session_id}")
     if session:

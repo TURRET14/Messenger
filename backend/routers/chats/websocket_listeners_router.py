@@ -1,5 +1,5 @@
 import fastapi
-import redis
+import redis.asyncio
 import asyncio
 import contextlib
 import sqlalchemy.orm
@@ -12,7 +12,7 @@ import backend.routers.dependencies
 
 
 async def websocket_chats_post_listener(
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session,
     chats_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager):
 
@@ -21,7 +21,7 @@ async def websocket_chats_post_listener(
 
 
 async def websocket_chats_put_listener(
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session,
     chats_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager):
 
@@ -30,7 +30,7 @@ async def websocket_chats_put_listener(
 
 
 async def websocket_chats_delete_listener(
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session,
     chats_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager):
 
@@ -38,7 +38,7 @@ async def websocket_chats_delete_listener(
 
 
 async def websocket_chat_users_post_listener(
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session,
     chats_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager):
 
@@ -46,7 +46,7 @@ async def websocket_chat_users_post_listener(
 
 
 async def websocket_chat_users_put_listener(
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session,
     chats_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager):
 
@@ -54,7 +54,7 @@ async def websocket_chat_users_put_listener(
 
 
 async def websocket_chat_users_delete_listener(
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session,
     chats_websocket_connection_manager: websocket_connection_manager.ChatsWebsocketConnectionManager):
 
@@ -71,6 +71,7 @@ async def on_startup(app):
     chat_user_delete_task = asyncio.create_task(websocket_chat_users_delete_listener(await redis_handler.get_redis_client(), await database.get_db(), await websocket_connection_manager.get_chats_websocket_connection_manager()))
 
     yield
+
     post_task.cancel()
     put_task.cancel()
     delete_task.cancel()

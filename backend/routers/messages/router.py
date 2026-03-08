@@ -1,6 +1,6 @@
 import fastapi
 import sqlalchemy.orm
-import redis
+import redis.asyncio
 
 from models import *
 from backend.storage import *
@@ -37,7 +37,7 @@ async def post_message(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     data: MessageModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.messages.service.post_message(selected_chat, data, current_user, redis_client, db)
@@ -48,7 +48,7 @@ async def delete_message(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.messages.service.delete_message(selected_chat, selected_message, current_user, redis_client, db)
@@ -59,7 +59,7 @@ async def update_message(
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
     data: MessageModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.messages.service.update_message(selected_chat, selected_message, data, current_user, redis_client, db)

@@ -1,6 +1,6 @@
 import fastapi
 import fastapi.encoders
-import redis
+import redis.asyncio
 import sqlalchemy.orm
 from typing import Sequence
 

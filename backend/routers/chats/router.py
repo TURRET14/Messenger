@@ -1,6 +1,6 @@
 import fastapi
 import minio
-import redis
+import redis.asyncio
 import sqlalchemy.orm
 
 from backend.storage import *
@@ -65,7 +65,7 @@ async def get_chat_avatar(
 async def create_or_join_private_chat(
     friend_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.create_or_join_private_chat(friend_user, current_user, redis_client, db)
@@ -75,7 +75,7 @@ async def create_or_join_private_chat(
 async def create_group_chat(
     data: GroupChatModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.create_group_chat(data, current_user, redis_client, db)
@@ -87,7 +87,7 @@ async def update_chat_avatar(
     file: fastapi.UploadFile = fastapi.File(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: minio.Minio = fastapi.Depends(minio_handler.get_minio_client),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.update_chat_avatar(selected_chat, file, current_user, minio_client, redis_client, db)
@@ -98,7 +98,7 @@ async def update_chat_name(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     data: GroupChatModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.update_chat_name(selected_chat, data, current_user, redis_client, db)
@@ -140,7 +140,7 @@ async def add_chat_user(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     new_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.add_chat_user(selected_chat, new_user, current_user, redis_client, db)
@@ -151,7 +151,7 @@ async def delete_chat_user(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     chat_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_path_user_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.delete_chat_user(selected_chat, chat_user, current_user, redis_client, db)
@@ -161,7 +161,7 @@ async def delete_chat_user(
 async def leave_chat(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.leave_chat(selected_chat, current_user, redis_client, db)
@@ -172,7 +172,7 @@ async def delete_chat(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: minio.Minio = fastapi.Depends(minio_handler.get_minio_client),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.delete_chat(selected_chat, current_user, minio_client, redis_client, db)
@@ -182,7 +182,7 @@ async def delete_chat(
 async def create_community(
     data: GroupChatModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.create_community(data, current_user, redis_client, db)

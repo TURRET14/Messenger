@@ -1,6 +1,6 @@
 import fastapi
 import sqlalchemy.orm
-import redis
+import redis.asyncio
 import asyncio
 import contextlib
 
@@ -11,7 +11,7 @@ import websocket_connection_manager
 
 async def websocket_message_attachments_post_listener(
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client),
     messages_websocket_connection_manager: websocket_connection_manager.MessageAttachmentsWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.MessageAttachmentsWebsocketConnectionManager)):
 
     await websocket_listeners_service.websocket_message_attachments_post_subscriber(db, redis_client, messages_websocket_connection_manager)
@@ -19,7 +19,7 @@ async def websocket_message_attachments_post_listener(
 
 async def websocket_message_attachments_delete_listener(
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client),
     messages_websocket_connection_manager: websocket_connection_manager.MessageAttachmentsWebsocketConnectionManager = fastapi.Depends(websocket_connection_manager.MessageAttachmentsWebsocketConnectionManager)):
 
     await websocket_listeners_service.websocket_message_attachments_delete_subscriber(db, redis_client, messages_websocket_connection_manager)

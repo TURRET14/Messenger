@@ -9,7 +9,7 @@ import sqlalchemy
 import sqlalchemy.orm
 import pathlib
 import io
-import redis
+import redis.asyncio
 import secrets
 import asyncio
 
@@ -58,7 +58,7 @@ async def login(
     data: LoginModel,
     response: fastapi.responses.Response,
     db: sqlalchemy.orm.session.Session,
-    redis_client: redis.Redis) -> fastapi.responses.JSONResponse:
+    redis_client: redis.asyncio.Redis) -> fastapi.responses.JSONResponse:
 
     selected_user: User = (db.execute(
     sqlalchemy.select(User)
@@ -92,7 +92,7 @@ async def login(
 async def delete_session(
     data: SessionModel,
     selected_user: User,
-    redis_client: redis.Redis) -> fastapi.responses.JSONResponse:
+    redis_client: redis.asyncio.Redis) -> fastapi.responses.JSONResponse:
 
     # Удаление сессии из Redis (Удаление сессии из словаря сессий + Удаление значения сессии из множества сессий пользователя)
     # Сначала проверяется, принадлежит ли сессия пользователю
@@ -112,7 +112,7 @@ async def delete_session(
 
 async def delete_all_sessions(
     selected_user: User,
-    redis_client: redis.Redis) -> fastapi.responses.JSONResponse:
+    redis_client: redis.asyncio.Redis) -> fastapi.responses.JSONResponse:
 
     # Удаление всех сессий пользователя из Redis (Удаление всех сессий пользователя из словаря сессий + Удаление множества сессий пользователя)
     session_list: set = await redis_client.smembers(f"user:{selected_user.id}:sessions")

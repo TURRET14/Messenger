@@ -1,7 +1,7 @@
 import fastapi
 import minio
 import sqlalchemy.orm
-import redis
+import redis.asyncio
 
 from models import *
 import service
@@ -25,7 +25,7 @@ async def login(
     data: LoginModel = fastapi.Body(),
     response: fastapi.responses.Response = fastapi.responses.Response(),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> fastapi.responses.JSONResponse:
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.users.service.login(data, response, db, redis_client)
 
@@ -34,7 +34,7 @@ async def login(
 async def delete_session(
     data: SessionModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> fastapi.responses.JSONResponse:
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.users.service.delete_session(data, current_user, redis_client)
 
@@ -42,7 +42,7 @@ async def delete_session(
 @users_router.delete("/users/me/sessions/all", response_class = fastapi.responses.JSONResponse)
 async def delete_all_sessions(
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> fastapi.responses.JSONResponse:
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.users.service.delete_all_sessions(current_user, redis_client)
 

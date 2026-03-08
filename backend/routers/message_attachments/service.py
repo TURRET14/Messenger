@@ -2,7 +2,7 @@ import json
 
 import fastapi
 import fastapi.encoders
-import redis
+import redis.asyncio
 import sqlalchemy.orm
 import minio
 import pathlib
@@ -88,7 +88,7 @@ async def add_message_attachment_file(
     file: fastapi.UploadFile,
     selected_user: User,
     minio_client: minio.Minio,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     membership: ChatUser
@@ -137,7 +137,7 @@ async def delete_message_attachment_file(
     selected_attachment: FileAttachment,
     selected_user: User,
     minio_client: minio.Minio,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     membership: ChatUser

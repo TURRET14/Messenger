@@ -1,6 +1,6 @@
 import fastapi
 import fastapi.encoders
-import redis
+import redis.asyncio
 import sqlalchemy.orm
 import json
 import asyncio
@@ -100,7 +100,7 @@ async def post_message(
     selected_chat: Chat,
     data: MessageModel,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     membership: ChatUser | None = None
@@ -138,7 +138,7 @@ async def delete_message(
     selected_chat: Chat,
     selected_message: Message,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     membership: ChatUser | None = None
@@ -173,7 +173,7 @@ async def update_message(
     selected_message: Message,
     data: MessageModel,
     selected_user: User,
-    redis_client: redis.Redis = fastapi.Depends(redis_handler.get_redis_client),
+    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     membership: ChatUser | None = None

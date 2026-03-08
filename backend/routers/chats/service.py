@@ -1,6 +1,6 @@
 import fastapi
 import fastapi.encoders
-import redis
+import redis.asyncio
 import sqlalchemy.orm
 import minio
 import pathlib
@@ -165,7 +165,7 @@ async def get_chat_avatar(
 async def create_or_join_private_chat(
     friend_user: User,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if backend.routers.users.utils.get_user_block(selected_user, friend_user, db) or backend.routers.users.utils.get_user_block(friend_user, selected_user, db):
@@ -214,7 +214,7 @@ async def create_or_join_private_chat(
 async def create_group_chat(
     data: GroupChatModel,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     new_chat: Chat = Chat(
@@ -245,7 +245,7 @@ async def update_chat_avatar(
     file: fastapi.UploadFile,
     selected_user: User,
     minio_client: minio.Minio,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if not selected_chat.chat_kind == ChatKind.group:
@@ -284,7 +284,7 @@ async def update_chat_name(
     selected_chat: Chat,
     data: GroupChatModel,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if not selected_chat.chat_kind == ChatKind.group:
@@ -377,7 +377,7 @@ async def add_chat_user(
     selected_chat: Chat,
     new_user: User,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if selected_chat.chat_kind not in [ChatKind.group, ChatKind.community]:
@@ -409,7 +409,7 @@ async def delete_chat_user(
     selected_chat: Chat,
     chat_user: User,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if selected_chat.chat_kind not in [ChatKind.group, ChatKind.community]:
@@ -434,7 +434,7 @@ async def delete_chat_user(
 async def leave_chat(
     selected_chat: Chat,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     membership: ChatUser = await utils.get_chat_user_membership(selected_chat, selected_user, db)
@@ -456,7 +456,7 @@ async def delete_chat(
     selected_chat: Chat,
     selected_user: User,
     minio_client: minio.Minio,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     if selected_chat.chat_kind not in [ChatKind.group, ChatKind.community]:
@@ -477,7 +477,7 @@ async def delete_chat(
 async def create_community(
     data: GroupChatModel,
     selected_user: User,
-    redis_client: redis.Redis,
+    redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     new_chat: Chat = Chat(
