@@ -39,7 +39,7 @@ async def get_all_chats(
     Chat.date_and_time_created,
     Chat.is_read_only)
     .select_from(ChatUser)
-    .where(sqlalchemy.and_(ChatUser.chat_user_id == selected_user.id, ChatUser.is_active == True))
+    .where(sqlalchemy.and_(ChatUser.chat_user_id == selected_user.id))
     .join(Chat, Chat.id == ChatUser.chat_id)
     .join(subquery, subquery.c.chat_id == Chat.id)
     .order_by(subquery.c.date_and_time_sent.desc())
@@ -90,7 +90,7 @@ async def get_chat_members(
     ChatUser.date_and_time_added,
     ChatUser.chat_role)
     .select_from(ChatUser)
-    .where(sqlalchemy.and_(ChatUser.chat_id == selected_chat.id, ChatUser.is_active == True))
+    .where(sqlalchemy.and_(ChatUser.chat_id == selected_chat.id))
     .join(User, User.id == ChatUser.chat_user_id)
     .order_by(Chat.id)
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
@@ -162,7 +162,7 @@ async def get_chat_avatar(
             headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK)
 
 
-async def create_or_join_private_chat(
+async def create_private_chat(
     friend_user: User,
     selected_user: User,
     redis_client: redis.asyncio.Redis,
@@ -185,14 +185,12 @@ async def create_or_join_private_chat(
         first_chat_user: ChatUser = ChatUser(
         chat_id = new_chat.id,
         chat_user_id = selected_user.id,
-        date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-        is_active = True)
+        date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
         second_chat_user: ChatUser = ChatUser(
         chat_id = new_chat.id,
         chat_user_id = friend_user.id,
-        date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-        is_active = True)
+        date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
         db.add(first_chat_user)
         db.add(second_chat_user)
@@ -200,15 +198,7 @@ async def create_or_join_private_chat(
 
         return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
     else:
-        membership: ChatUser = await utils.get_user_chat_membership(private_chat, selected_user, db)
-        if not membership.is_active:
-            membership.is_active = True
-            private_chat.is_read_only = False
-            db.commit()
-
-            return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_200_OK)
-        else:
-            raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
 
 
 async def create_group_chat(
@@ -230,8 +220,7 @@ async def create_group_chat(
     chat_id = new_chat.id,
     chat_user_id = selected_user.id,
     date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-    chat_role = ChatRole.owner,
-    is_active = True)
+    chat_role = ChatRole.owner)
 
     db.add(membership)
     db.commit()
@@ -396,8 +385,7 @@ async def add_chat_user(
     chat_id = selected_chat.id,
     chat_user_id = new_user.id,
     date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-    chat_role = ChatRole.user,
-    is_active = True)
+    chat_role = ChatRole.user)
 
     db.add(membership)
     db.commit()
@@ -442,8 +430,7 @@ async def leave_chat(
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
     if selected_chat.chat_kind == ChatKind.private:
-        membership.is_active = False
-        selected_chat.is_read_only = True
+        db.delete(selected_chat)
     else:
         db.delete(membership)
 
@@ -493,8 +480,7 @@ async def create_community(
     chat_id = new_chat.id,
     chat_user_id = selected_user.id,
     date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-    chat_role = ChatRole.owner,
-    is_active = True)
+    chat_role = ChatRole.owner)
 
     db.add(membership)
     db.commit()

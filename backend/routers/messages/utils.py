@@ -9,7 +9,7 @@ async def get_chat_active_user_membership(
 
     membership: ChatUser = db.execute(sqlalchemy.select(ChatUser)
     .where(sqlalchemy.and_(ChatUser.chat_id == selected_chat.id,
-    ChatUser.chat_user_id == selected_user.id, ChatUser.is_active == True))).scalars().first()
+    ChatUser.chat_user_id == selected_user.id))).scalars().first()
 
     return membership
 

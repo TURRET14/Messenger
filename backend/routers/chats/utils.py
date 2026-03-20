@@ -11,7 +11,7 @@ async def get_chat_user_membership(
 
     membership: ChatUser = db.execute(sqlalchemy.select(ChatUser)
     .where(sqlalchemy.and_(ChatUser.chat_id == selected_chat.id,
-    ChatUser.chat_user_id == selected_user.id, ChatUser.is_active == True))).scalars().first()
+    ChatUser.chat_user_id == selected_user.id))).scalars().first()
 
     return membership
 
@@ -77,7 +77,7 @@ async def is_private_chat_active(
     if not private_chat or private_chat.chat_kind != ChatKind.private:
         return False
     else:
-        if db.execute(sqlalchemy.select(sqlalchemy.func.count(Chat.id)).select_from(Chat).where(Chat.id == private_chat.id).join(ChatUser, ChatUser.chat_id == Chat.id).where(ChatUser.is_active == True)).scalar() != 2:
+        if db.execute(sqlalchemy.select(sqlalchemy.func.count(Chat.id)).select_from(Chat).where(Chat.id == private_chat.id).join(ChatUser, ChatUser.chat_id == Chat.id)).scalar() != 2:
             return False
         else:
             return True
@@ -88,4 +88,4 @@ async def get_user_chat_membership(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> ChatUser:
 
-    return db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_user_id == selected_user.id, ChatUser.chat_id == private_chat.id, ChatUser.is_active == True))).scalars().first()
+    return db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_user_id == selected_user.id, ChatUser.chat_id == private_chat.id))).scalars().first()

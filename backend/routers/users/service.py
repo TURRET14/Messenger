@@ -19,7 +19,15 @@ import backend.routers.parameters
 import backend.routers.return_details
 from backend.storage import *
 import backend.routers.chats.utils
-from models import *
+from models import (
+    RegisterModel,
+    LoginModel,
+    SessionModel,
+    UserUpdateModel,
+    UserUpdateLoginModel,
+    UserUpdatePasswordModel,
+    UserResponseModel,
+    LoginResponseModel)
 import utils
 
 async def create_user(
@@ -46,10 +54,12 @@ async def create_user(
     date_and_time_registered = datetime.datetime.now(datetime.timezone.utc))
 
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
 
     user_wall: Chat = Chat(owner_user_id = new_user.id, chat_kind = ChatKind.wall)
+    db.add(user_wall)
+
+    db.commit()
+    db.refresh(new_user)
 
     return fastapi.responses.JSONResponse({"id": new_user.id}, status_code = fastapi.status.HTTP_201_CREATED)
 
@@ -78,7 +88,7 @@ async def login(
         coroutines.append(redis_client.hset(f"session:{session_id}:data",
         mapping = {"user_id": selected_user.id, "expiration_date": expiration_date}))
         coroutines.append(redis_client.expireat(f"user:{selected_user.id}:sessions", expiration_date))
-        coroutines.append(redis_client.expireat(f"user:{selected_user.id}:sessions", expiration_date))
+        coroutines.append(redis_client.expireat(f"session:{session_id}:data", expiration_date))
 
         await asyncio.gather(*coroutines)
 
@@ -98,7 +108,10 @@ async def delete_session(
     # Сначала проверяется, принадлежит ли сессия пользователю
     session: dict[str, str] = await redis_client.hgetall(f"session:{data.session_id}:data")
 
-    if session["user_id"] != selected_user.id:
+    if not session:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
+
+    if int(session["user_id"]) != selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INVALID_SESSION_ID_ERROR)
 
     coroutines: list = list()
@@ -238,16 +251,17 @@ async def update_user_avatar(
     if image_extension not in backend.routers.parameters.allowed_image_extensions:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_TYPE_NOT_ALLOWED_ERROR)
 
-    if file.size > backend.routers.parameters.max_avatar_size_bytes:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_SIZE_TOO_LARGE_ERROR)
-
     #MinIO - Загрузка аватара
     minio_file_name: str = f"users/{selected_user.id}/{uuid.uuid4().hex.upper()}{image_extension}"
     file_content = await file.read()
+
+    if len(file_content) > backend.routers.parameters.max_avatar_size_bytes:
+        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_SIZE_TOO_LARGE_ERROR)
+
     minio_client.put_object("users:avatars", minio_file_name, io.BytesIO(file_content), len(file_content), file.content_type)
 
     # MinIO - Удаление старого аватара
-    if not selected_user.avatar_photo_path:
+    if selected_user.avatar_photo_path:
         minio_client.remove_object("users:avatars", selected_user.avatar_photo_path)
 
     selected_user.avatar_photo_path = minio_file_name
@@ -267,22 +281,11 @@ async def delete_user(
     user_group_chats_and_communities: Sequence[Chat] = db.execute(sqlalchemy.select(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind.in_([ChatKind.group, ChatKind.community])))).scalars().all()
 
     for chat in user_group_chats_and_communities:
-        if not db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_user_id != selected_user.id))).scalars().first():
-            db.delete(chat)
-        else:
-            chat_new_owner: ChatUser = db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_role == ChatRole.admin)).order_by(ChatUser.date_and_time_added)).scalars().first()
-            if not chat_new_owner:
-                chat_new_owner = db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_role != ChatRole.owner)).order_by(ChatUser.date_and_time_added)).scalars().first()
+        db.delete(chat)
 
-            chat.owner_user_id = chat_new_owner.id
+    db.execute(sqlalchemy.delete(Chat).where(Chat.id.in_(sqlalchemy.select(Chat.id).select_from(ChatUser).where(ChatUser.chat_user_id == selected_user.id).join(Chat, Chat.id == ChatUser.chat_id).where(Chat.chat_kind == ChatKind.private))))
 
-    user_private_chats: Sequence[Chat] = db.execute(sqlalchemy.select(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind == ChatKind.private))).scalars().all()
-
-    for chat in user_private_chats:
-        if not db.execute(sqlalchemy.select(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == chat.id, ChatUser.chat_user_id != selected_user.id))).scalars().first():
-            db.delete(chat)
-
-    db.delete(db.execute(sqlalchemy.select(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind == ChatKind.wall))).scalars().first())
+    db.execute(sqlalchemy.delete(Chat).where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.chat_kind == ChatKind.wall)))
 
     db.delete(selected_user)
     db.commit()
@@ -496,7 +499,7 @@ async def get_user_sent_friend_requests(
     UserFriendRequest.date_and_time_sent)
     .select_from(UserFriendRequest)
     .where(UserFriendRequest.sender_user_id == selected_user.id)
-    .join(User, User.id == UserFriendRequest.sender_user_id)
+    .join(User, User.id == UserFriendRequest.receiver_user_id)
     .order_by(User.id)
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
     .limit(backend.routers.parameters.number_of_table_entries_in_selection))
@@ -537,7 +540,6 @@ async def send_friend_request(
 
     if receiver.id == selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
 
     if utils.does_friend_request_already_exist(receiver.id, selected_user.id, db):
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
@@ -598,9 +600,6 @@ async def decline_received_friend_request(
     friend_request_id: int,
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
-
-    if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.USER_NOT_FOUND_ERROR)
 
     friend_request: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest)
     .where(UserFriendRequest.id == friend_request_id)).scalars().first()
@@ -669,7 +668,7 @@ async def add_blocked_user(
 
     new_block: BlockedUser = BlockedUser(user_id = selected_user.id, blocked_user_id = blocked_user.id, date_and_time_blocked = datetime.datetime.now(datetime.timezone.utc))
 
-    friendship: UserFriend = db.execute(sqlalchemy.select(UserFriend).where(sqlalchemy.or_(sqlalchemy.and_(UserFriend.user_id == selected_user, UserFriend.friend_user_id == blocked_user), sqlalchemy.and_(UserFriend.user_id == blocked_user, UserFriend.friend_user_id == selected_user)))).scalars().first()
+    friendship: UserFriend = db.execute(sqlalchemy.select(UserFriend).where(sqlalchemy.or_(sqlalchemy.and_(UserFriend.user_id == selected_user.id, UserFriend.friend_user_id == blocked_user), sqlalchemy.and_(UserFriend.user_id == blocked_user, UserFriend.friend_user_id == selected_user)))).scalars().first()
 
     if friendship:
         db.delete(friendship)
@@ -678,11 +677,11 @@ async def add_blocked_user(
     if users_chat:
         db.delete(users_chat)
 
-    friend_request_to_blocked: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest).where(sqlalchemy.and_(UserFriendRequest.sender_user_id == selected_user.id, UserFriendRequest.receiver_user_id == blocked_user.id))).scalar()
+    friend_request_to_blocked: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest).where(sqlalchemy.and_(UserFriendRequest.sender_user_id == selected_user.id, UserFriendRequest.receiver_user_id == blocked_user.id))).scalars().first()
     if friend_request_to_blocked:
         db.delete(friend_request_to_blocked)
 
-    friend_request_from_blocked: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest).where(sqlalchemy.and_(UserFriendRequest.sender_user_id == blocked_user.id, UserFriendRequest.receiver_user_id == selected_user.id))).scalar()
+    friend_request_from_blocked: UserFriendRequest = db.execute(sqlalchemy.select(UserFriendRequest).where(sqlalchemy.and_(UserFriendRequest.sender_user_id == blocked_user.id, UserFriendRequest.receiver_user_id == selected_user.id))).scalars().first()
     if friend_request_from_blocked:
         db.delete(friend_request_from_blocked)
 
@@ -694,9 +693,9 @@ async def add_blocked_user(
 
 
 async def delete_blocked_user(
-    blocked_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
-    selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+    blocked_user: User,
+    selected_user: User,
+    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
     user_block: BlockedUser = await utils.get_user_block(selected_user, blocked_user, db)
 

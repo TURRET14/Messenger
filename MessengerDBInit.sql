@@ -71,7 +71,6 @@ CREATE TABLE chat_users (
     chat_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
     date_and_time_added TIMESTAMPTZ NOT NULL,
     chat_role chat_roles_type NOT NULL,
-    is_active BOOLEAN NOT NULL,
     UNIQUE(chat_id, chat_user_id)
 );
 

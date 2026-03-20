@@ -103,7 +103,6 @@ class ChatUser(Base):
     chat_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     date_and_time_added: sqlalchemy.orm.Mapped[datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     chat_role: sqlalchemy.orm.Mapped[ChatRole] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(ChatRole), nullable=False)
-    is_active: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN(), nullable = False)
     __table_args__ = (sqlalchemy.UniqueConstraint('chat_id', 'chat_user_id', name='chat_users_chat_id_chat_user_id_key'),)
 
 

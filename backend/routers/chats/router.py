@@ -62,13 +62,13 @@ async def get_chat_avatar(
 
 
 @chats_router.post("/chats/private", response_class = fastapi.responses.JSONResponse)
-async def create_or_join_private_chat(
+async def create_private_chat(
     friend_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     redis_client: redis.asyncio.Redis = fastapi.Depends(get_redis_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.chats.service.create_or_join_private_chat(friend_user, current_user, redis_client, db)
+    return await backend.routers.chats.service.create_private_chat(friend_user, current_user, redis_client, db)
 
 
 @chats_router.post("/chats/group", response_class = fastapi.responses.JSONResponse)
