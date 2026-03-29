@@ -1,101 +1,114 @@
 from datetime import datetime
 
 import fastapi
-import redis.asyncio
 import sqlalchemy
 import sqlalchemy.orm
+import sqlalchemy.ext.asyncio
 
 from backend.routers.common_models import *
 from backend.storage import *
-import backend.routers.return_details
+from backend.routers.errors import (ErrorRegistry)
+from backend.storage.redis_handler import SessionModel
 
 
 async def get_session_user(
     session_id: str = fastapi.Cookie(),
-    db: sqlalchemy.orm.Session = fastapi.Depends(database.get_db),
-    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client)) -> User:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db),
+    redis_client: RedisClient = fastapi.Depends(redis_handler.get_redis_client)) -> User:
 
-    session: dict[str, str] | None = await redis_client.hgetall(f"session_id:{session_id}")
+    session: SessionModel | None = await redis_client.get_user_session_data(session_id)
     if session:
-        if int(session["expiration_date"]) > int(datetime.now().timestamp()):
-            session_user = db.execute(sqlalchemy.select(User).where(User.id == session["user_id"])).scalars().first()
+        if session.expiration_datetime > int(datetime.now().timestamp()):
+            session_user = (await db.execute(sqlalchemy.select(User).where(User.id == session.user_id))).scalars().first()
             if session_user:
                 return session_user
             else:
-                raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INVALID_SESSION_ID_ERROR)
+                raise fastapi.HTTPException(status_code = ErrorRegistry.unauthorized_error.error_status_code, detail = ErrorRegistry.unauthorized_error)
         else:
-            raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INVALID_SESSION_ID_ERROR)
+            raise fastapi.HTTPException(status_code = ErrorRegistry.unauthorized_error.error_status_code, detail = ErrorRegistry.unauthorized_error)
     else:
-        raise fastapi.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.INVALID_SESSION_ID_ERROR)
+        raise fastapi.HTTPException(status_code = ErrorRegistry.unauthorized_error.error_status_code, detail = ErrorRegistry.unauthorized_error)
 
 
 async def get_user_by_path_user_id(
     user_id: int = fastapi.Path(ge = 0),
-    db: sqlalchemy.orm.Session = fastapi.Depends(database.get_db)) -> User:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> User:
 
-    selected_user: User = db.execute(sqlalchemy.select(User).where(User.id == user_id)).scalars().first()
+    selected_user: User = (await db.execute(sqlalchemy.select(User).where(User.id == user_id))).scalars().first()
 
     if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.USER_NOT_FOUND_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
     else:
         return selected_user
 
 
 async def get_user_by_data_id(
     user_id_model: IDModel = fastapi.Body(),
-    db: sqlalchemy.orm.Session = fastapi.Depends(database.get_db)) -> User:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> User:
 
-    selected_user: User = db.execute(sqlalchemy.select(User).where(User.id == user_id_model.id)).scalars().first()
+    selected_user: User = (await db.execute(sqlalchemy.select(User).where(User.id == user_id_model.id))).scalars().first()
 
     if not selected_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.USER_NOT_FOUND_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
     else:
         return selected_user
 
 
 async def get_chat_by_path_id(
     chat_id: int = fastapi.Path(ge = 0),
-    db: sqlalchemy.orm.Session = fastapi.Depends(database.get_db)) -> Chat:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> Chat:
 
-    selected_chat: Chat = db.execute(sqlalchemy.select(Chat).where(Chat.id == chat_id)).scalars().first()
+    selected_chat: Chat = (await db.execute(sqlalchemy.select(Chat).where(Chat.id == chat_id))).scalars().first()
 
     if not selected_chat:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.CHAT_NOT_FOUND_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_not_found_error.error_status_code, detail = ErrorRegistry.chat_not_found_error)
     else:
         return selected_chat
 
 
 async def get_message_by_path_id(
     message_id: int = fastapi.Path(ge = 0),
-    db: sqlalchemy.orm.Session = fastapi.Depends(database.get_db)) -> Message:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> Message:
 
-    selected_message: Message = db.execute(sqlalchemy.select(Message).where(Message.id == message_id)).scalars().first()
+    selected_message: Message = (await db.execute(sqlalchemy.select(Message).where(Message.id == message_id))).scalars().first()
 
     if not selected_message:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.MESSAGE_NOT_FOUND_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_not_found_error.error_status_code, detail = ErrorRegistry.message_not_found_error)
     else:
         return selected_message
 
 
 async def get_message_attachment_by_id(
     attachment_id: int = fastapi.Path(ge = 0),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> FileAttachment:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> MessageAttachment:
 
-    selected_attachment: FileAttachment = db.execute(sqlalchemy.select(FileAttachment).where(FileAttachment.id == attachment_id)).scalars().first()
+    selected_attachment: MessageAttachment = (await db.execute(sqlalchemy.select(MessageAttachment).where(MessageAttachment.id == attachment_id))).scalars().first()
 
     if not selected_attachment:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_attachment_not_found_error.error_status_code, detail = ErrorRegistry.message_attachment_not_found_error)
     else:
         return selected_attachment
 
 
-async def get_chat_user_by_path_id(
-    chat_user_id: int = fastapi.Path(ge = 0),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> ChatUser:
+async def get_chat_membership_by_path_id(
+    chat_membership_id: int = fastapi.Path(ge = 0),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> ChatMember:
 
-    chat_user: ChatUser = db.execute(sqlalchemy.select(ChatUser).where(ChatUser.id == chat_user_id)).scalars().first()
+    chat_membership: ChatMember = (await db.execute(sqlalchemy.select(ChatMember).where(ChatMember.id == chat_membership_id))).scalars().first()
 
-    if not chat_user:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_404_NOT_FOUND, detail = backend.routers.return_details.OBJECT_NOT_FOUND_ERROR)
+    if not chat_membership:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
     else:
-        return chat_user
+        return chat_membership
+
+
+async def get_friend_request_by_path_id(
+    friend_request_id: int = fastapi.Path(ge = 0),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> FriendRequest:
+
+    friend_request: FriendRequest = (await db.execute(sqlalchemy.select(FriendRequest).where(FriendRequest.id == friend_request_id))).scalars().first()
+
+    if not friend_request:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friend_request_not_found_error.error_status_code, detail = ErrorRegistry.friend_request_not_found_error)
+    else:
+        return friend_request

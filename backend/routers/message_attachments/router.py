@@ -26,7 +26,7 @@ async def get_message_attachments_list(
 async def get_message_attachment_file(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
-    selected_attachment: FileAttachment = fastapi.Depends(backend.routers.dependencies.get_message_attachment_by_id),
+    selected_attachment: MessageAttachment = fastapi.Depends(backend.routers.dependencies.get_message_attachment_by_id),
     selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: minio.Minio = fastapi.Depends(minio_handler.get_minio_client),
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.StreamingResponse:
@@ -51,7 +51,7 @@ async def add_message_attachment_file(
 async def delete_message_attachment_file(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
-    selected_attachment: FileAttachment = fastapi.Depends(backend.routers.dependencies.get_message_attachment_by_id),
+    selected_attachment: MessageAttachment = fastapi.Depends(backend.routers.dependencies.get_message_attachment_by_id),
     selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: minio.Minio = fastapi.Depends(minio_handler.get_minio_client),
     redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client),

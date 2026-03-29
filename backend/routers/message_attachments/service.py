@@ -13,7 +13,7 @@ from typing import Sequence
 
 
 from backend.storage import *
-import backend.routers.return_details
+import backend.routers.errors
 import backend.routers.dependencies
 import backend.routers.parameters
 from models import *
@@ -26,7 +26,7 @@ async def get_message_attachments_list(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    membership: ChatUser
+    membership: ChatMember
 
     if selected_chat.chat_kind != ChatKind.discussion:
         membership = await backend.routers.messages.utils.get_chat_active_user_membership(selected_chat, selected_user, db)
@@ -43,11 +43,11 @@ async def get_message_attachments_list(
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
     attachments_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
-    FileAttachment.id.label("message_attachment_id"),
-    FileAttachment.message_id,
+    MessageAttachment.id.label("message_attachment_id"),
+    MessageAttachment.message_id,
     sqlalchemy.literal(selected_chat.id).label("chat_id"))
-    .select_from(FileAttachment)
-    .where(FileAttachment.message_id == selected_message.id)).mappings().all()
+                                                                   .select_from(MessageAttachment)
+                                                                   .where(MessageAttachment.message_id == selected_message.id)).mappings().all()
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(attachments_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -55,12 +55,12 @@ async def get_message_attachments_list(
 async def get_message_attachment_file(
     selected_chat: Chat,
     selected_message: Message,
-    selected_attachment: FileAttachment,
+    selected_attachment: MessageAttachment,
     selected_user: User,
     minio_client: minio.Minio,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.StreamingResponse:
 
-    membership: ChatUser
+    membership: ChatMember
 
     if selected_chat.chat_kind != ChatKind.discussion:
         membership = await backend.routers.messages.utils.get_chat_active_user_membership(selected_chat, selected_user, db)
@@ -91,7 +91,7 @@ async def add_message_attachment_file(
     redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    membership: ChatUser
+    membership: ChatMember
 
     if selected_chat.chat_kind != ChatKind.discussion:
         membership = await backend.routers.messages.utils.get_chat_active_user_membership(selected_chat, selected_user, db)
@@ -122,7 +122,7 @@ async def add_message_attachment_file(
     minio_client.put_object("messages:attachments", minio_file_name, io.BytesIO(file_content), len(file_content), file.content_type)
 
 
-    new_attachment: FileAttachment = FileAttachment(
+    new_attachment: MessageAttachment = MessageAttachment(
     message_id = selected_message.id,
     attachment_file_path = minio_file_name)
     db.commit()
@@ -134,13 +134,13 @@ async def add_message_attachment_file(
 async def delete_message_attachment_file(
     selected_chat: Chat,
     selected_message: Message,
-    selected_attachment: FileAttachment,
+    selected_attachment: MessageAttachment,
     selected_user: User,
     minio_client: minio.Minio,
     redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    membership: ChatUser
+    membership: ChatMember
 
     if selected_chat.chat_kind != ChatKind.discussion:
         membership = await backend.routers.messages.utils.get_chat_active_user_membership(selected_chat, selected_user, db)

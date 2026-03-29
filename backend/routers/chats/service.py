@@ -12,7 +12,7 @@ from typing import Sequence
 
 from backend.storage import *
 from models import *
-import backend.routers.return_details
+import backend.routers.errors
 import backend.routers.dependencies
 import backend.routers.parameters
 import utils
@@ -34,13 +34,13 @@ async def get_all_chats(
     sqlalchemy.select(
     Chat.id,
     Chat.chat_kind,
-    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(User.username).select_from(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == Chat.id, ChatUser.chat_user_id != selected_user.id)).join(User, User.id == ChatUser.chat_user_id))),
+    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(User.username).select_from(ChatMember).where(sqlalchemy.and_(ChatMember.chat_id == Chat.id, ChatMember.chat_user_id != selected_user.id)).join(User, User.id == ChatMember.chat_user_id))),
     Chat.owner_user_id,
     Chat.date_and_time_created,
     Chat.is_read_only)
-    .select_from(ChatUser)
-    .where(sqlalchemy.and_(ChatUser.chat_user_id == selected_user.id))
-    .join(Chat, Chat.id == ChatUser.chat_id)
+    .select_from(ChatMember)
+    .where(sqlalchemy.and_(ChatMember.chat_user_id == selected_user.id))
+    .join(Chat, Chat.id == ChatMember.chat_id)
     .join(subquery, subquery.c.chat_id == Chat.id)
     .order_by(subquery.c.date_and_time_sent.desc())
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
@@ -82,16 +82,16 @@ async def get_chat_members(
 
     users_list: Sequence[sqlalchemy.RowMapping] = (db.execute(sqlalchemy.select(
     User.id,
-    ChatUser.chat_id,
+    ChatMember.chat_id,
     User.username,
     User.name,
     User.surname,
     User.second_name,
-    ChatUser.date_and_time_added,
-    ChatUser.chat_role)
-    .select_from(ChatUser)
-    .where(sqlalchemy.and_(ChatUser.chat_id == selected_chat.id))
-    .join(User, User.id == ChatUser.chat_user_id)
+    ChatMember.date_and_time_added,
+    ChatMember.chat_role)
+    .select_from(ChatMember)
+    .where(sqlalchemy.and_(ChatMember.chat_id == selected_chat.id))
+    .join(User, User.id == ChatMember.chat_user_id)
     .order_by(Chat.id)
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
     .limit(backend.routers.parameters.number_of_table_entries_in_selection))
@@ -149,9 +149,9 @@ async def get_chat_avatar(
 
     else:
         avatar_photo_path: str = (db.execute(sqlalchemy.select(User.avatar_photo_path)
-        .select_from(ChatUser)
-        .where(sqlalchemy.and_(ChatUser.chat_id == selected_chat.id,
-        ChatUser.chat_user_id != selected_user.id))).scalar())
+                                             .select_from(ChatMember)
+                                             .where(sqlalchemy.and_(ChatMember.chat_id == selected_chat.id,
+                                                                    ChatMember.chat_user_id != selected_user.id))).scalar())
         if not avatar_photo_path:
             return fastapi.responses.FileResponse(backend.routers.parameters.default_avatar_path, status_code = fastapi.status.HTTP_200_OK)
         else:
@@ -182,12 +182,12 @@ async def create_private_chat(
         db.commit()
         db.refresh(new_chat)
 
-        first_chat_user: ChatUser = ChatUser(
+        first_chat_user: ChatMember = ChatMember(
         chat_id = new_chat.id,
         chat_user_id = selected_user.id,
         date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
-        second_chat_user: ChatUser = ChatUser(
+        second_chat_user: ChatMember = ChatMember(
         chat_id = new_chat.id,
         chat_user_id = friend_user.id,
         date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
@@ -216,7 +216,7 @@ async def create_group_chat(
     db.commit()
     db.refresh(new_chat)
 
-    membership: ChatUser = ChatUser(
+    membership: ChatMember = ChatMember(
     chat_id = new_chat.id,
     chat_user_id = selected_user.id,
     date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
@@ -300,11 +300,11 @@ async def update_chat_owner(
     if not await utils.is_chat_user_owner(selected_chat, selected_user):
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
-    old_owner_membership: ChatUser = await utils.get_chat_user_membership(selected_chat, selected_user, db)
+    old_owner_membership: ChatMember = await utils.get_chat_user_membership(selected_chat, selected_user, db)
     if not old_owner_membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
     
-    new_owner_membership: ChatUser = await utils.get_chat_user_membership(selected_chat, new_owner_user, db)
+    new_owner_membership: ChatMember = await utils.get_chat_user_membership(selected_chat, new_owner_user, db)
     if not new_owner_membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
@@ -332,7 +332,7 @@ async def add_chat_admin(
     if selected_user.id == new_admin_user.id:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
-    membership: ChatUser = await utils.get_chat_user_membership(selected_chat, new_admin_user, db)
+    membership: ChatMember = await utils.get_chat_user_membership(selected_chat, new_admin_user, db)
     if not membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
     membership.chat_role = ChatRole.admin
@@ -352,7 +352,7 @@ async def delete_chat_admin(
     if not await utils.is_chat_user_owner(selected_chat, selected_user):
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
-    membership: ChatUser = await utils.get_chat_user_membership(selected_chat, admin_user, db)
+    membership: ChatMember = await utils.get_chat_user_membership(selected_chat, admin_user, db)
     if not membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
@@ -381,7 +381,7 @@ async def add_chat_user(
     if await utils.get_chat_user_membership(selected_chat, new_user, db):
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
-    membership: ChatUser = ChatUser(
+    membership: ChatMember = ChatMember(
     chat_id = selected_chat.id,
     chat_user_id = new_user.id,
     date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
@@ -409,7 +409,7 @@ async def delete_chat_user(
     if selected_user.id == chat_user.id:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
 
-    membership: ChatUser = await utils.get_chat_user_membership(selected_chat, chat_user, db)
+    membership: ChatMember = await utils.get_chat_user_membership(selected_chat, chat_user, db)
     if not membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
@@ -425,7 +425,7 @@ async def leave_chat(
     redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    membership: ChatUser = await utils.get_chat_user_membership(selected_chat, selected_user, db)
+    membership: ChatMember = await utils.get_chat_user_membership(selected_chat, selected_user, db)
     if not membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
@@ -476,7 +476,7 @@ async def create_community(
     db.commit()
     db.refresh(new_chat)
 
-    membership: ChatUser = ChatUser(
+    membership: ChatMember = ChatMember(
     chat_id = new_chat.id,
     chat_user_id = selected_user.id,
     date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
@@ -526,7 +526,7 @@ async def get_user_wall(
     wall: sqlalchemy.RowMapping = (db.execute(sqlalchemy.select(
     Chat.id,
     Chat.chat_kind,
-    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(User.username).select_from(ChatUser).where(sqlalchemy.and_(ChatUser.chat_id == Chat.id, ChatUser.chat_user_id != selected_user.id)).join(User, User.id == ChatUser.chat_user_id))),
+    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(User.username).select_from(ChatMember).where(sqlalchemy.and_(ChatMember.chat_id == Chat.id, ChatMember.chat_user_id != selected_user.id)).join(User, User.id == ChatMember.chat_user_id))),
     Chat.owner_user_id,
     Chat.date_and_time_created,
     Chat.is_read_only)
@@ -542,7 +542,7 @@ async def get_user_wall(
 
 async def get_chat_user(
     selected_chat: Chat,
-    selected_chat_user: ChatUser,
+    selected_chat_user: ChatMember,
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
