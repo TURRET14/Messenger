@@ -1,5 +1,7 @@
+import dataclasses
 import io
 import os
+import asyncio
 
 import fastapi
 import fastapi.concurrency
@@ -17,6 +19,11 @@ class MinioBucket(str, enum.Enum):
     groups_avatars = "groups:avatars"
     messages_attachments = "messages:attachments"
 
+
+@dataclasses.dataclass
+class BucketWithFiles:
+    bucket_name: MinioBucket
+    file_names: list[str]
 
 class MinioClient:
     def __init__(self, endpoint: str, access_key: str, secret_key: str):
@@ -67,12 +74,23 @@ class MinioClient:
 
         return minio_file_name
 
+
     async def delete_file(self, bucket_name: MinioBucket, object_name: str):
-        fastapi.concurrency.run_in_threadpool(self.delete_file_task, bucket_name, object_name)
+        await fastapi.concurrency.run_in_threadpool(self.delete_file_task, bucket_name, object_name)
 
 
     def delete_file_task(self, bucket_name: MinioBucket, object_name: str):
         self.client.remove_object(bucket_name.value, object_name)
+
+
+    async def delete_all_files(self, buckets_list: list[BucketWithFiles]):
+        tasks_list: list = list()
+
+        for bucket in buckets_list:
+            for file_name in bucket.file_names:
+                tasks_list.append(self.delete_file(bucket.bucket_name, file_name))
+
+        await asyncio.gather(*tasks_list)
 
 
 minio_client: MinioClient = MinioClient(os.getenv("MINIO_ENDPOINT"), os.getenv("MINIO_ACCESS_KEY"), os.getenv("MINIO_SECRET_KEY"))

@@ -11,7 +11,7 @@ from database import *
 import redis_handler
 from backend.routers.chats.models import *
 
-async def chat_user_after_insert(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: ChatMember):
+async def chat_user_after_insert(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: ChatMembership):
     db: sqlalchemy.orm.session.Session = await get_db()
     redis_client: redis.asyncio.Redis = await redis_handler.get_redis_client()
 
@@ -21,9 +21,9 @@ async def chat_user_after_insert(mapper: sqlalchemy.orm.Mapper, connection: sqla
     asyncio.create_task(redis_client.publish("chat_users_post", ChatUserWithReceiversModel(
     id = target.id,
     chat_id = target.chat_id,
-    receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
+    receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
 
-async def chat_user_after_delete(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: ChatMember):
+async def chat_user_after_delete(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: ChatMembership):
     db: sqlalchemy.orm.session.Session = await get_db()
     redis_client: redis.asyncio.Redis = await redis_handler.get_redis_client()
 
@@ -33,24 +33,24 @@ async def chat_user_after_delete(mapper: sqlalchemy.orm.Mapper, connection: sqla
     asyncio.create_task(redis_client.publish("chat_users_delete", ChatUserWithReceiversModel(
     id = target.id,
     chat_id = target.chat_id,
-    receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
+    receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
 
 
-async def chat_user_after_update(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: ChatMember):
+async def chat_user_after_update(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: ChatMembership):
     db: sqlalchemy.orm.session.Session = await get_db()
     redis_client: redis.asyncio.Redis = await redis_handler.get_redis_client()
 
     asyncio.create_task(redis_client.publish("chat_users_put", ChatUserWithReceiversModel(
     id = target.id,
     chat_id = target.chat_id,
-    receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
+    receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
 
 async def chat_after_update(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: Chat):
     db: sqlalchemy.orm.session.Session = await get_db()
     redis_client: redis.asyncio.Redis = await redis_handler.get_redis_client()
 
     asyncio.create_task(redis_client.publish("chats_put", ChatWithReceiversModel(
-    chat_id = target.id, receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == target.id)).scalars().all()),
+    chat_id = target.id, receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == target.id)).scalars().all()),
     is_avatar_changed = sqlalchemy.inspect(target).attrs.avatar_photo_path.history.has_changes()).model_dump_json()))
 
 
@@ -60,7 +60,7 @@ async def message_after_insert(mapper: sqlalchemy.orm.Mapper, connection: sqlalc
 
     asyncio.create_task(redis_client.publish("messages_post", MessageIDWithChatIDWithReceiversModel(
     id = target.id,
-    chat_id = target.chat_id, receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
+    chat_id = target.chat_id, receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
 
 
 async def message_after_update(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: Message):
@@ -69,7 +69,7 @@ async def message_after_update(mapper: sqlalchemy.orm.Mapper, connection: sqlalc
 
     asyncio.create_task(redis_client.publish("messages_put", MessageIDWithChatIDWithReceiversModel(
     id = target.id,
-    chat_id = target.chat_id, receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
+    chat_id = target.chat_id, receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
 
 
 async def message_after_delete(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: Message):
@@ -78,7 +78,7 @@ async def message_after_delete(mapper: sqlalchemy.orm.Mapper, connection: sqlalc
 
     asyncio.create_task(redis_client.publish("messages_delete", MessageIDWithChatIDWithReceiversModel(
     id = target.id,
-    chat_id = target.chat_id, receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
+    chat_id = target.chat_id, receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == target.chat_id)).scalars().all())).model_dump_json()))
 
 
 async def message_read_mark_after_insert(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: MessageReceipt):
@@ -89,7 +89,7 @@ async def message_read_mark_after_insert(mapper: sqlalchemy.orm.Mapper, connecti
 
     asyncio.create_task(redis_client.publish("message_read_marks_post", ReadMarkData(
     id = target.id,
-    chat_id = chat_id, receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == chat_id)).scalars().all()), message_id = target.message_id, reader_id = target.receiver_user_id).model_dump_json()))
+    chat_id = chat_id, receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == chat_id)).scalars().all()), message_id = target.message_id, reader_id = target.receiver_user_id).model_dump_json()))
 
 
 async def message_attachment_after_insert(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: MessageAttachment):
@@ -100,7 +100,7 @@ async def message_attachment_after_insert(mapper: sqlalchemy.orm.Mapper, connect
 
     asyncio.create_task(redis_client.publish("message_attachments_post", MessageAttachmentModelWithReceivers(
     id = target.id,
-    chat_id = chat_id, message_id = target.message_id, receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == chat_id)).scalars().all())).model_dump_json()))
+    chat_id = chat_id, message_id = target.message_id, receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == chat_id)).scalars().all())).model_dump_json()))
 
 
 async def message_attachment_after_delete(mapper: sqlalchemy.orm.Mapper, connection: sqlalchemy.engine.Connection, target: MessageAttachment):
@@ -111,4 +111,4 @@ async def message_attachment_after_delete(mapper: sqlalchemy.orm.Mapper, connect
 
     asyncio.create_task(redis_client.publish("message_attachments_delete", MessageAttachmentModelWithReceivers(
     id = target.id,
-    chat_id = chat_id, message_id = target.message_id, receivers = list(db.execute(sqlalchemy.select(ChatMember.chat_user_id).select_from(ChatMember).where(ChatMember.chat_id == chat_id)).scalars().all())).model_dump_json()))
+    chat_id = chat_id, message_id = target.message_id, receivers = list(db.execute(sqlalchemy.select(ChatMembership.chat_user_id).select_from(ChatMembership).where(ChatMembership.chat_id == chat_id)).scalars().all())).model_dump_json()))

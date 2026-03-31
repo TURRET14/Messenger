@@ -1,6 +1,6 @@
-CREATE TYPE genders_enum AS ENUM ('male', 'female');
-CREATE TYPE chat_types_enum AS ENUM ('private', 'group', 'community', 'discussion', 'wall');
-CREATE TYPE chat_roles_enum AS ENUM ('owner', 'admin', 'user');
+CREATE TYPE genders_enum AS ENUM ('MALE', 'FEMALE');
+CREATE TYPE chat_types_enum AS ENUM ('PRIVATE', 'GROUP', 'CHANNEL', 'PROFILE');
+CREATE TYPE chat_roles_enum AS ENUM ('OWNER', 'ADMIN', 'USER');
 
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
@@ -28,7 +28,7 @@ CREATE INDEX idx_users_login ON users (login);
 CREATE INDEX idx_users_email_address ON users (email_address);
 CREATE INDEX idx_users_phone_number ON users (phone_number);
 
-CREATE TABLE friends (
+CREATE TABLE friendships (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
     friend_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
@@ -37,9 +37,9 @@ CREATE TABLE friends (
     CHECK(user_id < friend_user_id)
 );
 
-CREATE INDEX idx_friends_user_id ON friends (user_id);
-CREATE INDEX idx_friends_friend_user_id ON friends (friend_user_id);
-CREATE INDEX idx_friends_user_id_friend_user_id ON friends(user_id, friend_user_id);
+CREATE INDEX idx_friendships_user_id ON friendships (user_id);
+CREATE INDEX idx_friendships_friend_user_id ON friendships (friend_user_id);
+CREATE INDEX idx_friendships_user_id_friend_user_id ON friendships(user_id, friend_user_id);
 
 CREATE TABLE friend_requests (
     id BIGSERIAL PRIMARY KEY,
@@ -67,7 +67,7 @@ CREATE TABLE chats (
 CREATE INDEX idx_chats_name ON chats (UPPER(name));
 CREATE INDEX idx_chats_chat_kind ON chats(chat_kind);
 
-CREATE TABLE chat_members (
+CREATE TABLE chat_memberships (
     id BIGSERIAL PRIMARY KEY,
     chat_id BIGINT REFERENCES chats ON DELETE CASCADE NOT NULL,
     chat_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
@@ -76,10 +76,10 @@ CREATE TABLE chat_members (
     UNIQUE(chat_id, chat_user_id)
 );
 
-CREATE INDEX idx_chat_members_chat_id ON chat_members (chat_id);
-CREATE INDEX idx_chat_members_chat_user_id ON chat_members (chat_user_id);
-CREATE INDEX idx_chat_members_chat_id_chat_user_id ON chat_members(chat_id, chat_user_id);
-CREATE INDEX idx_chat_members_chat_id_date_and_time_added_chat_role ON chat_members(chat_id, date_and_time_added, chat_role);
+CREATE INDEX idx_chat_members_chat_id ON chat_memberships (chat_id);
+CREATE INDEX idx_chat_members_chat_user_id ON chat_memberships (chat_user_id);
+CREATE INDEX idx_chat_members_chat_id_chat_user_id ON chat_memberships(chat_id, chat_user_id);
+CREATE INDEX idx_chat_members_chat_id_date_and_time_added_chat_role ON chat_memberships(chat_id, date_and_time_added, chat_role);
 
 CREATE TABLE messages (
     id BIGSERIAL PRIMARY KEY,

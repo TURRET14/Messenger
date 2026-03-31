@@ -92,9 +92,9 @@ async def get_message_attachment_by_id(
 
 async def get_chat_membership_by_path_id(
     chat_membership_id: int = fastapi.Path(ge = 0),
-    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> ChatMember:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> ChatMembership:
 
-    chat_membership: ChatMember = (await db.execute(sqlalchemy.select(ChatMember).where(ChatMember.id == chat_membership_id))).scalars().first()
+    chat_membership: ChatMembership = (await db.execute(sqlalchemy.select(ChatMembership).where(ChatMembership.id == chat_membership_id))).scalars().first()
 
     if not chat_membership:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)

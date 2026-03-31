@@ -16,7 +16,7 @@ from request_models import (
 from response_models import (
     UserInListResponseModel,
     UserResponseModel,
-    FriendRequestUserInListResponseModel,
+    FriendRequestResponseModel,
     LoginResponseModel,
     SessionResponseModel)
 
@@ -208,7 +208,7 @@ async def search_friends_by_names(
     return await backend.routers.users.service.search_friends_by_names(offset_multiplier, name, surname, second_name, current_user, db)
 
 
-@users_router.get("/users/me/friends/requests/sent", response_class = fastapi.responses.JSONResponse, response_model = list[FriendRequestUserInListResponseModel])
+@users_router.get("/users/me/friends/requests/sent", response_class = fastapi.responses.JSONResponse, response_model = list[FriendRequestResponseModel])
 async def get_sent_friend_requests(
     offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
@@ -217,7 +217,7 @@ async def get_sent_friend_requests(
     return await backend.routers.users.service.get_user_sent_friend_requests(offset_multiplier, current_user, db)
 
 
-@users_router.get("/users/me/friends/requests/received", response_class = fastapi.responses.JSONResponse, response_model = list[FriendRequestUserInListResponseModel])
+@users_router.get("/users/me/friends/requests/received", response_class = fastapi.responses.JSONResponse, response_model = list[FriendRequestResponseModel])
 async def get_received_friend_requests(
     offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),

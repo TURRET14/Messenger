@@ -9,20 +9,19 @@ import sqlalchemy.ext.asyncio
 import asyncio
 
 class Gender(enum.Enum):
-    male = "male"
-    female = "female"
+    MALE = "MALE"
+    FEMALE = "FEMALE"
 
 class ChatKind(enum.Enum):
-    private = "private"
-    group = "group"
-    community = "community"
-    discussion = "discussion"
-    wall = "wall"
+    PRIVATE = "PRIVATE"
+    GROUP = "GROUP"
+    CHANNEL = "CHANNEL"
+    PROFILE = "PROFILE"
 
 class ChatRole(enum.Enum):
-    user = "user"
-    admin = "admin"
-    owner = "owner"
+    USER = "USER"
+    ADMIN = "ADMIN"
+    OWNER = "OWNER"
 
 
 class Base(sqlalchemy.orm.DeclarativeBase):
@@ -55,8 +54,8 @@ class User(Base):
                     sqlalchemy.Index('idx_users_phone_number', phone_number))
 
 
-class Friend(Base):
-    __tablename__ = 'friends'
+class Friendship(Base):
+    __tablename__ = 'friendships'
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
     user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     friend_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
@@ -93,8 +92,8 @@ class Chat(Base):
                     sqlalchemy.Index('idx_chats_chat_kind', chat_kind))
 
 
-class ChatMember(Base):
-    __tablename__ = 'chat_members'
+class ChatMembership(Base):
+    __tablename__ = 'chat_memberships'
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
     chat_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('chats.id', ondelete='CASCADE'), nullable=False)
     chat_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
@@ -158,9 +157,9 @@ class UserBlock(Base):
                     sqlalchemy.Index('idx_user_blocks_user_id_blocked_user_id', user_id, blocked_user_id))
 
 
-sqlalchemy.event.listen(ChatMember, "after_insert", database_triggers.chat_user_after_insert)
-sqlalchemy.event.listen(ChatMember, "after_delete", database_triggers.chat_user_after_delete)
-sqlalchemy.event.listen(ChatMember, "after_update", database_triggers.chat_user_after_update)
+sqlalchemy.event.listen(ChatMembership, "after_insert", database_triggers.chat_user_after_insert)
+sqlalchemy.event.listen(ChatMembership, "after_delete", database_triggers.chat_user_after_delete)
+sqlalchemy.event.listen(ChatMembership, "after_update", database_triggers.chat_user_after_update)
 sqlalchemy.event.listen(Chat, "after_update", database_triggers.chat_after_update)
 sqlalchemy.event.listen(Message, "after_insert", database_triggers.message_after_insert)
 sqlalchemy.event.listen(Message, "after_update", database_triggers.message_after_update)

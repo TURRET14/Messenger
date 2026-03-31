@@ -1,211 +1,170 @@
 import fastapi
 import fastapi.encoders
-import redis.asyncio
 import sqlalchemy.orm
-import json
-import asyncio
-from typing import Sequence
+import sqlalchemy.ext.asyncio
+from typing import (Sequence)
+import datetime
 
 from backend.storage import *
-from models import *
-import backend.routers.errors
+from request_models import (MessageRequestModel, MessagePostRequestModel)
+from response_models import (MessageResponseModel)
+from backend.routers.errors import (ErrorRegistry)
 import backend.routers.dependencies
-import backend.routers.parameters
+import backend.routers.parameters as parameters
+import validation_service
 import utils
 
 async def get_chat_messages(
     offset_multiplier: int,
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    membership: ChatMember | None = None
+    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
 
-    if selected_chat.chat_kind in [ChatKind.private, ChatKind.group, ChatKind.community]:
-        membership = await utils.get_chat_active_user_membership(selected_chat, selected_user, db)
-    elif selected_chat.chat_kind == ChatKind.discussion:
-        membership = await utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
-
-    if selected_chat.chat_kind != ChatKind.wall and not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    messages_list: Sequence[sqlalchemy.RowMapping] = (db.execute(sqlalchemy.select(
-    Message.id,
-    Message.chat_id,
-    Message.date_and_time_sent,
-    Message.date_and_time_edited,
-    Message.message_text,
-    Message.reply_message_id,
-    User.id.label("sender_id"),
-    User.username.label("sender_username"),
-    User.name.label("sender_name"),
-    User.surname.label("sender_surname"),
-    User.second_name.label("sender_second_name"),
+    messages_list_raw: Sequence[tuple[Message, bool]] = ((await db.execute(sqlalchemy.select(Message,
     sqlalchemy.case(
-    (Message.sender_user_id == selected_user.id, sqlalchemy.exists(sqlalchemy.select(1).select_from(MessageReceipt).where(MessageReceipt.message_id == Message.id))),
-    else_= sqlalchemy.exists(sqlalchemy.select(1).select_from(MessageReceipt).where(sqlalchemy.and_(MessageReceipt.message_id == Message.id, MessageReceipt.receiver_user_id == selected_user.id)))).label("is_read"))
+    (Message.sender_user_id == selected_user.id, sqlalchemy.exists(sqlalchemy.select(True).select_from(MessageReceipt).where(sqlalchemy.and_(MessageReceipt.message_id == Message.id, MessageReceipt.receiver_user_id != selected_user.id)))),
+    else_= True).label("is_read"))
     .select_from(Message)
-    .where(Message.chat_id == selected_chat.id)
-    .join(User, User.id == Message.sender_user_id)
+    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id is None))
     .order_by(Message.date_and_time_sent.desc())
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
-    .mappings().all())
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .tuples().all())
+
+    messages_list: list[MessageResponseModel] = list()
+
+    for message, is_read in messages_list_raw:
+        messages_list.append(MessageResponseModel(
+        id = message.id,
+        chat_id = message.chat_id,
+        date_and_time_sent = message.date_and_time_sent,
+        date_and_time_edited = message.date_and_time_edited,
+        message_text = message.message_text,
+        is_read = is_read))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(messages_list), status_code = fastapi.status.HTTP_200_OK)
 
 
+async def get_chat_message_comments(
+    offset_multiplier: int,
+    selected_chat: Chat,
+    selected_message: Message,
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+
+    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
+    await validation_service.validate_chat_has_comments(selected_chat)
+    await validation_service.validate_message_is_root(selected_message)
+
+    message_comments_list_raw: Sequence[Message] = ((await db.execute(
+    sqlalchemy.select(Message)
+    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id == selected_message.id))
+    .order_by(Message.date_and_time_sent.desc())
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .scalars().all())
+
+    message_comments_list: list[MessageResponseModel] = list()
+
+    for message in message_comments_list_raw:
+        message_comments_list.append(MessageResponseModel(
+        id = message.id,
+        chat_id = message.chat_id,
+        date_and_time_sent = message.date_and_time_sent,
+        date_and_time_edited = message.date_and_time_edited,
+        message_text = message.message_text,
+        is_read = True))
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(message_comments_list), status_code = fastapi.status.HTTP_200_OK)
+
+
 async def get_chat_message_by_id(
-    selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
-    selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
-    selected_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+    selected_chat: Chat,
+    selected_message: Message,
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    membership: ChatMember | None = None
+    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
 
-    if selected_chat.chat_kind in [ChatKind.private, ChatKind.group, ChatKind.community]:
-        membership = await utils.get_chat_active_user_membership(selected_chat, selected_user, db)
-    elif selected_chat.chat_kind == ChatKind.discussion:
-        membership = await utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
-
-    if selected_chat.chat_kind != ChatKind.wall and not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    sender_user: User = db.execute(sqlalchemy.select(User).where(User.id == selected_message.sender_user_id)).scalar()
-
-    message: MessageResponseModel = MessageResponseModel(
+    message_data: MessageResponseModel = MessageResponseModel(
         id = selected_message.id,
         chat_id = selected_message.chat_id,
         date_and_time_sent = selected_message.date_and_time_sent,
         date_and_time_edited = selected_message.date_and_time_edited,
         message_text = selected_message.message_text,
-        sender_id = sender_user.id,
-        sender_username = sender_user.username,
-        sender_name = sender_user.name,
-        sender_surname = sender_user.surname,
-        sender_second_name = sender_user.second_name,
-        reply_message_id = selected_message.reply_message_id)
+        is_read = await utils.is_message_read(selected_message.id, db))
 
-    if selected_message.sender_user_id == selected_user.id:
-        message.is_read = db.execute(sqlalchemy.select(sqlalchemy.exists(sqlalchemy.select(1).select_from(MessageReceipt).where(MessageReceipt.message_id == selected_message.id)))).scalar()
-    else:
-        message.is_read = db.execute(sqlalchemy.select(sqlalchemy.exists(sqlalchemy.select(1).select_from(MessageReceipt).where(sqlalchemy.and_(MessageReceipt.message_id == selected_message.id, MessageReceipt.receiver_user_id == selected_user.id))))).scalar()
-
-    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(message), status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(message_data), status_code = fastapi.status.HTTP_200_OK)
 
 async def post_message(
     selected_chat: Chat,
-    data: MessageModel,
+    data: MessagePostRequestModel,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    membership: ChatMember | None = None
+    await validation_service.validate_post_message(selected_chat, selected_user, data.reply_message_id, data.parent_message_id, db)
 
-    if selected_chat.chat_kind in [ChatKind.private, ChatKind.group, ChatKind.community]:
-        membership = await utils.get_chat_active_user_membership(selected_chat, selected_user, db)
-    elif selected_chat.chat_kind == ChatKind.discussion:
-        membership = await utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
+    new_message: Message = Message(
+    chat_id = selected_chat.id,
+    sender_user_id = selected_user.id,
+    date_and_time_sent = datetime.datetime.now(datetime.timezone.utc),
+    message_text = data.message_text,
+    reply_message_id = data.reply_message_id,
+    parent_message_id = data.parent_message_id)
 
-    if selected_chat.chat_kind != ChatKind.wall and not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if data.reply_message_id and not db.execute(sqlalchemy.select(Message).where(sqlalchemy.and_(Message.id == data.reply_message_id, Message.chat_id == selected_chat.id))).scalars().first():
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if selected_chat.chat_kind == ChatKind.community and membership.chat_role not in [ChatRole.admin, ChatRole.owner]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-    elif selected_chat.chat_kind == ChatKind.wall and selected_chat.owner_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    new_message: Message = Message(chat_id = selected_chat.id, sender_user_id = selected_user.id, date_and_time_sent = datetime.datetime.now(datetime.timezone.utc),  message_text = data.message_text, reply_message_id = data.reply_message_id)
     db.add(new_message)
-    db.commit()
-    db.refresh(new_message)
+    await db.commit()
+    await db.refresh(new_message)
 
-    if selected_chat.chat_kind == ChatKind.community:
-        new_discussion: Chat = Chat(chat_kind = ChatKind.discussion, date_and_time_created = datetime.datetime.now(datetime.timezone.utc), discussion_message_id = new_message.id)
-        db.add(new_discussion)
-        db.commit()
-
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse({"id": new_message.id}, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def delete_message(
     selected_chat: Chat,
     selected_message: Message,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    membership: ChatMember | None = None
+    await validation_service.validate_update_delete_message(selected_chat, selected_message, selected_user, True, db)
 
-    if selected_chat.chat_kind in [ChatKind.private, ChatKind.group, ChatKind.community]:
-        membership = await utils.get_chat_active_user_membership(selected_chat, selected_user, db)
-    elif selected_chat.chat_kind == ChatKind.discussion:
-        membership = await utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
+    attachments_to_delete: list[BucketWithFiles] = list()
+    files_list: Sequence[str] = ((await db.execute(
+    sqlalchemy.select(MessageAttachment.attachment_file_path)
+    .select_from(MessageAttachment)
+    .where(sqlalchemy.or_(MessageAttachment.message_id == selected_message.id,
+    MessageAttachment.message_id.in_(sqlalchemy.select(Message.id).select_from(Message).where(Message.parent_message_id == selected_message.id))))))
+    .scalars().all())
 
-    if selected_chat.chat_kind != ChatKind.wall and not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    attachments_to_delete.append(BucketWithFiles(MinioBucket.messages_attachments, list(files_list)))
 
-    if selected_message.sender_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_401_UNAUTHORIZED, detail= backend.routers.return_details.BAD_REQUEST_ERROR)
+    await db.delete(selected_message)
+    await db.commit()
 
-    if selected_message.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail= backend.routers.return_details.BAD_REQUEST_ERROR)
+    background_tasks = fastapi.background.BackgroundTasks()
+    background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
 
-    if selected_chat.chat_kind == ChatKind.community and membership.chat_role not in [ChatRole.admin, ChatRole.owner]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-    elif selected_chat.chat_kind == ChatKind.wall and selected_chat.owner_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    db.delete(selected_message)
-    db.commit()
-
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code=fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT, background = background_tasks)
 
 
 async def update_message(
     selected_chat: Chat,
     selected_message: Message,
-    data: MessageModel,
+    data: MessageRequestModel,
     selected_user: User,
-    redis_client: redis.asyncio.Redis = fastapi.Depends(redis_handler.get_redis_client),
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    membership: ChatMember | None = None
-
-    if selected_chat.chat_kind in [ChatKind.private, ChatKind.group, ChatKind.community]:
-        membership = await utils.get_chat_active_user_membership(selected_chat, selected_user, db)
-    elif selected_chat.chat_kind == ChatKind.discussion:
-        membership = await utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
-
-    if selected_chat.chat_kind != ChatKind.wall and not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.sender_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_401_UNAUTHORIZED, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if selected_message.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if data.reply_message_id and not db.execute(sqlalchemy.select(Message).where(sqlalchemy.and_(Message.id == data.reply_message_id, Message.chat_id == selected_chat.id))).scalars().first():
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if selected_chat.chat_kind == ChatKind.community and membership.chat_role not in [ChatRole.admin, ChatRole.owner]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-    elif selected_chat.chat_kind == ChatKind.wall and selected_chat.owner_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await validation_service.validate_update_delete_message(selected_chat, selected_message, selected_user, False, db)
 
     selected_message.message_text = data.message_text
     selected_message.date_and_time_edited = datetime.datetime.now(datetime.timezone.utc)
-    selected_message.reply_message_id = data.reply_message_id
-    db.commit()
+    await db.commit()
 
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def search_messages_in_chat(
@@ -213,52 +172,85 @@ async def search_messages_in_chat(
     message_text: str,
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not await utils.get_chat_active_user_membership(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
 
-    messages_list: Sequence[sqlalchemy.RowMapping] = (db.execute(sqlalchemy.select(
-    Message.id,
-    Message.chat_id,
-    Message.date_and_time_sent,
-    Message.date_and_time_edited,
-    Message.message_text,
-    Message.reply_message_id,
-    User.id.label("sender_id"),
-    User.username.label("sender_username"),
-    User.name.label("sender_name"),
-    User.surname.label("sender_surname"),
-    User.second_name.label("sender_second_name"))
+    messages_list_raw: Sequence[tuple[Message, bool]] = ((await db.execute(
+    sqlalchemy.select(Message,
+    sqlalchemy.case(
+    (Message.sender_user_id == selected_user.id, sqlalchemy.exists(sqlalchemy.select(True).select_from(MessageReceipt).where(sqlalchemy.and_(MessageReceipt.message_id == Message.id, MessageReceipt.receiver_user_id != selected_user.id)))),
+    else_= True).label("is_read"))
     .select_from(Message)
     .where(sqlalchemy.and_(Message.chat_id == selected_chat.id,
     Message.message_text_tsvector.op("@@")(sqlalchemy.func.plainto_tsquery('russian', message_text))))
-    .join(User, User.id == Message.sender_user_id)
     .order_by(Message.date_and_time_sent.desc())
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
-    .mappings().all())
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .tuples().all())
+
+    messages_list: list[MessageResponseModel] = list()
+
+    for message, is_read in messages_list_raw:
+        messages_list.append(MessageResponseModel(
+        id = message.id,
+        chat_id = message.chat_id,
+        date_and_time_sent = message.date_and_time_sent,
+        date_and_time_edited = message.date_and_time_edited,
+        message_text = message.message_text,
+        is_read = is_read))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(messages_list), status_code = fastapi.status.HTTP_200_OK)
+
+
+async def search_comments_in_chat(
+    offset_multiplier: int,
+    message_text: str,
+    selected_chat: Chat,
+    selected_message: Message,
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+
+    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
+    await validation_service.validate_chat_has_comments(selected_chat)
+    await validation_service.validate_message_is_root(selected_message)
+
+    message_comments_list_raw: Sequence[Message] = ((await db.execute(
+    sqlalchemy.select(Message)
+    .select_from(Message)
+    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id == selected_message.id,
+    Message.message_text_tsvector.op("@@")(sqlalchemy.func.plainto_tsquery('russian', message_text))))
+    .order_by(Message.date_and_time_sent.desc())
+    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .scalars().all())
+
+    message_comments_list: list[MessageResponseModel] = list()
+
+    for message in message_comments_list_raw:
+        message_comments_list.append(MessageResponseModel(
+        id = message.id,
+        chat_id = message.chat_id,
+        date_and_time_sent = message.date_and_time_sent,
+        date_and_time_edited = message.date_and_time_edited,
+        message_text = message.message_text,
+        is_read = True))
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(message_comments_list), status_code = fastapi.status.HTTP_200_OK)
 
 
 async def mark_message_as_read(
     selected_chat: Chat,
     selected_message: Message,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not await utils.get_chat_active_user_membership(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if selected_message.sender_user_id == selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if db.execute(sqlalchemy.select(MessageReceipt).where(sqlalchemy.and_(MessageReceipt.message_id == selected_message.id, MessageReceipt.receiver_user_id == selected_user.id))).scalar():
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
+    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
+    await validation_service.validate_chat_does_not_have_comments(selected_chat)
+    await validation_service.validate_is_user_not_message_sender(selected_message, selected_user)
+    await validation_service.validate_is_message_already_marked_as_received(selected_message, selected_user, db)
 
     message_read_mark: MessageReceipt = MessageReceipt(
     message_id = selected_message.id,
@@ -266,7 +258,7 @@ async def mark_message_as_read(
     receiver_user_id = selected_user.id)
 
     db.add(message_read_mark)
-    db.commit()
-    db.refresh(message_read_mark)
+    await db.commit()
+    await db.refresh(message_read_mark)
 
     return fastapi.responses.JSONResponse({"id": message_read_mark.id}, status_code = fastapi.status.HTTP_200_OK)

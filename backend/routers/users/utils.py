@@ -61,8 +61,8 @@ async def are_users_already_friends(
     second_user_id: int,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> bool:
 
-    if (await (db.execute(sqlalchemy.select(Friend)
-    .where((sqlalchemy.and_(Friend.user_id == min(first_user_id, second_user_id), Friend.friend_user_id == max(first_user_id, second_user_id))))))).scalars().first():
+    if (await (db.execute(sqlalchemy.select(Friendship)
+    .where((sqlalchemy.and_(Friendship.user_id == min(first_user_id, second_user_id), Friendship.friend_user_id == max(first_user_id, second_user_id))))))).scalars().first():
         return True
     else:
         return False
@@ -81,10 +81,10 @@ async def get_user_block(
 async def get_friendship(
     first_user_id: int,
     second_user_id: int,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> Friend:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> Friendship:
 
-    friendship: Friend = ((await db.execute(sqlalchemy.select(Friend)
-    .where(sqlalchemy.and_(Friend.user_id == min(first_user_id, second_user_id), Friend.friend_user_id == max(first_user_id, second_user_id)))))
-    .scalars().first())
+    friendship: Friendship = ((await db.execute(sqlalchemy.select(Friendship)
+                                                .where(sqlalchemy.and_(Friendship.user_id == min(first_user_id, second_user_id), Friendship.friend_user_id == max(first_user_id, second_user_id)))))
+                              .scalars().first())
 
     return friendship

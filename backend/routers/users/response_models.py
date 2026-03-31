@@ -12,8 +12,8 @@ class UserInListResponseModel(pydantic.BaseModel):
     second_name: str | None = pydantic.Field()
 
 
-class FriendRequestUserInListResponseModel(UserInListResponseModel):
-    friend_request_id: int = pydantic.Field()
+class FriendRequestResponseModel(pydantic.BaseModel):
+    id: int = pydantic.Field()
     date_and_time_sent: datetime.datetime = pydantic.Field()
 
 

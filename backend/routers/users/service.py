@@ -25,7 +25,9 @@ from request_models import (
     UserUpdatePasswordRequestModel)
 
 from response_models import (
+    FriendRequestResponseModel,
     UserResponseModel,
+    UserInListResponseModel,
     LoginResponseModel,
     SessionResponseModel)
 
@@ -46,26 +48,23 @@ async def create_user(
     if await utils.is_login_already_taken(data.login, db):
         raise fastapi.HTTPException(status_code = ErrorRegistry.login_already_taken_error.error_status_code, detail = ErrorRegistry.login_already_taken_error)
 
-    try:
-        async with db.begin():
-            new_user: User = User(
-            username = data.username,
-            name = data.name,
-            email_address = data.email_address,
-            login = data.login,
-            password = backend.routers.security.hash_password(data.password),
-            surname = data.surname,
-            second_name = data.second_name,
-            date_and_time_registered = datetime.datetime.now(datetime.timezone.utc))
+    async with db.begin():
+        new_user: User = User(
+        username = data.username,
+        name = data.name,
+        email_address = data.email_address,
+        login = data.login,
+        password = backend.routers.security.hash_password(data.password),
+        surname = data.surname,
+        second_name = data.second_name,
+        date_and_time_registered = datetime.datetime.now(datetime.timezone.utc))
 
-            db.add(new_user)
+        db.add(new_user)
 
-            await db.flush()
+        await db.flush()
 
-            user_wall: Chat = Chat(owner_user_id = new_user.id, chat_kind = ChatKind.wall)
-            db.add(user_wall)
-    except sqlalchemy.exc.IntegrityError:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.data_conflict_error.error_status_code, detail = ErrorRegistry.data_conflict_error)
+        user_profile: Chat = Chat(owner_user_id = new_user.id, chat_kind = ChatKind.PROFILE)
+        db.add(user_profile)
 
     await db.refresh(new_user)
 
@@ -79,7 +78,8 @@ async def login(
     db: sqlalchemy.ext.asyncio.AsyncSession,
     redis_client: RedisClient) -> fastapi.responses.Response:
 
-    selected_user: User = ((await (db.execute(sqlalchemy.select(User)
+    selected_user: User = ((await (db.execute(
+    sqlalchemy.select(User)
     .where(User.login == data.login))))
     .scalars().first())
 
@@ -265,17 +265,27 @@ async def delete_user(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    avatar_photo_path_to_delete: str = selected_user.avatar_photo_path
+    if selected_user.avatar_photo_path:
+        await minio_client.delete_file(MinioBucket.users_avatars, selected_user.avatar_photo_path)
 
-    if avatar_photo_path_to_delete:
-            await minio_client.delete_file(MinioBucket.users_avatars, selected_user.avatar_photo_path)
+    user_owned_chats: Sequence[Chat] = ((await db.execute(
+    sqlalchemy.select(Chat)
+    .where(Chat.owner_user_id == selected_user.id)))
+    .scalars().all())
+
+    for chat in user_owned_chats:
+        if chat.avatar_photo_path:
+            await minio_client.delete_file(MinioBucket.groups_avatars, chat.avatar_photo_path)
 
     async with db.begin():
-        await db.execute(sqlalchemy.delete(Chat)
-        .where(Chat.id.in_(sqlalchemy.select(Chat.id).select_from(ChatMember)
-        .where(ChatMember.chat_user_id == selected_user.id)
-        .join(Chat, Chat.id == ChatMember.chat_id)
-        .where(Chat.chat_kind == ChatKind.private))))
+        await db.execute(
+        sqlalchemy.delete(Chat)
+        .where(Chat.id.in_(
+        sqlalchemy.select(Chat.id)
+        .select_from(ChatMembership)
+        .where(ChatMembership.chat_user_id == selected_user.id)
+        .join(Chat, Chat.id == ChatMembership.chat_id)
+        .where(Chat.chat_kind == ChatKind.PRIVATE))))
 
         await db.delete(selected_user)
 
@@ -286,17 +296,22 @@ async def get_users(
     offset_multiplier: int,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    users_list: Sequence[sqlalchemy.RowMapping] = ((await db.execute(
-    sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
+    users_list_raw: Sequence[User] = ((await db.execute(
+    sqlalchemy.select(User)
     .order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
-    .mappings().all())
+    .scalars().all())
+
+    users_list: list[UserInListResponseModel] = list()
+
+    for user in users_list_raw:
+        users_list.append(UserInListResponseModel(
+        id = user.id,
+        username = user.username,
+        name = user.name,
+        surname = user.surname,
+        second_name = user.second_name))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(users_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -306,16 +321,22 @@ async def search_users_by_username(
     username: str,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    users_list: Sequence[sqlalchemy.RowMapping] = ((await db.execute(sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
+    users_list_raw: Sequence[User] = ((await db.execute(
+    sqlalchemy.select(User)
     .where(User.username.like(f"%{username}"))
     .order_by(User.id).offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
-    .mappings().all())
+    .scalars().all())
+
+    users_list: list[UserInListResponseModel] = list()
+
+    for user in users_list_raw:
+        users_list.append(UserInListResponseModel(
+        id = user.id,
+        username = user.username,
+        name = user.name,
+        surname = user.surname,
+        second_name = user.second_name))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(users_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -329,12 +350,7 @@ async def search_users_by_names(
     if not name and not surname and not second_name:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.parameters_were_not_provided_error.error_status_code, detail = ErrorRegistry.parameters_were_not_provided_error)
 
-    select_request = sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
+    select_request = sqlalchemy.select(User)
 
     if name:
         select_request = select_request.where(User.name.like(f"%{name}"))
@@ -343,11 +359,21 @@ async def search_users_by_names(
     if second_name:
         select_request = select_request.where(User.second_name.like(f"%{second_name}"))
 
-    users_list: Sequence[sqlalchemy.RowMapping] = ((await db.execute(
+    users_list_raw: Sequence[User] = ((await db.execute(
     select_request.order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
-    .mappings().all())
+    .scalars().all())
+
+    users_list: list[UserInListResponseModel] = list()
+
+    for user in users_list_raw:
+        users_list.append(UserInListResponseModel(
+        id = user.id,
+        username = user.username,
+        name = user.name,
+        surname = user.surname,
+        second_name = user.second_name))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(users_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -356,29 +382,30 @@ async def get_friends(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    friends_list: Sequence[sqlalchemy.RowMapping] = ((await db.execute(sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
-    .select_from(Friend)
-    .where(Friend.user_id == selected_user.id)
-    .join(User, User.id == Friend.friend_user_id)
+    friends_list_raw: Sequence[User] = ((await db.execute(
+    sqlalchemy.select(User)
+    .select_from(Friendship)
+    .where(Friendship.user_id == selected_user.id)
+    .join(User, User.id == Friendship.friend_user_id)
     .union(
-    sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
-    .select_from(Friend)
-    .where(Friend.friend_user_id == selected_user.id)
-    .join(User, User.id == Friend.user_id))
+    sqlalchemy.select(User)
+    .select_from(Friendship)
+    .where(Friendship.friend_user_id == selected_user.id)
+    .join(User, User.id == Friendship.user_id))
     .order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
-    .mappings().all())
+    .scalars().all())
+
+    friends_list: list[UserInListResponseModel] = list()
+
+    for friend in friends_list_raw:
+        friends_list.append(UserInListResponseModel(
+        id = friend.id,
+        username = friend.username,
+        name = friend.name,
+        surname = friend.surname,
+        second_name = friend.second_name))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -389,31 +416,32 @@ async def search_friends_by_username(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    friends_list: Sequence[sqlalchemy.RowMapping] = ((await db.execute(sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
-    .select_from(Friend)
-    .where(Friend.user_id == selected_user.id)
-    .join(User, User.id == Friend.friend_user_id)
+    friends_list_raw: Sequence[User] = ((await db.execute(
+    sqlalchemy.select(User)
+    .select_from(Friendship)
+    .where(Friendship.user_id == selected_user.id)
+    .join(User, User.id == Friendship.friend_user_id)
     .where(User.username.like(f"%{username}"))
     .union(
-    sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
-    .select_from(Friend)
-    .where(Friend.friend_user_id == selected_user.id)
-    .join(User, User.id == Friend.user_id)
+    sqlalchemy.select(User)
+    .select_from(Friendship)
+    .where(Friendship.friend_user_id == selected_user.id)
+    .join(User, User.id == Friendship.user_id)
     .where(User.username.like(f"%{username}")))
     .order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
-    .mappings().all())
+    .scalars().all())
+
+    friends_list: list[UserInListResponseModel] = list()
+
+    for friend in friends_list_raw:
+        friends_list.append(UserInListResponseModel(
+        id = friend.id,
+        username = friend.username,
+        name = friend.name,
+        surname = friend.surname,
+        second_name = friend.second_name))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -436,30 +464,20 @@ async def search_friends_by_names(
     if not second_name:
         second_name = str()
 
-    friends_list: Sequence[sqlalchemy.RowMapping] = ((await db.execute(
-    sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
-    .select_from(Friend)
-    .where(Friend.user_id == selected_user.id)
-    .join(User, User.id == Friend.friend_user_id)
+    friends_list_raw: Sequence[User] = ((await db.execute(
+    sqlalchemy.select(User)
+    .select_from(Friendship)
+    .where(Friendship.user_id == selected_user.id)
+    .join(User, User.id == Friendship.friend_user_id)
     .where(sqlalchemy.and_(
     User.name.like(f"%{name}"),
     User.surname.like(f"%{surname}"),
     User.second_name.like(f"%{second_name}")))
     .union(
-    sqlalchemy.select(
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name)
-    .select_from(Friend)
-    .where(Friend.friend_user_id == selected_user.id)
-    .join(User, User.id == Friend.user_id)
+    sqlalchemy.select(User)
+    .select_from(Friendship)
+    .where(Friendship.friend_user_id == selected_user.id)
+    .join(User, User.id == Friendship.user_id)
     .where(sqlalchemy.and_(
     User.name.like(f"%{name}"),
     User.surname.like(f"%{surname}"),
@@ -467,7 +485,17 @@ async def search_friends_by_names(
     .order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
-    .mappings().all())
+    .scalars().all())
+
+    friends_list: list[UserInListResponseModel] = list()
+
+    for friend in friends_list_raw:
+        friends_list.append(UserInListResponseModel(
+        id = friend.id,
+        username = friend.username,
+        name = friend.name,
+        surname = friend.surname,
+        second_name = friend.second_name))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -477,22 +505,20 @@ async def get_user_sent_friend_requests(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    friend_requests_list: Sequence[sqlalchemy.RowMapping] = ((await db.execute(
-    sqlalchemy.select(
-    FriendRequest.id.label("friend_request_id"),
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name,
-    FriendRequest.date_and_time_sent)
-    .select_from(FriendRequest)
+    friend_requests_list_raw: Sequence[FriendRequest] = ((await db.execute(
+    sqlalchemy.select(FriendRequest)
     .where(FriendRequest.sender_user_id == selected_user.id)
-    .join(User, User.id == FriendRequest.receiver_user_id)
     .order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
-    .mappings().all())
+    .scalars().all())
+
+    friend_requests_list: list[FriendRequestResponseModel] = list()
+
+    for friend_request in friend_requests_list_raw:
+        friend_requests_list.append(FriendRequestResponseModel(
+        id = friend_request.id,
+        date_and_time_sent = friend_request.date_and_time_sent))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friend_requests_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -502,22 +528,21 @@ async def get_user_received_friend_requests(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    friend_requests_list: Sequence[sqlalchemy.RowMapping] = ((await db.execute(
-    sqlalchemy.select(
-    FriendRequest.id.label("friend_request_id"),
-    User.id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name,
-    FriendRequest.date_and_time_sent)
+    friend_requests_list_raw: Sequence[FriendRequest] = ((await db.execute(
+    sqlalchemy.select(FriendRequest)
     .select_from(FriendRequest)
     .where(FriendRequest.receiver_user_id == selected_user.id)
-    .join(User, User.id == FriendRequest.sender_user_id)
     .order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
-    .mappings().all())
+    .scalars().all())
+
+    friend_requests_list: list[FriendRequestResponseModel] = list()
+
+    for friend_request in friend_requests_list_raw:
+        friend_requests_list.append(FriendRequestResponseModel(
+        id = friend_request.id,
+        date_and_time_sent = friend_request.date_and_time_sent))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friend_requests_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -530,13 +555,13 @@ async def send_friend_request(
     if receiver_user.id == selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.bad_request_error.error_status_code, detail = ErrorRegistry.bad_request_error)
 
-    if utils.get_friend_request(receiver_user.id, selected_user.id, db) or utils.get_friend_request(selected_user.id, receiver_user.id, db):
+    if await utils.get_friend_request(receiver_user.id, selected_user.id, db) or await utils.get_friend_request(selected_user.id, receiver_user.id, db):
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friend_request_already_exists_error.error_status_code, detail = ErrorRegistry.friend_request_already_exists_error)
 
-    if utils.are_users_already_friends(receiver_user.id, selected_user.id, db):
+    if await utils.are_users_already_friends(receiver_user.id, selected_user.id, db):
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.users_are_already_friends_error.error_status_code, detail = ErrorRegistry.users_are_already_friends_error)
 
-    if utils.get_user_block(selected_user.id, receiver_user.id, db) or utils.get_user_block(receiver_user.id, selected_user.id, db):
+    if await utils.get_user_block(selected_user.id, receiver_user.id, db) or await utils.get_user_block(receiver_user.id, selected_user.id, db):
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_blocked_error.error_status_code, detail = ErrorRegistry.user_is_blocked_error)
 
     friend_request = FriendRequest(
@@ -564,10 +589,10 @@ async def accept_friend_request(
 
     sender_user: User = (await db.execute(sqlalchemy.select(User).where(User.id == friend_request.sender_user_id))).scalars().first()
 
-    if utils.get_user_block(selected_user.id, sender_user.id, db) or utils.get_user_block(sender_user.id, selected_user.id, db):
+    if await utils.get_user_block(selected_user.id, sender_user.id, db) or await utils.get_user_block(sender_user.id, selected_user.id, db):
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_blocked_error.error_status_code, detail = ErrorRegistry.user_is_blocked_error)
 
-    friendship: Friend = Friend(
+    friendship: Friendship = Friendship(
     user_id = min(friend_request.sender_user_id, friend_request.receiver_user_id),
     friend_user_id = max(friend_request.sender_user_id, friend_request.receiver_user_id),
     date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
@@ -614,7 +639,7 @@ async def delete_friend(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    friendship: Friend = await utils.get_friendship(selected_user.id, friend.id, db)
+    friendship: Friendship = await utils.get_friendship(selected_user.id, friend.id, db)
 
     if not friendship:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friendship_not_found_error.error_status_code, detail = ErrorRegistry.friendship_not_found_error)
@@ -630,13 +655,13 @@ async def block_user(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if utils.get_user_block(selected_user.id, blocked_user.id, db):
+    if await utils.get_user_block(selected_user.id, blocked_user.id, db):
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friendship_not_found_error.error_status_code, detail = ErrorRegistry.friendship_not_found_error)
 
     async with db.begin():
         new_block: UserBlock = UserBlock(user_id = selected_user.id, blocked_user_id = blocked_user.id, date_and_time_blocked = datetime.datetime.now(datetime.timezone.utc))
 
-        friendship: Friend = await utils.get_friendship(selected_user.id, new_block.user_id, db)
+        friendship: Friendship = await utils.get_friendship(selected_user.id, new_block.user_id, db)
 
         if friendship:
             await db.delete(friendship)

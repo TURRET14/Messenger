@@ -26,17 +26,19 @@ async def get_message_attachments_list(
     selected_user: User,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    membership: ChatMember
+    membership: ChatMembership
 
     if selected_chat.chat_kind != ChatKind.discussion:
-        membership = await backend.routers.messages.utils.get_chat_active_user_membership(selected_chat, selected_user, db)
+        membership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat, selected_user, db)
     else:
-        membership = await backend.routers.messages.utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
+        membership = await backend.routers.messages.utils.get_chat_user_membership(db.execute(
+            sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(
+                Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
 
     if not membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
-    if selected_chat.chat_kind == ChatKind.community and membership.chat_role not in [ChatRole.admin, ChatRole.owner]:
+    if selected_chat.chat_kind == ChatKind.CHANNEL and membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
     if selected_message.chat_id != selected_chat.id:
@@ -60,17 +62,19 @@ async def get_message_attachment_file(
     minio_client: minio.Minio,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.StreamingResponse:
 
-    membership: ChatMember
+    membership: ChatMembership
 
     if selected_chat.chat_kind != ChatKind.discussion:
-        membership = await backend.routers.messages.utils.get_chat_active_user_membership(selected_chat, selected_user, db)
+        membership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat, selected_user, db)
     else:
-        membership = await backend.routers.messages.utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
+        membership = await backend.routers.messages.utils.get_chat_user_membership(db.execute(
+            sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(
+                Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
 
     if not membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
-    if selected_chat.chat_kind == ChatKind.community and membership.chat_role not in [ChatRole.admin, ChatRole.owner]:
+    if selected_chat.chat_kind == ChatKind.CHANNEL and membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
     if selected_message.chat_id != selected_chat.id or selected_attachment.message_id != selected_message.id:
@@ -91,17 +95,19 @@ async def add_message_attachment_file(
     redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    membership: ChatMember
+    membership: ChatMembership
 
     if selected_chat.chat_kind != ChatKind.discussion:
-        membership = await backend.routers.messages.utils.get_chat_active_user_membership(selected_chat, selected_user, db)
+        membership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat, selected_user, db)
     else:
-        membership = await backend.routers.messages.utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
+        membership = await backend.routers.messages.utils.get_chat_user_membership(db.execute(
+            sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(
+                Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
 
     if not membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
-    if selected_chat.chat_kind == ChatKind.community and membership.chat_role not in [ChatRole.admin, ChatRole.owner]:
+    if selected_chat.chat_kind == ChatKind.CHANNEL and membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
     if selected_message.sender_user_id != selected_user.id:
@@ -140,17 +146,19 @@ async def delete_message_attachment_file(
     redis_client: redis.asyncio.Redis,
     db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
 
-    membership: ChatMember
+    membership: ChatMembership
 
     if selected_chat.chat_kind != ChatKind.discussion:
-        membership = await backend.routers.messages.utils.get_chat_active_user_membership(selected_chat, selected_user, db)
+        membership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat, selected_user, db)
     else:
-        membership = await backend.routers.messages.utils.get_chat_active_user_membership(db.execute(sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
+        membership = await backend.routers.messages.utils.get_chat_user_membership(db.execute(
+            sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(
+                Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
 
     if not membership:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
-    if selected_chat.chat_kind == ChatKind.community and membership.chat_role not in [ChatRole.admin, ChatRole.owner]:
+    if selected_chat.chat_kind == ChatKind.CHANNEL and membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
         raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
 
     if selected_message.sender_user_id != selected_user.id:

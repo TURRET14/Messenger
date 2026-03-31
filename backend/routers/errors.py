@@ -35,6 +35,15 @@ class Error(enum.Enum):
     message_not_found_error = "MESSAGE_NOT_FOUND_ERROR"
     message_attachment_not_found_error = "MESSAGE_ATTACHMENT_NOT_FOUND_ERROR"
     chat_membership_not_found_error = "CHAT_MEMBERSHIP_NOT_FOUND_ERROR"
+    not_allowed_chat_type_error = "NOT_ALLOWED_CHAT_TYPE_ERROR"
+    message_does_not_belong_to_chat_error = "MESSAGE_DOES_NOT_BELONG_TO_CHAT_ERROR"
+    message_does_not_have_comments_error = "MESSAGE_DOES_NOT_HAVE_COMMENTS_ERROR"
+    reply_message_belongs_to_different_chat_error = "REPLY_MESSAGE_BELONGS_TO_DIFFERENT_CHAT_ERROR"
+    not_enough_permissions_to_post_error = "NOT_ENOUGH_PERMISSIONS_TO_POST_ERROR"
+    reply_message_belongs_to_different_parent_message_error = "REPLY_MESSAGE_BELONGS_TO_DIFFERENT_PARENT_MESSAGE_ERROR"
+    user_is_not_message_sender_error = "USER_IS_NOT_MESSAGE_SENDER_ERROR"
+    cannot_mark_own_message_as_read_error = "CANNOT_MARK_OWN_MESSAGE_AS_READ_ERROR"
+    message_was_already_marked_as_read_error = "MESSAGE_WAS_ALREADY_MARKED_AS_READ_ERROR"
 
 
 class ErrorRegistry:
@@ -63,3 +72,12 @@ class ErrorRegistry:
     message_not_found_error = ErrorInfo(error_code = Error.message_not_found_error, error_message = "Сообщение не найдено!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
     message_attachment_not_found_error = ErrorInfo(error_code = Error.message_attachment_not_found_error, error_message = "Вложение не найдено!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
     chat_membership_not_found_error = ErrorInfo(error_code = Error.chat_membership_not_found_error, error_message = "Членство в чате не найдено!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
+    not_allowed_chat_type_error = ErrorInfo(error_code = Error.not_allowed_chat_type_error, error_message = "Указан недопустимый вид чата!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    message_does_not_belong_to_chat_error = ErrorInfo(error_code = Error.message_does_not_belong_to_chat_error, error_message = "Сообщение не принадлежит к выбранному чату!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    message_does_not_have_comments_error = ErrorInfo(error_code = Error.message_does_not_have_comments_error, error_message = "У этого сообщения нет комментариев!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    reply_message_belongs_to_different_chat_error = ErrorInfo(error_code = Error.reply_message_belongs_to_different_chat_error, error_message = "Ответное сообщение не может принадлежать к другому чату!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    not_enough_permissions_to_post_error = ErrorInfo(error_code = Error.not_enough_permissions_to_post_error, error_message = "У вас недостаточно прав, чтобы отправлять сообщения в данный чат!", error_status_code = fastapi.status.HTTP_403_FORBIDDEN)
+    reply_message_belongs_to_different_parent_message_error = ErrorInfo(error_code = Error.reply_message_belongs_to_different_parent_message_error, error_message = "Ответное сообщение не может принадлежать к другому обсуждению!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    user_is_not_message_sender_error = ErrorInfo(error_code = Error.user_is_not_message_sender_error, error_message = "Вы не являетесь автором этого сообщения!", error_status_code = fastapi.status.HTTP_403_FORBIDDEN)
+    cannot_mark_own_message_as_read_error = ErrorInfo(error_code = Error.cannot_mark_own_message_as_read_error, error_message = "Вы не можете отметить прочитанным собственное сообщение!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    message_was_already_marked_as_read_error = ErrorInfo(error_code = Error.message_was_already_marked_as_read_error, error_message = "Вы уже отметили прочитанным данное сообщение!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
