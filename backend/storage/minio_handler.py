@@ -16,7 +16,7 @@ from backend.routers.errors import ErrorRegistry
 
 class MinioBucket(str, enum.Enum):
     users_avatars = "users:avatars"
-    groups_avatars = "groups:avatars"
+    chats_avatars = "chats:avatars"
     messages_attachments = "messages:attachments"
 
 
@@ -29,7 +29,7 @@ class MinioClient:
     def __init__(self, endpoint: str, access_key: str, secret_key: str):
         self.client = minio.Minio(endpoint, access_key, secret_key)
         self.client.make_bucket(MinioBucket.users_avatars.value)
-        self.client.make_bucket(MinioBucket.groups_avatars.value)
+        self.client.make_bucket(MinioBucket.chats_avatars.value)
         self.client.make_bucket(MinioBucket.messages_attachments.value)
 
 
@@ -47,28 +47,41 @@ class MinioClient:
 
     def put_file_task(self, bucket_name: MinioBucket, file: fastapi.UploadFile) -> str:
 
-        minio_file_name: str = str()
         file_bytes: bytes = bytes()
+        image_extension: str = pathlib.Path(file.filename).suffix.upper()
+        minio_file_name = f"{uuid.uuid4().hex}{image_extension}"
 
         match bucket_name:
-            case MinioBucket.users_avatars:
+            case MinioBucket.users_avatars | MinioBucket.chats_avatars:
                 if file.content_type not in parameters.allowed_image_content_types:
                     raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_type_not_allowed_error.error_status_code,
                     detail = ErrorRegistry.file_type_not_allowed_error)
-
-                image_extension: str = pathlib.Path(file.filename).suffix.upper()
 
                 if image_extension not in parameters.allowed_image_extensions:
                     raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_type_not_allowed_error.error_status_code,
                     detail = ErrorRegistry.file_type_not_allowed_error)
 
-                minio_file_name = f"{uuid.uuid4().hex}{image_extension}"
+                if file.size > parameters.max_avatar_size_bytes:
+                    raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_size_too_large.error_status_code,
+                    detail = ErrorRegistry.file_size_too_large)
 
                 file_bytes = file.file.read()
 
                 if len(file_bytes) > parameters.max_avatar_size_bytes:
                     raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_size_too_large.error_status_code,
                     detail = ErrorRegistry.file_size_too_large)
+
+            case MinioBucket.messages_attachments:
+                if file.size > parameters.max_attachment_size_bytes:
+                    raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_size_too_large.error_status_code,
+                    detail = ErrorRegistry.file_size_too_large)
+
+                file_bytes = file.file.read()
+
+                if len(file_bytes) > parameters.max_attachment_size_bytes:
+                    raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_size_too_large.error_status_code,
+                    detail = ErrorRegistry.file_size_too_large)
+
 
         self.client.put_object(str(bucket_name.value), minio_file_name, io.BytesIO(file_bytes), len(file_bytes), file.content_type)
 

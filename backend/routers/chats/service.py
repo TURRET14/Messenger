@@ -1,51 +1,61 @@
 import fastapi
 import fastapi.encoders
-import redis.asyncio
 import sqlalchemy.orm
-import minio
-import pathlib
-import uuid
-import io
-import asyncio
-import json
+import sqlalchemy.ext.asyncio
 from typing import Sequence
+import datetime
 
+from backend.routers.chats import minio_deletion_service
 from backend.storage import *
-from models import *
+from request_models import (GroupChatModel)
+from response_models import (ChatResponseModel, ChatMembershipResponseModel)
+from backend.routers.messages.response_models import (MessageResponseModel)
 import backend.routers.errors
 import backend.routers.dependencies
 import backend.routers.parameters
 import utils
 import backend.routers.users.utils
+import backend.routers.messages.utils
+import validation_service
+import backend.routers.messages.validation_service
+import backend.routers.users.validation_service
+from backend.routers.errors import (ErrorRegistry)
+import backend.routers.users.service
 
 
 async def get_all_chats(
     offset_multiplier: int,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    subquery: sqlalchemy.Subquery = (sqlalchemy.select(Message.chat_id.label("chat_id"),
+    subquery_chat_last_message_datetime: sqlalchemy.Subquery = (sqlalchemy.select(Message.chat_id.label("chat_id"),
     sqlalchemy.func.max(Message.date_and_time_sent).label("date_and_time_sent"))
     .select_from(Message)
     .group_by(Message.chat_id)
     .subquery())
 
-    chats_list: Sequence[sqlalchemy.RowMapping] = (db.execute(
+    chats_list_raw: Sequence[tuple[Chat, str]] = ((await db.execute(
     sqlalchemy.select(
-    Chat.id,
-    Chat.chat_kind,
-    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(User.username).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id))),
-    Chat.owner_user_id,
-    Chat.date_and_time_created,
-    Chat.is_read_only)
+    Chat,
+    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.string_agg(User.name + " " + User.surname + " " + User.second_name, ", ") ).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id)).label("chat_name"))
     .select_from(ChatMembership)
     .where(sqlalchemy.and_(ChatMembership.chat_user_id == selected_user.id))
     .join(Chat, Chat.id == ChatMembership.chat_id)
-    .join(subquery, subquery.c.chat_id == Chat.id)
-    .order_by(subquery.c.date_and_time_sent.desc())
+    .join(subquery_chat_last_message_datetime, subquery_chat_last_message_datetime.c.chat_id == Chat.id)
+    .order_by(subquery_chat_last_message_datetime.c.date_and_time_sent.desc())
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
-    .mappings().all())
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .tuples().all())
+
+    chats_list: list[ChatResponseModel] = list()
+
+    for chat, chat_name in chats_list_raw:
+        chats_list.append(ChatResponseModel(
+        id = chat.id,
+        chat_kind = chat.chat_kind,
+        name = chat_name,
+        owner_user_id = chat.owner_user_id,
+        date_and_time_created = chat.date_and_time_created))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chats_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -53,19 +63,22 @@ async def get_all_chats(
 async def get_chat(
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not await utils.get_chat_user_membership(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+
+    chat_name: str | None = selected_chat.name
+
+    if not chat_name:
+        chat_name: str = await utils.get_chat_name(selected_chat, selected_user, db)
+
 
     selected_chat: ChatResponseModel = ChatResponseModel(
         id = selected_chat.id,
         chat_kind = selected_chat.chat_kind,
-        name = selected_chat.name,
+        name = chat_name,
         owner_user_id = selected_chat.owner_user_id,
-        date_and_time_created = selected_chat.date_and_time_created,
-        is_read_only = selected_chat.is_read_only
-    )
+        date_and_time_created = selected_chat.date_and_time_created)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(selected_chat), status_code = fastapi.status.HTTP_200_OK)
 
@@ -75,55 +88,57 @@ async def get_chat_members(
     offset_multiplier: int,
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not await utils.get_chat_user_membership(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
 
-    users_list: Sequence[sqlalchemy.RowMapping] = (db.execute(sqlalchemy.select(
-    User.id,
-    ChatMembership.chat_id,
-    User.username,
-    User.name,
-    User.surname,
-    User.second_name,
-    ChatMembership.date_and_time_added,
-    ChatMembership.chat_role)
+    membership_list_raw: Sequence[ChatMembership] = ((await db.execute(
+    sqlalchemy.select(ChatMembership)
     .select_from(ChatMembership)
     .where(sqlalchemy.and_(ChatMembership.chat_id == selected_chat.id))
     .join(User, User.id == ChatMembership.chat_user_id)
     .order_by(Chat.id)
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection))
-    .mappings().all())
+    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .scalars().all())
 
-    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(users_list), status_code = fastapi.status.HTTP_200_OK)
+    memberships_list: list[ChatMembershipResponseModel] = list()
+
+    for membership in membership_list_raw:
+        memberships_list.append(ChatMembershipResponseModel(
+        id = membership.id,
+        chat_id = membership.chat_id,
+        chat_user_id = membership.chat_user_id,
+        date_and_time_added = membership.date_and_time_added,
+        chat_role = membership.chat_role))
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(memberships_list), status_code = fastapi.status.HTTP_200_OK)
 
 
 async def get_chat_last_message(
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not await utils.get_chat_user_membership(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
 
-    last_message: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
-    Message.id,
-    Message.chat_id,
-    Message.date_and_time_sent,
-    Message.date_and_time_edited,
-    Message.message_text,
-    User.id.label("sender_id"),
-    User.username.label("sender_username"),
-    User.name.label("sender_name"),
-    User.surname.label("sender_surname"),
-    User.second_name.label("sender_second_name"))
+    last_message_raw: Message | None = ((await db.execute(sqlalchemy.select(Message)
     .select_from(Message)
     .where(Message.chat_id == selected_chat.id)
-    .join(User, User.id == Message.sender_user_id)
     .order_by(Message.date_and_time_sent.desc())
-    .limit(1)).mappings().first()
+    .limit(1)))
+    .scalars().first())
+
+    if not last_message_raw:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_not_found_error.error_status_code, detail = ErrorRegistry.message_attachment_not_found_error)
+
+    last_message: MessageResponseModel = MessageResponseModel(
+    id = last_message_raw.id,
+    chat_id = last_message_raw.chat_id,
+    date_and_time_sent = last_message_raw.date_and_time_sent,
+    date_and_time_edited = last_message_raw.date_and_time_edited,
+    message_text = last_message_raw.message_text,
+    is_read = await backend.routers.messages.utils.is_message_read(last_message_raw, selected_user, db))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(last_message), status_code = fastapi.status.HTTP_200_OK)
 
@@ -131,56 +146,56 @@ async def get_chat_last_message(
 async def get_chat_avatar(
     selected_chat: Chat,
     selected_user: User,
-    minio_client: minio.Minio,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.StreamingResponse | fastapi.responses.FileResponse:
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.StreamingResponse:
 
-    if not await utils.get_chat_user_membership(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
 
-    if selected_chat.chat_kind == ChatKind.GROUP:
-        if not selected_chat.avatar_photo_path:
-            return fastapi.responses.FileResponse(backend.routers.parameters.default_avatar_path, status_code = fastapi.status.HTTP_200_OK)
-        else:
-            file = minio_client.get_object("groups:avatars", selected_chat.avatar_photo_path)
-            file_stat = minio_client.stat_object("groups:avatars", selected_chat.avatar_photo_path)
+    await validation_service.validate_avatar_photo_path(selected_chat, selected_user, db)
 
-            return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type,
-            headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK)
+    if selected_chat.chat_kind in [ChatKind.PRIVATE]:
 
+        other_user: User | None = await utils.get_other_chat_user(selected_chat, selected_user, db)
+        if not other_user:
+            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
+
+        return await backend.routers.users.service.get_user_avatar(other_user, minio_client)
+
+    elif selected_chat.chat_kind in [ChatKind.PROFILE]:
+
+        owner_user: User | None = (await db.execute(sqlalchemy.select(User).where(User.id == selected_chat.owner_user_id))).scalars().first()
+
+        if not owner_user:
+            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
+
+        return await backend.routers.users.service.get_user_avatar(owner_user, minio_client)
     else:
-        avatar_photo_path: str = (db.execute(sqlalchemy.select(User.avatar_photo_path)
-                                             .select_from(ChatMembership)
-                                             .where(sqlalchemy.and_(ChatMembership.chat_id == selected_chat.id,
-                                                                    ChatMembership.chat_user_id != selected_user.id))).scalar())
-        if not avatar_photo_path:
-            return fastapi.responses.FileResponse(backend.routers.parameters.default_avatar_path, status_code = fastapi.status.HTTP_200_OK)
-        else:
-            file = minio_client.get_object("users:avatars", avatar_photo_path)
-            file_stat = minio_client.stat_object("users:avatars", avatar_photo_path)
+        if not selected_chat.avatar_photo_path:
+            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.avatar_not_found_error.error_status_code, detail = ErrorRegistry.avatar_not_found_error)
 
-            return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type,
-            headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK)
+        file = await minio_client.get_file(MinioBucket.chats_avatars, selected_chat.avatar_photo_path)
+        file_stat = await minio_client.get_file_stat(MinioBucket.chats_avatars, selected_chat.avatar_photo_path)
+
+        return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type,
+        headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def create_private_chat(
     friend_user: User,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if backend.routers.users.utils.get_user_block(selected_user, friend_user, db) or backend.routers.users.utils.get_user_block(friend_user, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await backend.routers.users.validation_service.validate_are_users_not_blocked(selected_user, friend_user, db)
+    await validation_service.validate_users_dont_have_private_chat(selected_user, friend_user, db)
 
-    private_chat: Chat = await utils.get_users_private_chat(selected_user, friend_user, db)
-
-    if not private_chat:
+    async with db.begin():
         new_chat: Chat = Chat(
         chat_kind = ChatKind.PRIVATE,
         date_and_time_created = datetime.datetime.now(datetime.timezone.utc))
 
         db.add(new_chat)
-        db.commit()
-        db.refresh(new_chat)
+        await db.flush()
+        await db.refresh(new_chat)
 
         first_chat_user: ChatMembership = ChatMembership(
         chat_id = new_chat.id,
@@ -194,37 +209,34 @@ async def create_private_chat(
 
         db.add(first_chat_user)
         db.add(second_chat_user)
-        db.commit()
 
-        return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
-    else:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.CONFLICT_ERROR)
+    return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
 
 
 async def create_group_chat(
     data: GroupChatModel,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    new_chat: Chat = Chat(
-    chat_kind = ChatKind.GROUP,
-    owner_user_id = selected_user.id,
-    name = data.name,
-    date_and_time_created = datetime.datetime.now(datetime.timezone.utc))
-    db.add(new_chat)
-    db.commit()
-    db.refresh(new_chat)
 
-    membership: ChatMembership = ChatMembership(
-    chat_id = new_chat.id,
-    chat_user_id = selected_user.id,
-    date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-    chat_role = ChatRole.OWNER)
+    async with db.begin():
+        new_chat: Chat = Chat(
+        chat_kind = ChatKind.GROUP,
+        owner_user_id = selected_user.id,
+        name = data.name,
+        date_and_time_created = datetime.datetime.now(datetime.timezone.utc))
 
-    db.add(membership)
-    db.commit()
-    db.refresh(membership)
+        db.add(new_chat)
+        await db.flush()
+        await db.refresh(new_chat)
+
+        membership: ChatMembership = ChatMembership(
+        chat_id = new_chat.id,
+        chat_user_id = selected_user.id,
+        date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
+        chat_role = ChatRole.OWNER)
+
+        db.add(membership)
 
     return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -233,153 +245,125 @@ async def update_chat_avatar(
     selected_chat: Chat,
     file: fastapi.UploadFile,
     selected_user: User,
-    minio_client: minio.Minio,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if not selected_chat.chat_kind == ChatKind.GROUP:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
+    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
 
-    if not await utils.is_chat_user_owner_or_admin(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    old_avatar_path: str | None = selected_chat.avatar_photo_path
 
-    if file.content_type not in backend.routers.parameters.allowed_image_content_types:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_TYPE_NOT_ALLOWED_ERROR)
+    new_avatar_photo_path: str = await minio_client.put_file(MinioBucket.chats_avatars, file)
+    selected_chat.avatar_photo_path = new_avatar_photo_path
+    await db.commit()
 
-    image_extension: str = pathlib.Path(file.filename).suffix.upper()
+    if old_avatar_path:
+        await minio_client.delete_file(MinioBucket.chats_avatars, old_avatar_path)
 
-    if image_extension not in backend.routers.parameters.allowed_image_extensions:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_TYPE_NOT_ALLOWED_ERROR)
-
-    if file.size > backend.routers.parameters.max_avatar_size_bytes:
-        raise fastapi.exceptions.HTTPException(status_code=fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_SIZE_TOO_LARGE_ERROR)
-
-    #MinIO - Загрузка аватара
-    minio_file_name: str = f"chats/{selected_chat.id}/{uuid.uuid4().hex.upper()}{image_extension}"
-    file_content = await file.read()
-    minio_client.put_object("chats:avatars", minio_file_name, io.BytesIO(file_content), len(file_content), file.content_type)
-
-    # MinIO - Удаление старого аватара
-    if selected_chat.avatar_photo_path is not None:
-        minio_client.remove_object("chats:avatars", selected_chat.avatar_photo_path)
-
-    selected_chat.avatar_photo_path = minio_file_name
-    db.commit()
-
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code=fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def update_chat_name(
     selected_chat: Chat,
     data: GroupChatModel,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if not selected_chat.chat_kind == ChatKind.GROUP:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if not await utils.is_chat_user_owner_or_admin(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
+    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
 
     selected_chat.name = data.name
-    db.commit()
+    await db.commit()
 
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def update_chat_owner(
     selected_chat: Chat,
     new_owner_user: User,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if not selected_chat.chat_kind == ChatKind.GROUP:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
+    await validation_service.validate_are_users_not_the_same(selected_user, new_owner_user)
+    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, new_owner_user, db)
 
-    if not await utils.is_chat_user_owner(selected_chat, selected_user):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    old_owner_membership: ChatMembership = await utils.get_chat_user_membership(selected_chat, selected_user, db)
+    old_owner_membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, selected_user, db)
     if not old_owner_membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
     
-    new_owner_membership: ChatMembership = await utils.get_chat_user_membership(selected_chat, new_owner_user, db)
+    new_owner_membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, new_owner_user, db)
     if not new_owner_membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
 
+    async with db.begin():
+        selected_chat.owner_user_id = new_owner_user.id
+        old_owner_membership.chat_role = ChatRole.USER
+        new_owner_membership.chat_role = ChatRole.OWNER
 
-    selected_chat.owner_user_id = new_owner_user.id
-    old_owner_membership.chat_role = ChatRole.USER
-    new_owner_membership.chat_role = ChatRole.OWNER
-    db.commit()
-
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def add_chat_admin(
     selected_chat: Chat,
     new_admin_user: User,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if selected_chat.chat_kind not in [ChatKind.GROUP, ChatKind.CHANNEL]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_is_chat_user_owner(selected_chat, selected_user)
+    await validation_service.validate_are_users_not_the_same(selected_user, new_admin_user)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, new_admin_user, db)
 
-    if not await utils.is_chat_user_owner(selected_chat, selected_user):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_user.id == new_admin_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_409_CONFLICT, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    membership: ChatMembership = await utils.get_chat_user_membership(selected_chat, new_admin_user, db)
+    membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, new_admin_user, db)
     if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-    membership.chat_role = ChatRole.ADMIN
-    db.commit()
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
 
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    await validation_service.validate_is_chat_user_not_admin(selected_chat, new_admin_user, db)
+
+    membership.chat_role = ChatRole.ADMIN
+    await db.commit()
+
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 async def delete_chat_admin(
     selected_chat: Chat,
     admin_user: User,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if selected_chat.chat_kind not in [ChatKind.GROUP, ChatKind.CHANNEL]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_is_chat_user_owner(selected_chat, selected_user)
+    await validation_service.validate_are_users_not_the_same(selected_user, admin_user)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, admin_user, db)
 
-    if not await utils.is_chat_user_owner(selected_chat, selected_user):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    membership: ChatMembership = await utils.get_chat_user_membership(selected_chat, admin_user, db)
+    membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, admin_user, db)
     if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
+
+    await validation_service.validate_is_chat_user_admin(selected_chat, admin_user, db)
 
     membership.chat_role = ChatRole.USER
-    db.commit()
+    await db.commit()
 
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def add_chat_user(
     selected_chat: Chat,
     new_user: User,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if selected_chat.chat_kind not in [ChatKind.GROUP, ChatKind.CHANNEL]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if not await utils.is_chat_user_owner_or_admin(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if not await utils.get_users_friendship(selected_user, new_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if await utils.get_chat_user_membership(selected_chat, new_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
+    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
+    await validation_service.validate_are_users_not_the_same(selected_user, new_user)
+    await backend.routers.users.validation_service.validate_are_users_friends(selected_user, new_user, db)
 
     membership: ChatMembership = ChatMembership(
     chat_id = selected_chat.id,
@@ -388,7 +372,7 @@ async def add_chat_user(
     chat_role = ChatRole.USER)
 
     db.add(membership)
-    db.commit()
+    await db.commit()
 
     return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -397,171 +381,139 @@ async def delete_chat_user(
     selected_chat: Chat,
     chat_user: User,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if selected_chat.chat_kind not in [ChatKind.GROUP, ChatKind.CHANNEL]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
+    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
+    await validation_service.validate_are_users_not_the_same(selected_user, chat_user)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, chat_user, db)
 
-    if not await utils.is_chat_user_owner_or_admin(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_user.id == chat_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    membership: ChatMembership = await utils.get_chat_user_membership(selected_chat, chat_user, db)
+    membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, chat_user, db)
     if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
 
-    db.delete(membership)
-    db.commit()
+    await db.delete(membership)
+    await db.commit()
 
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code=fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code=fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def leave_chat(
     selected_chat: Chat,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    membership: ChatMembership = await utils.get_chat_user_membership(selected_chat, selected_user, db)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+
+    membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, selected_user, db)
     if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
+
+    background_tasks = fastapi.background.BackgroundTasks()
 
     if selected_chat.chat_kind == ChatKind.PRIVATE:
-        db.delete(selected_chat)
+        attachments_to_delete: list[BucketWithFiles] = await minio_deletion_service.get_all_chat_attachments_to_delete(selected_chat, db)
+        background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
+
+        await db.delete(selected_chat)
+    elif selected_chat.owner_user_id == selected_user.id:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.owner_cannot_leave_chat_error.error_status_code, detail = ErrorRegistry.owner_cannot_leave_chat_error)
     else:
-        db.delete(membership)
+        await db.delete(membership)
 
-    db.commit()
+    await db.commit()
 
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT, background = background_tasks)
 
 
 async def delete_chat(
     selected_chat: Chat,
     selected_user: User,
-    minio_client: minio.Minio,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if selected_chat.chat_kind not in [ChatKind.GROUP, ChatKind.CHANNEL]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
+    await validation_service.validate_is_chat_user_owner(selected_chat, selected_user)
 
-    if not await utils.is_chat_user_owner(selected_chat, selected_user):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    attachments_to_delete: list[BucketWithFiles] = await minio_deletion_service.get_all_chat_attachments_to_delete(selected_chat, db)
+    background_tasks = fastapi.background.BackgroundTasks()
+    background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
 
-    if selected_chat.avatar_photo_path:
-        minio_client.remove_object("groups:avatars", selected_chat.avatar_photo_path)
+    await db.delete(selected_chat)
+    await db.commit()
 
-    db.delete(selected_chat)
-    db.commit()
-
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT, background = background_tasks)
 
 
-async def create_community(
+async def create_channel(
     data: GroupChatModel,
     selected_user: User,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    new_chat: Chat = Chat(
-    chat_kind = ChatKind.CHANNEL,
-    owner_user_id = selected_user.id,
-    name = data.name,
-    date_and_time_created = datetime.datetime.now(datetime.timezone.utc))
-    db.add(new_chat)
-    db.commit()
-    db.refresh(new_chat)
+    async with db.begin():
+        new_chat: Chat = Chat(
+        chat_kind = ChatKind.CHANNEL,
+        owner_user_id = selected_user.id,
+        name = data.name,
+        date_and_time_created = datetime.datetime.now(datetime.timezone.utc))
 
-    membership: ChatMembership = ChatMembership(
-    chat_id = new_chat.id,
-    chat_user_id = selected_user.id,
-    date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-    chat_role = ChatRole.OWNER)
+        db.add(new_chat)
+        await db.flush()
+        await db.refresh(new_chat)
 
-    db.add(membership)
-    db.commit()
-    db.refresh(membership)
+        membership: ChatMembership = ChatMembership(
+        chat_id = new_chat.id,
+        chat_user_id = selected_user.id,
+        date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
+        chat_role = ChatRole.OWNER)
+
+        db.add(membership)
 
     return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
 
 
-async def get_discussion_by_community_message_id(
-    selected_chat: Chat,
-    selected_message: Message,
-    selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
-
-    if not await utils.get_chat_user_membership(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if selected_chat.chat_kind != ChatKind.CHANNEL:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    message_discussion: Chat = (db.execute(sqlalchemy.select(
-    Chat.id,
-    Chat.chat_kind,
-    Chat.name,
-    Chat.owner_user_id,
-    Chat.date_and_time_created,
-    Chat.is_read_only)
-    .select_from(Chat)
-    .where(Chat.discussion_message_id == selected_message.id))
-    .scalars().first())
-
-    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(message_discussion), status_code = fastapi.status.HTTP_200_OK)
-
-
-async def get_user_wall(
+async def get_user_profile(
     wall_user: User,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    wall: sqlalchemy.RowMapping = (db.execute(sqlalchemy.select(
-    Chat.id,
-    Chat.chat_kind,
-    sqlalchemy.func.coalesce(Chat.name, db.execute(sqlalchemy.select(User.username).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id))),
-    Chat.owner_user_id,
-    Chat.date_and_time_created,
-    Chat.is_read_only)
-                                              .select_from(Chat)
-                                              .where(sqlalchemy.and_(Chat.owner_user_id == wall_user.id, Chat.chat_kind == ChatKind.PROFILE)))
-    .mappings().first())
+    user_profile_raw: Chat
+    chat_name: str
 
-    if not wall:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
+    user_profile_raw, chat_name = ((await db.execute(sqlalchemy.select(Chat,
+    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.string_agg(User.name + " " + User.surname + " " + User.second_name, ", ") ).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id)).label("chat_name"))
+    .select_from(Chat)
+    .where(sqlalchemy.and_(Chat.owner_user_id == wall_user.id, Chat.chat_kind == ChatKind.PROFILE))))
+    .scalars().first())
 
-    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(wall), status_code = fastapi.status.HTTP_200_OK)
+
+    user_profile: ChatResponseModel = ChatResponseModel(
+    id = user_profile_raw.id,
+    chat_kind = user_profile_raw.chat_kind,
+    name = chat_name,
+    owner_user_id = user_profile_raw.owner_user_id,
+    date_and_time_created = user_profile_raw.date_and_time_created)
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_profile), status_code = fastapi.status.HTTP_200_OK)
 
 
 async def get_chat_user(
     selected_chat: Chat,
-    selected_chat_user: ChatMembership,
+    selected_membership: ChatMembership,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not await utils.get_chat_user_membership(selected_chat, selected_user, db):
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_service.validate_does_chat_membership_belong_to_chat(selected_chat, selected_membership)
 
-    if selected_chat_user.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    user: User = db.execute(sqlalchemy.select(User).where(User.id == selected_chat_user.chat_user_id)).scalars().first()
-
-    chat_user: ChatUserModel = ChatUserModel(
-    id = selected_chat_user.id,
-    chat_id = selected_chat_user.chat_id,
-    username = user.username,
-    name = user.name,
-    surname = user.surname,
-    second_name = user.second_name,
-    date_and_time_added = selected_chat_user.date_and_time_added,
-    chat_role = selected_chat_user.chat_role)
+    chat_user: ChatMembershipResponseModel = ChatMembershipResponseModel(
+    id = selected_membership.id,
+    chat_id = selected_membership.chat_id,
+    chat_user_id = selected_membership.chat_user_id,
+    date_and_time_added = selected_membership.date_and_time_added,
+    chat_role = selected_membership.chat_role)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chat_user), status_code = fastapi.status.HTTP_200_OK)

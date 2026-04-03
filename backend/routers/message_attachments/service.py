@@ -1,14 +1,7 @@
-import json
-
 import fastapi
 import fastapi.encoders
-import redis.asyncio
 import sqlalchemy.orm
-import minio
-import pathlib
-import uuid
-import io
-import asyncio
+import sqlalchemy.ext.asyncio
 from typing import Sequence
 
 
@@ -16,40 +9,33 @@ from backend.storage import *
 import backend.routers.errors
 import backend.routers.dependencies
 import backend.routers.parameters
-from models import *
+from response_models import *
 import backend.routers.messages.utils
+import validation_service
+import backend.routers.messages.validation_service
 
 
 async def get_message_attachments_list(
     selected_chat: Chat,
     selected_message: Message,
     selected_user: User,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
     membership: ChatMembership
 
-    if selected_chat.chat_kind != ChatKind.discussion:
-        membership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat, selected_user, db)
-    else:
-        membership = await backend.routers.messages.utils.get_chat_user_membership(db.execute(
-            sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(
-                Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await backend.routers.messages.validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
 
-    if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    attachments_list_raw: Sequence[MessageAttachment] = ((await db.execute(
+    sqlalchemy.select(MessageAttachment)
+    .select_from(MessageAttachment)
+    .where(MessageAttachment.message_id == selected_message.id)))
+    .scalars().all())
 
-    if selected_chat.chat_kind == ChatKind.CHANNEL and membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    attachments_list: list[MessageAttachmentResponseModel] = list()
 
-    if selected_message.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    attachments_list: Sequence[sqlalchemy.RowMapping] = db.execute(sqlalchemy.select(
-    MessageAttachment.id.label("message_attachment_id"),
-    MessageAttachment.message_id,
-    sqlalchemy.literal(selected_chat.id).label("chat_id"))
-                                                                   .select_from(MessageAttachment)
-                                                                   .where(MessageAttachment.message_id == selected_message.id)).mappings().all()
+    for attachment in attachments_list_raw:
+        attachments_list.append(MessageAttachmentResponseModel(id = attachment.id, chat_id = selected_chat.id, message_id = selected_message.id))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(attachments_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -59,29 +45,15 @@ async def get_message_attachment_file(
     selected_message: Message,
     selected_attachment: MessageAttachment,
     selected_user: User,
-    minio_client: minio.Minio,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.StreamingResponse:
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.StreamingResponse:
 
-    membership: ChatMembership
+    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await backend.routers.messages.validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
+    await validation_service.validate_message_attachment_belonging_to_message(selected_message, selected_attachment)
 
-    if selected_chat.chat_kind != ChatKind.discussion:
-        membership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat, selected_user, db)
-    else:
-        membership = await backend.routers.messages.utils.get_chat_user_membership(db.execute(
-            sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(
-                Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
-
-    if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_chat.chat_kind == ChatKind.CHANNEL and membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.chat_id != selected_chat.id or selected_attachment.message_id != selected_message.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    file = minio_client.get_object("messages:attachments", selected_attachment.attachment_file_path)
-    file_stat = minio_client.stat_object("messages:attachments", selected_attachment.attachment_file_path)
+    file = await minio_client.get_file(MinioBucket.messages_attachments, selected_attachment.attachment_file_path)
+    file_stat = await minio_client.get_file_stat(MinioBucket.messages_attachments, selected_attachment.attachment_file_path)
 
     return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -91,48 +63,19 @@ async def add_message_attachment_file(
     selected_message: Message,
     file: fastapi.UploadFile,
     selected_user: User,
-    minio_client: minio.Minio,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    membership: ChatMembership
+    await validation_service.validate_post_message_attachment(selected_chat, selected_message, selected_user, db)
 
-    if selected_chat.chat_kind != ChatKind.discussion:
-        membership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat, selected_user, db)
-    else:
-        membership = await backend.routers.messages.utils.get_chat_user_membership(db.execute(
-            sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(
-                Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
-
-    if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_chat.chat_kind == ChatKind.CHANNEL and membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.sender_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    if file.size > backend.routers.parameters.max_attachment_size_bytes:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.IMAGE_SIZE_TOO_LARGE_ERROR)
-
-
-    image_extension: str = pathlib.Path(file.filename).suffix.upper()
-
-    #MinIO - Загрузка аватара
-    minio_file_name: str = f"messages/{selected_message.id}/{uuid.uuid4().hex.upper()}{image_extension}"
-    file_content = await file.read()
-    minio_client.put_object("messages:attachments", minio_file_name, io.BytesIO(file_content), len(file_content), file.content_type)
-
+    message_attachment_name: str = await minio_client.put_file(MinioBucket.messages_attachments, file)
 
     new_attachment: MessageAttachment = MessageAttachment(
     message_id = selected_message.id,
-    attachment_file_path = minio_file_name)
-    db.commit()
-    db.refresh(new_attachment)
+    attachment_file_path = message_attachment_name)
+
+    await db.commit()
+    await db.refresh(new_attachment)
 
     return fastapi.responses.JSONResponse({"id": new_attachment.id}, status_code = fastapi.status.HTTP_200_OK)
 
@@ -142,34 +85,14 @@ async def delete_message_attachment_file(
     selected_message: Message,
     selected_attachment: MessageAttachment,
     selected_user: User,
-    minio_client: minio.Minio,
-    redis_client: redis.asyncio.Redis,
-    db: sqlalchemy.orm.session.Session) -> fastapi.responses.JSONResponse:
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    membership: ChatMembership
+    await validation_service.validate_post_message_attachment(selected_chat, selected_message, selected_user, db)
 
-    if selected_chat.chat_kind != ChatKind.discussion:
-        membership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat, selected_user, db)
-    else:
-        membership = await backend.routers.messages.utils.get_chat_user_membership(db.execute(
-            sqlalchemy.select(Chat).select_from(Message).where(Message.id == selected_chat.discussion_message_id).join(
-                Chat, Chat.id == Message.chat_id)).scalars().first(), selected_user, db)
+    await minio_client.delete_file(MinioBucket.messages_attachments, selected_attachment.attachment_file_path)
 
-    if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
+    await db.delete(selected_attachment)
+    await db.commit()
 
-    if selected_chat.chat_kind == ChatKind.CHANNEL and membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.sender_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_403_FORBIDDEN, detail = backend.routers.return_details.FORBIDDEN_ERROR)
-
-    if selected_message.chat_id != selected_chat.id or selected_attachment.message_id != selected_message.id:
-        raise fastapi.exceptions.HTTPException(status_code = fastapi.status.HTTP_400_BAD_REQUEST, detail = backend.routers.return_details.BAD_REQUEST_ERROR)
-
-    minio_client.remove_object("messages:attachments", selected_attachment.attachment_file_path)
-
-    db.delete(selected_attachment)
-    db.commit()
-
-    return fastapi.responses.JSONResponse(backend.routers.return_details.SUCCESS_RETURN_MESSAGE, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_200_OK)

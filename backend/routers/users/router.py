@@ -205,7 +205,8 @@ async def search_friends_by_names(
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.users.service.search_friends_by_names(offset_multiplier, name, surname, second_name, current_user, db)
+    return await backend.routers.users.service.search_friends_by_names(offset_multiplier, name, surname, second_name,
+                                                                       current_user, db)
 
 
 @users_router.get("/users/me/friends/requests/sent", response_class = fastapi.responses.JSONResponse, response_model = list[FriendRequestResponseModel])
@@ -275,9 +276,10 @@ async def delete_friend(
 async def block_user(
     blocked_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    minio_client: MinioClient = fastapi.Depends(get_minio_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.users.service.block_user(blocked_user, current_user, db)
+    return await backend.routers.users.service.block_user(blocked_user, current_user, minio_client, db)
 
 
 @users_router.delete("/users/me/blocked-users", response_class = fastapi.responses.Response)

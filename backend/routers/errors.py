@@ -44,6 +44,15 @@ class Error(enum.Enum):
     user_is_not_message_sender_error = "USER_IS_NOT_MESSAGE_SENDER_ERROR"
     cannot_mark_own_message_as_read_error = "CANNOT_MARK_OWN_MESSAGE_AS_READ_ERROR"
     message_was_already_marked_as_read_error = "MESSAGE_WAS_ALREADY_MARKED_AS_READ_ERROR"
+    message_attachment_does_not_belong_to_message_error = "MESSAGE_ATTACHMENT_DOES_NOT_BELONG_TO_MESSAGE_ERROR"
+    avatar_not_found_error = "AVATAR_NOT_FOUND_ERROR"
+    private_chat_already_exists_error = "PRIVATE_CHAT_ALREADY_EXISTS_ERROR"
+    selected_user_is_request_sender_error = "SELECTED_USER_IS_REQUEST_SENDER_ERROR"
+    user_is_already_admin_error = "USER_IS_ALREADY_ADMIN_ERROR"
+    user_is_not_admin_error = "USER_IS_NOT_ADMIN_ERROR"
+    users_are_not_friends_error = "USERS_ARE_NOT_FRIENDS_ERROR"
+    owner_cannot_leave_chat_error = "OWNER_CANNOT_LEAVE_CHAT_ERROR"
+    internal_server_error = "INTERNAL_SERVER_ERROR"
 
 
 class ErrorRegistry:
@@ -81,3 +90,12 @@ class ErrorRegistry:
     user_is_not_message_sender_error = ErrorInfo(error_code = Error.user_is_not_message_sender_error, error_message = "Вы не являетесь автором этого сообщения!", error_status_code = fastapi.status.HTTP_403_FORBIDDEN)
     cannot_mark_own_message_as_read_error = ErrorInfo(error_code = Error.cannot_mark_own_message_as_read_error, error_message = "Вы не можете отметить прочитанным собственное сообщение!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     message_was_already_marked_as_read_error = ErrorInfo(error_code = Error.message_was_already_marked_as_read_error, error_message = "Вы уже отметили прочитанным данное сообщение!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    message_attachment_does_not_belong_to_message_error = ErrorInfo(error_code = Error.message_attachment_does_not_belong_to_message_error, error_message = "Вложение не принадлежит указанному сообщению!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    avatar_not_found_error = ErrorInfo(error_code = Error.avatar_not_found_error, error_message = "Аватар не найден!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
+    private_chat_already_exists_error = ErrorInfo(error_code = Error.private_chat_already_exists_error, error_message = "Приватный чат между вами и указанным пользователем уже существует!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    selected_user_is_request_sender_error = ErrorInfo(error_code = Error.selected_user_is_request_sender_error, error_message ="Указанным в запросе пользователем не можете являться вы!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    user_is_already_admin_error = ErrorInfo(error_code = Error.user_is_already_admin_error, error_message = "Указанный пользователь уже является администратором!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    user_is_not_admin_error = ErrorInfo(error_code = Error.user_is_not_admin_error, error_message = "Указанный пользователь не является администратором", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    users_are_not_friends_error = ErrorInfo(error_code = Error.users_are_not_friends_error, error_message = "Пользователи не являются друзьями!", error_status_code = fastapi.status.HTTP_403_FORBIDDEN)
+    owner_cannot_leave_chat_error = ErrorInfo(error_code = Error.owner_cannot_leave_chat_error, error_message = "Владелец чата не может выйти из собственного чата!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    internal_server_error = ErrorInfo(error_code = Error.internal_server_error, error_message = "Произошла внутренняя ошибка сервера!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)

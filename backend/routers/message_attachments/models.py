@@ -1,5 +1,4 @@
 import pydantic
-from backend.storage import *
 
 class MessageAttachmentModel(pydantic.BaseModel):
     id: int = pydantic.Field(ge = 0)

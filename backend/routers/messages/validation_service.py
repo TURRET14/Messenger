@@ -5,16 +5,14 @@ import sqlalchemy.ext.asyncio
 
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)
+import utils
 
 async def validate_chat_user_membership(
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> ChatMembership:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> ChatMembership | None:
 
-    chat_membership: ChatMembership = ((await db.execute(
-    sqlalchemy.select(ChatMembership)
-    .where(sqlalchemy.and_(ChatMembership.chat_id == selected_chat.id, ChatMembership.chat_user_id == selected_user.id))))
-                                       .scalars().first())
+    chat_membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat.id, selected_user.id, db)
 
     if not chat_membership:
         if selected_chat.chat_kind != ChatKind.PROFILE:
@@ -82,10 +80,10 @@ async def validate_is_user_allowed_to_post(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
-    chat_membership: ChatMembership = await validate_chat_user_membership(selected_chat, selected_user, db)
+    chat_membership: ChatMembership | None = await validate_chat_user_membership(selected_chat, selected_user, db)
 
     if selected_chat.chat_kind == ChatKind.CHANNEL:
-        if chat_membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
+        if chat_membership and chat_membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.not_enough_permissions_to_post_error.error_status_code, detail=ErrorRegistry.not_enough_permissions_to_post_error)
     if selected_chat.chat_kind == ChatKind.PROFILE:
         if selected_chat.owner_user_id != selected_user.id:
@@ -103,7 +101,7 @@ async def validate_post_message(
 
     if message_parent_message_id:
         if selected_chat.chat_kind in [ChatKind.CHANNEL, ChatKind.PROFILE]:
-            parent_message: Message = ((await db.execute(
+            parent_message: Message | None = ((await db.execute(
             sqlalchemy.select(Message)
             .where(Message.id == message_parent_message_id)))
             .scalars().first())
@@ -116,7 +114,7 @@ async def validate_post_message(
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.not_allowed_chat_type_error.error_status_code, detail = ErrorRegistry.not_allowed_chat_type_error)
 
     if message_reply_message_id:
-        reply_message: Message = ((await db.execute(
+        reply_message: Message | None = ((await db.execute(
         sqlalchemy.select(Message)
         .where(Message.id == message_reply_message_id)))
         .scalars().first())

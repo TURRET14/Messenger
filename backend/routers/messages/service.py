@@ -8,10 +8,10 @@ import datetime
 from backend.storage import *
 from request_models import (MessageRequestModel, MessagePostRequestModel)
 from response_models import (MessageResponseModel)
-from backend.routers.errors import (ErrorRegistry)
 import backend.routers.dependencies
 import backend.routers.parameters as parameters
 import validation_service
+import minio_deletion_service
 import utils
 
 async def get_chat_messages(
@@ -96,7 +96,7 @@ async def get_chat_message_by_id(
         date_and_time_sent = selected_message.date_and_time_sent,
         date_and_time_edited = selected_message.date_and_time_edited,
         message_text = selected_message.message_text,
-        is_read = await utils.is_message_read(selected_message.id, db))
+        is_read = await utils.is_message_read(selected_message, selected_user, db))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(message_data), status_code = fastapi.status.HTTP_200_OK)
 
@@ -132,21 +132,13 @@ async def delete_message(
 
     await validation_service.validate_update_delete_message(selected_chat, selected_message, selected_user, True, db)
 
-    attachments_to_delete: list[BucketWithFiles] = list()
-    files_list: Sequence[str] = ((await db.execute(
-    sqlalchemy.select(MessageAttachment.attachment_file_path)
-    .select_from(MessageAttachment)
-    .where(sqlalchemy.or_(MessageAttachment.message_id == selected_message.id,
-    MessageAttachment.message_id.in_(sqlalchemy.select(Message.id).select_from(Message).where(Message.parent_message_id == selected_message.id))))))
-    .scalars().all())
-
-    attachments_to_delete.append(BucketWithFiles(MinioBucket.messages_attachments, list(files_list)))
-
-    await db.delete(selected_message)
-    await db.commit()
+    attachments_to_delete: list[BucketWithFiles] = await minio_deletion_service.get_all_message_attachments_to_delete(selected_message, db)
 
     background_tasks = fastapi.background.BackgroundTasks()
     background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
+
+    await db.delete(selected_message)
+    await db.commit()
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT, background = background_tasks)
 

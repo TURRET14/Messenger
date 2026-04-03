@@ -47,9 +47,9 @@ async def is_phone_number_already_taken(
 async def get_friend_request(
     sender_user_id: int,
     receiver_user_id: int,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> FriendRequest:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> FriendRequest | None:
 
-    friend_request: FriendRequest = ((await db.execute(sqlalchemy.select(FriendRequest)
+    friend_request: FriendRequest | None = ((await db.execute(sqlalchemy.select(FriendRequest)
     .where(sqlalchemy.and_(FriendRequest.sender_user_id == sender_user_id,
     FriendRequest.receiver_user_id == receiver_user_id)))).scalars().first())
 
@@ -71,20 +71,23 @@ async def are_users_already_friends(
 async def get_user_block(
     selected_user_id: int,
     blocked_user_id: int,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> UserBlock:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> UserBlock | None:
 
-    return ((await db.execute(sqlalchemy.select(UserBlock)
+    user_block: UserBlock | None = ((await db.execute(
+    sqlalchemy.select(UserBlock)
     .where(sqlalchemy.or_(sqlalchemy.and_(UserBlock.user_id == selected_user_id, UserBlock.blocked_user_id == blocked_user_id)))))
     .scalars().first())
+
+    return user_block
 
 
 async def get_friendship(
     first_user_id: int,
     second_user_id: int,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> Friendship:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> Friendship | None:
 
-    friendship: Friendship = ((await db.execute(sqlalchemy.select(Friendship)
-                                                .where(sqlalchemy.and_(Friendship.user_id == min(first_user_id, second_user_id), Friendship.friend_user_id == max(first_user_id, second_user_id)))))
-                              .scalars().first())
+    friendship: Friendship | None = ((await db.execute(sqlalchemy.select(Friendship)
+    .where(sqlalchemy.and_(Friendship.user_id == min(first_user_id, second_user_id), Friendship.friend_user_id == max(first_user_id, second_user_id)))))
+    .scalars().first())
 
     return friendship

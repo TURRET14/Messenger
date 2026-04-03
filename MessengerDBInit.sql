@@ -59,7 +59,7 @@ CREATE TABLE chats (
     id BIGSERIAL PRIMARY KEY,
     chat_kind chat_types_enum NOT NULL,
     name VARCHAR(100),
-    owner_user_id BIGINT REFERENCES users ON DELETE CASCADE,
+    owner_user_id BIGINT REFERENCES users ON DELETE CASCADE NOT NULL,
     date_and_time_created TIMESTAMPTZ NOT NULL,
     avatar_photo_path VARCHAR(250)
 );

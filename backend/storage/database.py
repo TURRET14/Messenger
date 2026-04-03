@@ -85,7 +85,7 @@ class Chat(Base):
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
     chat_kind: sqlalchemy.orm.Mapped[ChatKind] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(ChatKind, name='chat_types_enum'), nullable=False)
     name: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
-    owner_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'))
+    owner_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'))
     date_and_time_created: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(250))
     __table_args__ = (sqlalchemy.Index('idx_chats_name', sqlalchemy.func.upper(name)),
@@ -114,7 +114,7 @@ class Message(Base):
     date_and_time_sent: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     date_and_time_edited: sqlalchemy.orm.Mapped[datetime.datetime | None] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True))
     reply_message_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('messages.id', ondelete='SET NULL'))
-    message_text: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
+    message_text: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
     message_text_tsvector: sqlalchemy.orm.Mapped[sqlalchemy.dialects.postgresql.TSVECTOR | None] = sqlalchemy.orm.mapped_column(sqlalchemy.dialects.postgresql.TSVECTOR, sqlalchemy.Computed("TO_TSVECTOR('russian', message_text)", persisted=True))
     parent_message_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('messages.id', ondelete='CASCADE'))
     is_notification: sqlalchemy.orm.Mapped[bool | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN)
@@ -168,13 +168,13 @@ sqlalchemy.event.listen(MessageReceipt, "after_insert", database_triggers.messag
 sqlalchemy.event.listen(MessageAttachment, "after_insert", database_triggers.message_attachment_after_insert)
 sqlalchemy.event.listen(MessageAttachment, "after_delete", database_triggers.message_attachment_after_delete)
 
-database_url: str = "postgresql+psycopg://" + os.getenv("POSTGRES_USER") + ":" + os.getenv("POSTGRES_PASSWORD") + "@" + os.getenv("POSTGRES_HOST") + ":" + os.getenv("POSTGRES_PORT") + "/" + os.getenv("POSTGRES_DB")
+database_url: str = "postgresql+psycopg://" + str(os.getenv("POSTGRES_USER")) + ":" + str(os.getenv("POSTGRES_PASSWORD")) + "@" + str(os.getenv("POSTGRES_HOST")) + ":" + str(os.getenv("POSTGRES_PORT")) + "/" + str(os.getenv("POSTGRES_DB"))
 db_engine: sqlalchemy.ext.asyncio.AsyncEngine = sqlalchemy.ext.asyncio.create_async_engine(database_url)
 session_maker: sqlalchemy.ext.asyncio.async_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=db_engine)
 
 async def init_db():
     async with db_engine.connect() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(lambda sync_connection: Base.metadata.create_all(sync_connection))
 
 asyncio.create_task(init_db())
 
