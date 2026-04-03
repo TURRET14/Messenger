@@ -17,7 +17,7 @@ class Error(enum.Enum):
     data_conflict_error = "DATA_CONFLICT_ERROR"
     incorrect_login_error = "INCORRECT_LOGIN_ERROR"
     incorrect_password_error = "INCORRECT_PASSWORD_ERROR"
-    invalid_session_error = "SESSION_NOT_FOUND_ERROR"
+    invalid_session_error = "INVALID_SESSION_ERROR"
     unauthorized_error = "UNAUTHORIZED_ERROR"
     forbidden_error = "FORBIDDEN_ERROR"
     file_type_not_allowed_error = "IMAGE_TYPE_NOT_ALLOWED_ERROR"
@@ -53,6 +53,9 @@ class Error(enum.Enum):
     users_are_not_friends_error = "USERS_ARE_NOT_FRIENDS_ERROR"
     owner_cannot_leave_chat_error = "OWNER_CANNOT_LEAVE_CHAT_ERROR"
     internal_server_error = "INTERNAL_SERVER_ERROR"
+    file_does_not_exist_error = "FILE_DOES_NOT_EXIST_ERROR"
+    error_uploading_file_error = "ERROR_UPLOADING_FILE_ERROR"
+    error_deleting_file_error = "ERROR_DELETING_FILE_ERROR"
 
 
 class ErrorRegistry:
@@ -63,7 +66,7 @@ class ErrorRegistry:
     data_conflict_error = ErrorInfo(error_code = Error.data_conflict_error, error_message = "Произошел конфликт данных!", error_status_code = fastapi.status.HTTP_409_CONFLICT)
     incorrect_login_error = ErrorInfo(error_code = Error.incorrect_login_error, error_message = "Неверный логин!", error_status_code = fastapi.status.HTTP_401_UNAUTHORIZED)
     incorrect_password_error = ErrorInfo(error_code = Error.incorrect_password_error, error_message = "Неверный пароль!", error_status_code = fastapi.status.HTTP_401_UNAUTHORIZED)
-    invalid_session_error = ErrorInfo(error_code = Error.invalid_session_error, error_message ="Указанная сессия не найдена!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
+    invalid_session_error = ErrorInfo(error_code = Error.invalid_session_error, error_message ="Указанная сессия не является действительной!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
     unauthorized_error = ErrorInfo(error_code = Error.unauthorized_error, error_message = "Вы не авторизованы!", error_status_code = fastapi.status.HTTP_401_UNAUTHORIZED)
     forbidden_error = ErrorInfo(error_code = Error.forbidden_error, error_message = "Вам не хватает прав!", error_status_code = fastapi.status.HTTP_403_FORBIDDEN)
     file_type_not_allowed_error = ErrorInfo(error_code = Error.file_type_not_allowed_error, error_message = "Этот тип файла не поддерживается!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
@@ -99,3 +102,6 @@ class ErrorRegistry:
     users_are_not_friends_error = ErrorInfo(error_code = Error.users_are_not_friends_error, error_message = "Пользователи не являются друзьями!", error_status_code = fastapi.status.HTTP_403_FORBIDDEN)
     owner_cannot_leave_chat_error = ErrorInfo(error_code = Error.owner_cannot_leave_chat_error, error_message = "Владелец чата не может выйти из собственного чата!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     internal_server_error = ErrorInfo(error_code = Error.internal_server_error, error_message = "Произошла внутренняя ошибка сервера!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)
+    file_does_not_exist_error = ErrorInfo(error_code = Error.file_does_not_exist_error, error_message = "Указанный файл не существует!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
+    error_uploading_file_error = ErrorInfo(error_code = Error.error_uploading_file_error, error_message ="Произошла ошибка при загрузке файла!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)
+    error_deleting_file_error = ErrorInfo(error_code = Error.error_deleting_file_error, error_message = "Произошла ошибка при удалении файла!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)

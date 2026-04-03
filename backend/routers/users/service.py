@@ -1,11 +1,13 @@
 import fastapi
 import fastapi.encoders
+import minio.datatypes
 import sqlalchemy
 import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 import sqlalchemy.exc
 import datetime
 from typing import Sequence
+import urllib3
 
 import backend.routers.dependencies
 import backend.routers.security
@@ -36,19 +38,16 @@ from response_models import (
 from backend.routers.common_models import (IDModel)
 
 import utils
+import validation.validators as validators
+import validation.checks as checks
+import backend.routers.common_validators.validators as common_validators
+import backend.routers.common_validators.checks as common_checks
 
 async def create_user(
     data: RegisterRequestModel,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if await utils.is_username_already_taken(data.username, db):
-        raise fastapi.HTTPException(status_code = ErrorRegistry.username_already_taken_error.error_status_code, detail = ErrorRegistry.username_already_taken_error)
-
-    if await utils.is_email_already_taken(data.email_address, db):
-        raise fastapi.HTTPException(status_code = ErrorRegistry.email_already_taken_error.error_status_code, detail = ErrorRegistry.email_already_taken_error)
-
-    if await utils.is_login_already_taken(data.login, db):
-        raise fastapi.HTTPException(status_code = ErrorRegistry.login_already_taken_error.error_status_code, detail = ErrorRegistry.login_already_taken_error)
+    await validators.validate_register(data.username, data.email_address, data.login, db)
 
     async with db.begin():
         new_user: User = User(
@@ -56,7 +55,7 @@ async def create_user(
         name = data.name,
         email_address = data.email_address,
         login = data.login,
-        password = backend.routers.security.hash_password(data.password),
+        password = await backend.routers.security.hash_password(data.password),
         surname = data.surname,
         second_name = data.second_name,
         date_and_time_registered = datetime.datetime.now(datetime.timezone.utc))
@@ -75,32 +74,21 @@ async def create_user(
 
 async def login(
     request: fastapi.Request,
-    response: fastapi.Response,
     data: LoginRequestModel,
     db: sqlalchemy.ext.asyncio.AsyncSession,
     redis_client: RedisClient) -> fastapi.responses.Response:
 
-    selected_user: User | None = ((await (db.execute(
-    sqlalchemy.select(User)
-    .where(User.login == data.login))))
-    .scalars().first())
+    user_agent: str = await checks.check_user_agent(request.headers.get("user-agent"))
 
-    if not selected_user:
-        raise fastapi.HTTPException(status_code = ErrorRegistry.incorrect_login_error.error_status_code, detail = ErrorRegistry.incorrect_login_error.error_status_code)
+    selected_user: User = await validators.validate_login(data.login, data.password, db)
 
-    if backend.routers.security.verify_password(selected_user.password, data.password):
-        user_agent: str | None = request.headers.get("user-agent")
+    session_id: str = await redis_client.create_user_session(selected_user.id, user_agent)
 
-        if user_agent:
-            session_id: str = await redis_client.create_user_session(selected_user.id, user_agent)
-        else:
-            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.bad_request_error.error_status_code, detail = ErrorRegistry.bad_request_error)
+    response: fastapi.responses.Response = fastapi.responses.Response()
+    response.set_cookie("session_id", value = session_id, max_age = parameters.redis_session_expiration_time_seconds, httponly = True, secure = True, samesite ="strict")
+    response.status_code = fastapi.status.HTTP_204_NO_CONTENT
 
-        response.set_cookie("session_id", value = session_id, max_age = parameters.redis_session_expiration_time_seconds, httponly = True, secure = True, samesite ="strict")
-
-        return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
-    else:
-        raise fastapi.HTTPException(status_code = ErrorRegistry.incorrect_password_error.error_status_code, detail = ErrorRegistry.incorrect_password_error)
+    return response
 
 
 async def get_all_sessions(
@@ -111,8 +99,9 @@ async def get_all_sessions(
 
     user_sessions_data: list[SessionResponseModel] = []
 
-    for session in user_session_ids:
-        session_data: SessionModel = await redis_client.get_user_session_data(session)
+    for session_id in user_session_ids:
+        session_data: SessionModel = await validators.validate_session(session_id, selected_user, redis_client)
+
         user_sessions_data.append(SessionResponseModel(
         session_id = session_data.session_id,
         user_id = session_data.user_id,
@@ -128,15 +117,9 @@ async def delete_session(
     selected_user: User,
     redis_client: RedisClient) -> fastapi.responses.Response:
 
-    session_data: SessionModel = await redis_client.get_user_session_data(data.session_id)
+    session_data: SessionModel = await validators.validate_session(data.session_id, selected_user, redis_client)
 
-    if not session_data:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.invalid_session_error.error_status_code, detail = ErrorRegistry.invalid_session_error)
-
-    if int(session_data.user_id) != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.invalid_session_error.error_status_code, detail = ErrorRegistry.invalid_session_error)
-
-    await redis_client.delete_user_session(data.session_id)
+    await redis_client.delete_user_session(session_data.session_id)
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
@@ -182,18 +165,7 @@ async def update_user(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if user_data.username != selected_user.username and await utils.is_username_already_taken(user_data.username, db):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.username_already_taken_error.error_status_code, detail = ErrorRegistry.username_already_taken_error)
-
-    if user_data.email_address != selected_user.email_address and await utils.is_email_already_taken(user_data.email_address, db):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.email_already_taken_error.error_status_code, detail = ErrorRegistry.email_already_taken_error)
-
-    phone_number = user_data.phone_number
-    if phone_number is not None:
-        if user_data.phone_number != selected_user.phone_number and await utils.is_phone_number_already_taken(user_data.phone_number, db):
-            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.phone_number_already_taken_error.error_status_code, detail = ErrorRegistry.phone_number_already_taken_error)
-
-
+    await validators.validate_update_user(selected_user, user_data.username, user_data.email_address, user_data.phone_number, db)
 
     selected_user.username = user_data.username
     selected_user.name = user_data.name
@@ -215,8 +187,7 @@ async def update_user_login(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if user_login_data.login != selected_user.login and await utils.is_login_already_taken(user_login_data.login, db):
-        raise fastapi.HTTPException(status_code = ErrorRegistry.login_already_taken_error.error_status_code, detail = ErrorRegistry.login_already_taken_error)
+    await validators.validate_update_user_login(selected_user, user_login_data.login, db)
 
     selected_user.login = user_login_data.login
 
@@ -230,10 +201,9 @@ async def update_user_password(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if not backend.routers.security.verify_password(selected_user.password, user_password_data.old_password):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.incorrect_password_error.error_status_code, detail = ErrorRegistry.incorrect_password_error)
+    await validators.validate_update_user_password(selected_user.password, user_password_data.old_password)
 
-    selected_user.password = backend.routers.security.hash_password(user_password_data.new_password)
+    selected_user.password = await backend.routers.security.hash_password(user_password_data.new_password)
 
     await db.commit()
 
@@ -244,17 +214,13 @@ async def get_user_avatar(
     selected_user: User,
     minio_client: MinioClient) -> fastapi.responses.StreamingResponse:
 
-    if not selected_user.avatar_photo_path:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.avatar_not_found_error.error_status_code, detail = ErrorRegistry.avatar_not_found_error)
+    avatar_photo_path: str = await validators.validate_user_avatar(selected_user.avatar_photo_path)
 
-    file = await minio_client.get_file(MinioBucket.users_avatars, selected_user.avatar_photo_path)
-    file_stat = await minio_client.get_file_stat(MinioBucket.users_avatars, selected_user.avatar_photo_path)
-
-    def close_stream():
-        file.close()
+    file: urllib3.BaseHTTPResponse = await minio_client.get_file(MinioBucket.users_avatars, avatar_photo_path)
+    file_stat: minio.datatypes.Object = await minio_client.get_file_stat(MinioBucket.users_avatars, avatar_photo_path)
 
     background_tasks = fastapi.BackgroundTasks()
-    background_tasks.add_task(close_stream)
+    background_tasks.add_task(minio_client.close_file_stream, file)
 
     return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
 
@@ -265,10 +231,15 @@ async def update_user_avatar(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
+    old_avatar_photo_path: str | None = selected_user.avatar_photo_path
+
     new_avatar_path: str = await minio_client.put_file(MinioBucket.users_avatars, file)
     selected_user.avatar_photo_path = new_avatar_path
 
     await db.commit()
+
+    if old_avatar_photo_path:
+        await minio_client.delete_file(MinioBucket.users_avatars, old_avatar_photo_path)
 
     return fastapi.responses.Response(status_code=fastapi.status.HTTP_204_NO_CONTENT)
 
@@ -329,7 +300,7 @@ async def search_users_by_username(
 
     users_list_raw: Sequence[User] = ((await db.execute(
     sqlalchemy.select(User)
-    .where(User.username.like(f"%{search_username}"))
+    .where(User.username.like(f"{search_username.upper()}%"))
     .order_by(User.id).offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
     .scalars().all())
@@ -353,17 +324,16 @@ async def search_users_by_names(
     search_second_name: str | None,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not search_name and not search_surname and not search_second_name:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.parameters_were_not_provided_error.error_status_code, detail = ErrorRegistry.parameters_were_not_provided_error)
+    await validators.validate_user_search_parameters(search_name, search_surname, search_second_name)
 
     select_request = sqlalchemy.select(User)
 
     if search_name:
-        select_request = select_request.where(User.name.like(f"%{search_name}"))
+        select_request = select_request.where(User.name.like(f"{search_name.upper()}%"))
     if search_surname:
-        select_request = select_request.where(User.surname.like(f"%{search_surname}"))
+        select_request = select_request.where(User.surname.like(f"{search_surname.upper()}%"))
     if search_second_name:
-        select_request = select_request.where(User.second_name.like(f"%{search_second_name}"))
+        select_request = select_request.where(User.second_name.like(f"{search_second_name.upper()}%"))
 
     users_list_raw: Sequence[User] = ((await db.execute(
     select_request.order_by(User.id)
@@ -433,7 +403,7 @@ async def search_friends_by_username(
     .select_from(Friendship)
     .where(Friendship.friend_user_id == selected_user.id)
     .join(User, User.id == Friendship.user_id)
-    .where(User.username.like(f"%{username}")))
+    .where(User.username.like(f"{username.upper()}%")))
     .order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
@@ -460,34 +430,32 @@ async def search_friends_by_names(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not search_name and not search_surname and not search_second_name:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.parameters_were_not_provided_error.error_status_code, detail = ErrorRegistry.parameters_were_not_provided_error)
+    await validators.validate_user_search_parameters(search_name, search_surname, search_second_name)
 
-    if not search_name:
-        search_name = str()
-    if not search_surname:
-        search_surname = str()
-    if not search_second_name:
-        search_second_name = str()
-
-    friends_list_raw: Sequence[User] = ((await db.execute(
-    sqlalchemy.select(User.username)
+    first_select_request = (sqlalchemy.select(User)
     .select_from(Friendship)
     .where(Friendship.user_id == selected_user.id)
-    .join(User, User.id == Friendship.friend_user_id)
-    .where(sqlalchemy.and_(
-    User.name.like(f"%{search_name}"),
-    User.surname.like(f"%{search_surname}"),
-    User.second_name.like(f"%{search_second_name}")))
-    .union(
-    sqlalchemy.select(User)
+    .join(User, User.id == Friendship.friend_user_id))
+
+    second_select_request = (sqlalchemy.select(User)
     .select_from(Friendship)
     .where(Friendship.friend_user_id == selected_user.id)
-    .join(User, User.id == Friendship.user_id)
-    .where(sqlalchemy.and_(
-    User.name.like(f"%{search_name}"),
-    User.surname.like(f"%{search_surname}"),
-    User.second_name.like(f"%{search_second_name}"))))
+    .join(User, User.id == Friendship.user_id))
+
+    if search_name:
+        first_select_request = first_select_request.where(User.name.like(f"{search_name.upper()}%"))
+        second_select_request = second_select_request.where(User.name.like(f"{search_name.upper()}%"))
+    if search_surname:
+        first_select_request = first_select_request.where(User.surname.like(f"{search_surname.upper()}%"))
+        second_select_request = second_select_request.where(User.surname.like(f"{search_surname.upper()}%"))
+    if search_second_name:
+        first_select_request = first_select_request.where(User.second_name.like(f"{search_second_name.upper()}%"))
+        second_select_request = second_select_request.where(User.second_name.like(f"{search_second_name.upper()}%"))
+
+
+
+    friends_list_raw: Sequence[User] = ((await db.execute(
+    first_select_request.union(second_select_request)
     .order_by(User.id)
     .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
     .limit(parameters.number_of_table_entries_in_selection)))
@@ -558,17 +526,7 @@ async def send_friend_request(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if receiver_user.id == selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.bad_request_error.error_status_code, detail = ErrorRegistry.bad_request_error)
-
-    if await utils.get_friend_request(receiver_user.id, selected_user.id, db) or await utils.get_friend_request(selected_user.id, receiver_user.id, db):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friend_request_already_exists_error.error_status_code, detail = ErrorRegistry.friend_request_already_exists_error)
-
-    if await utils.are_users_already_friends(receiver_user.id, selected_user.id, db):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.users_are_already_friends_error.error_status_code, detail = ErrorRegistry.users_are_already_friends_error)
-
-    if await utils.get_user_block(selected_user.id, receiver_user.id, db) or await utils.get_user_block(receiver_user.id, selected_user.id, db):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_blocked_error.error_status_code, detail = ErrorRegistry.user_is_blocked_error)
+    await validators.validate_send_friend_request(selected_user, receiver_user, db)
 
     friend_request = FriendRequest(
     sender_user_id = selected_user.id,
@@ -587,19 +545,7 @@ async def accept_friend_request(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if not friend_request:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friend_request_not_found_error.error_status_code, detail = ErrorRegistry.friend_request_not_found_error)
-
-    if friend_request.receiver_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)
-
-    sender_user: User | None = (await db.execute(sqlalchemy.select(User).where(User.id == friend_request.sender_user_id))).scalars().first()
-
-    if not sender_user:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
-
-    if await utils.get_user_block(selected_user.id, sender_user.id, db) or await utils.get_user_block(sender_user.id, selected_user.id, db):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_blocked_error.error_status_code, detail = ErrorRegistry.user_is_blocked_error)
+    await validators.validate_accept_friend_request(friend_request, selected_user, db)
 
     friendship: Friendship = Friendship(
     user_id = min(friend_request.sender_user_id, friend_request.receiver_user_id),
@@ -620,8 +566,7 @@ async def decline_received_friend_request(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if friend_request.receiver_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)
+    await validators.validate_decline_friend_request(friend_request, selected_user)
 
     await db.delete(friend_request)
     await db.commit()
@@ -634,8 +579,7 @@ async def delete_sent_friend_request(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    if friend_request.sender_user_id != selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)
+    await validators.validate_delete_sent_friend_request(friend_request, selected_user)
 
     await db.delete(friend_request)
     await db.commit()
@@ -648,10 +592,7 @@ async def delete_friend(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    friendship: Friendship | None = await utils.get_friendship(selected_user.id, friend.id, db)
-
-    if not friendship:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friendship_not_found_error.error_status_code, detail = ErrorRegistry.friendship_not_found_error)
+    friendship: Friendship = await validators.validate_friendship(selected_user, friend, db)
 
     await db.delete(friendship)
     await db.commit()
@@ -660,36 +601,35 @@ async def delete_friend(
 
 
 async def block_user(
-    blocked_user: User,
+    user_to_block: User,
     selected_user: User,
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    if await utils.get_user_block(selected_user.id, blocked_user.id, db):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friendship_not_found_error.error_status_code, detail = ErrorRegistry.friendship_not_found_error)
+    await validators.validate_is_user_not_blocked(selected_user, user_to_block, db)
 
     background_tasks = fastapi.background.BackgroundTasks()
 
     async with db.begin():
-        new_block: UserBlock = UserBlock(user_id = selected_user.id, blocked_user_id = blocked_user.id, date_and_time_blocked = datetime.datetime.now(datetime.timezone.utc))
+        new_block: UserBlock = UserBlock(user_id = selected_user.id, blocked_user_id = user_to_block.id, date_and_time_blocked = datetime.datetime.now(datetime.timezone.utc))
 
-        friendship: Friendship | None = await utils.get_friendship(selected_user.id, new_block.user_id, db)
+        friendship: Friendship | None = await utils.get_friendship(selected_user, user_to_block, db)
 
         if friendship:
             await db.delete(friendship)
 
-        users_chat: Chat | None = await backend.routers.chats.utils.get_users_private_chat(selected_user, blocked_user, db)
+        users_chat: Chat | None = await backend.routers.chats.utils.get_users_private_chat(selected_user, user_to_block, db)
         if users_chat:
             attachments_to_delete: list[BucketWithFiles] = await backend.routers.chats.minio_deletion_service.get_all_chat_attachments_to_delete(users_chat, db)
             background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
 
             await db.delete(users_chat)
 
-        friend_request_to_blocked: FriendRequest | None = await utils.get_friend_request(selected_user.id, blocked_user.id, db)
+        friend_request_to_blocked: FriendRequest | None = await utils.get_friend_request(selected_user, user_to_block, db)
         if friend_request_to_blocked:
             await db.delete(friend_request_to_blocked)
 
-        friend_request_from_blocked: FriendRequest | None = await utils.get_friend_request(blocked_user.id, selected_user.id, db)
+        friend_request_from_blocked: FriendRequest | None = await utils.get_friend_request(user_to_block, selected_user, db)
         if friend_request_from_blocked:
             await db.delete(friend_request_from_blocked)
 
@@ -705,10 +645,7 @@ async def unblock_user(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    user_block: UserBlock | None = await utils.get_user_block(selected_user.id, blocked_user.id, db)
-
-    if not user_block:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_block_not_found_error.error_status_code, detail = ErrorRegistry.user_block_not_found_error)
+    user_block: UserBlock = await validators.validate_is_user_blocked(selected_user, blocked_user, db)
 
     await db.delete(user_block)
     await db.commit()

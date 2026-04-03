@@ -20,6 +20,7 @@
       <option name="ignoredPackages">
         <list>
           <option value="argon2" />
+          <option value="booktype" />
         </list>
       </option>
     </inspection_tool>

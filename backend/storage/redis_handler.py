@@ -1,5 +1,6 @@
 import dataclasses
 import os
+
 import redis.asyncio
 import asyncio
 import secrets
@@ -40,7 +41,10 @@ class RedisClient:
         return await self.client.smembers(f"user:{user_id}:sessions")
 
 
-    async def get_user_session_data(self, session_id: str) -> SessionModel:
+    async def get_user_session_data(self, session_id: str) -> SessionModel | None:
+        if not await self.client.exists(f"session:{session_id}:data"):
+            return None
+
         session_dict: dict[str, str] = await self.client.hgetall(f"session:{session_id}:data")
         session: SessionModel = SessionModel(
         session_id = session_id,
@@ -53,22 +57,25 @@ class RedisClient:
 
 
     async def delete_user_session(self, session_id: str):
-        user_id: str = await self.client.hget(f"session:{session_id}:data", "user_id")
-        coroutines: list = list()
-        coroutines.append(self.client.srem(f"user:{user_id}:sessions", session_id))
-        coroutines.append(self.client.delete(f"session:{session_id}:data"))
+        if await self.client.exists(f"session:{session_id}:data"):
+            user_id: str | None = await self.client.hget(f"session:{session_id}:data", "user_id")
+            if user_id:
+                coroutines: list = list()
+                coroutines.append(self.client.srem(f"user:{user_id}:sessions", session_id))
+                coroutines.append(self.client.delete(f"session:{session_id}:data"))
 
-        await asyncio.gather(*coroutines)
+                await asyncio.gather(*coroutines)
 
 
     async def delete_all_user_sessions(self, user_id: int):
-        sessions_set: set[str] = self.client.smembers(f"user:{user_id}:sessions")
-        coroutines: list = list()
-        coroutines.append(self.client.delete(f"user:{user_id}:sessions"))
-        for session_id in sessions_set:
-            coroutines.append(self.client.delete(f"session:{session_id}:data"))
+        if await self.client.exists(f"user:{user_id}:sessions"):
+            sessions_set: set[str] = await self.client.smembers(f"user:{user_id}:sessions")
+            coroutines: list = list()
+            coroutines.append(self.client.delete(f"user:{user_id}:sessions"))
+            for session_id in sessions_set:
+                coroutines.append(self.client.delete(f"session:{session_id}:data"))
 
-        await asyncio.gather(*coroutines)
+            await asyncio.gather(*coroutines)
 
 
 redis_client: RedisClient = RedisClient("redis", os.getenv("REDIS_PORT"), os.getenv("REDIS_PASSWORD"))
