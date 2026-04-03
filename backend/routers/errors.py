@@ -56,6 +56,7 @@ class Error(enum.Enum):
     file_does_not_exist_error = "FILE_DOES_NOT_EXIST_ERROR"
     error_uploading_file_error = "ERROR_UPLOADING_FILE_ERROR"
     error_deleting_file_error = "ERROR_DELETING_FILE_ERROR"
+    user_is_message_sender_error = "USER_IS_MESSAGE_SENDER_ERROR"
 
 
 class ErrorRegistry:
@@ -71,7 +72,7 @@ class ErrorRegistry:
     forbidden_error = ErrorInfo(error_code = Error.forbidden_error, error_message = "Вам не хватает прав!", error_status_code = fastapi.status.HTTP_403_FORBIDDEN)
     file_type_not_allowed_error = ErrorInfo(error_code = Error.file_type_not_allowed_error, error_message = "Этот тип файла не поддерживается!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     file_size_too_large = ErrorInfo(error_code = Error.file_size_too_large_error, error_message = "Размер файла слишком большой!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
-    parameters_were_not_provided_error = ErrorInfo(error_code = Error.parameters_were_not_provided_error, error_message = "Необходимые параметры запроса не были указаны!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    parameters_were_not_provided_error = ErrorInfo(error_code =   Error.parameters_were_not_provided_error, error_message = "Необходимые параметры запроса не были указаны!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     bad_request_error = ErrorInfo(error_code = Error.bad_request_error, error_message = "Некорректные параметры запроса!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     friend_request_already_exists_error = ErrorInfo(error_code = Error.friend_request_already_exists_error, error_message = "Запрос в друзья уже существует!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     users_are_already_friends_error = ErrorInfo(error_code = Error.users_are_already_friends_error, error_message = "Пользователи уже являются друзьями!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
@@ -105,3 +106,4 @@ class ErrorRegistry:
     file_does_not_exist_error = ErrorInfo(error_code = Error.file_does_not_exist_error, error_message = "Указанный файл не существует!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
     error_uploading_file_error = ErrorInfo(error_code = Error.error_uploading_file_error, error_message ="Произошла ошибка при загрузке файла!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)
     error_deleting_file_error = ErrorInfo(error_code = Error.error_deleting_file_error, error_message = "Произошла ошибка при удалении файла!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)
+    user_is_message_sender_error = ErrorInfo(error_code = Error.user_is_message_sender_error, error_message = "Текущий пользователь является отправителем указанного сообщения!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)

@@ -2,30 +2,49 @@ import fastapi
 import sqlalchemy.ext.asyncio
 from backend.routers.errors import (ErrorRegistry)
 from backend.storage import *
-import backend.routers.messages.utils
-import utils
+import backend.routers.chats.utils as utils
+import backend.routers.common_validators.validators as common_validators
+import backend.routers.users.validation.validators as users_validations
 
-async def validate_avatar_photo_path(
+async def check_avatar_photo_path(
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession):
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> str:
 
     if selected_chat.chat_kind in [ChatKind.GROUP, ChatKind.CHANNEL]:
         if not selected_chat.avatar_photo_path:
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.avatar_not_found_error.error_status_code, detail = ErrorRegistry.avatar_not_found_error)
+        else:
+            return selected_chat.avatar_photo_path
     elif selected_chat.chat_kind in [ChatKind.PRIVATE]:
         other_user: User | None = await utils.get_other_chat_user(selected_chat, selected_user, db)
         if not other_user:
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
         if not other_user.avatar_photo_path:
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.avatar_not_found_error.error_status_code, detail = ErrorRegistry.avatar_not_found_error)
+        else:
+            return other_user.avatar_photo_path
     elif selected_chat.chat_kind in [ChatKind.PROFILE]:
         chat_owner: User | None = (await db.execute(sqlalchemy.select(User).select_from(User).where(User.id == selected_chat.owner_user_id))).scalars().first()
-        if chat_owner and not chat_owner.avatar_photo_path:
+        if not chat_owner:
+            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
+        if not chat_owner.avatar_photo_path:
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.avatar_not_found_error.error_status_code, detail = ErrorRegistry.avatar_not_found_error)
+        else:
+            return chat_owner.avatar_photo_path
+    else:
+        return str()
+
+async def check_are_users_blocked(
+    first_user: User,
+    second_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession):
+
+    await users_validations.validate_is_user_blocked(first_user, second_user, db)
+    await users_validations.validate_is_user_blocked(second_user, first_user, db)
 
 
-async def validate_users_dont_have_private_chat(
+async def check_users_dont_have_private_chat(
     first_user: User,
     second_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
@@ -34,14 +53,14 @@ async def validate_users_dont_have_private_chat(
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.private_chat_already_exists_error.error_status_code, detail = ErrorRegistry.private_chat_already_exists_error)
 
 
-async def validate_chat_has_avatar_and_name(
+async def check_chat_has_avatar_and_name_and_owner(
     selected_chat: Chat):
 
     if selected_chat.chat_kind not in [ChatKind.GROUP, ChatKind.CHANNEL]:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.not_allowed_chat_type_error.error_status_code, detail = ErrorRegistry.not_allowed_chat_type_error)
 
 
-async def validate_is_chat_user_owner_or_admin(
+async def check_is_chat_user_owner_or_admin(
     selected_chat: Chat,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
@@ -52,42 +71,35 @@ async def validate_is_chat_user_owner_or_admin(
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)
 
 
-async def validate_is_chat_user_owner(
+async def check_is_chat_user_owner(
     selected_chat: Chat,
     selected_user: User):
 
     if selected_chat.owner_user_id != selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)
 
-async def validate_are_users_not_the_same(
-    first_user: User,
-    second_user: User):
 
-    if first_user == second_user:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.selected_user_is_request_sender_error.error_status_code, detail = ErrorRegistry.selected_user_is_request_sender_error)
-
-
-async def validate_is_chat_user_not_admin(
+async def check_is_chat_user_not_admin(
     selected_chat: Chat,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
-    chat_membership: ChatMembership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat.id, selected_user.id, db)
+    chat_membership: ChatMembership = await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
     if chat_membership.chat_role == ChatRole.ADMIN:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_already_admin_error.error_status_code, detail = ErrorRegistry.user_is_already_admin_error)
 
 
-async def validate_is_chat_user_admin(
+async def check_is_chat_user_admin(
     selected_chat: Chat,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
-    chat_membership: ChatMembership = await backend.routers.messages.utils.get_chat_user_membership(selected_chat.id, selected_user.id, db)
+    chat_membership: ChatMembership = await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
     if chat_membership.chat_role != ChatRole.ADMIN:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_not_admin_error.error_status_code, detail = ErrorRegistry.user_is_not_admin_error)
 
 
-async def validate_does_chat_membership_belong_to_chat(
+async def check_does_chat_membership_belong_to_chat(
     selected_chat: Chat,
     chat_membership: ChatMembership):
 

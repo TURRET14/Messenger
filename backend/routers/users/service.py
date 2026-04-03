@@ -40,8 +40,6 @@ from backend.routers.common_models import (IDModel)
 import utils
 import validation.validators as validators
 import validation.checks as checks
-import backend.routers.common_validators.validators as common_validators
-import backend.routers.common_validators.checks as common_checks
 
 async def create_user(
     data: RegisterRequestModel,

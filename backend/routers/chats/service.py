@@ -16,9 +16,8 @@ import backend.routers.parameters
 import utils
 import backend.routers.users.utils
 import backend.routers.messages.utils
-import validation_service
-import backend.routers.messages.validation_service
-import backend.routers.users.validation_service
+import validation.validators as validators
+import backend.routers.common_validators.validators as common_validators
 from backend.routers.errors import (ErrorRegistry)
 import backend.routers.users.service
 
@@ -65,13 +64,12 @@ async def get_chat(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
 
     chat_name: str | None = selected_chat.name
 
     if not chat_name:
         chat_name: str = await utils.get_chat_name(selected_chat, selected_user, db)
-
 
     selected_chat: ChatResponseModel = ChatResponseModel(
         id = selected_chat.id,
@@ -90,7 +88,7 @@ async def get_chat_members(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
 
     membership_list_raw: Sequence[ChatMembership] = ((await db.execute(
     sqlalchemy.select(ChatMembership)
@@ -120,7 +118,7 @@ async def get_chat_last_message(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
 
     last_message_raw: Message | None = ((await db.execute(sqlalchemy.select(Message)
     .select_from(Message)
@@ -149,9 +147,7 @@ async def get_chat_avatar(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.StreamingResponse:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-
-    await validation_service.validate_avatar_photo_path(selected_chat, selected_user, db)
+    await validators.validate_get_chat_avatar(selected_chat, selected_user, db)
 
     if selected_chat.chat_kind in [ChatKind.PRIVATE]:
 
@@ -176,17 +172,18 @@ async def get_chat_avatar(
         file = await minio_client.get_file(MinioBucket.chats_avatars, selected_chat.avatar_photo_path)
         file_stat = await minio_client.get_file_stat(MinioBucket.chats_avatars, selected_chat.avatar_photo_path)
 
-        return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type,
-        headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK)
+        background_tasks = fastapi.BackgroundTasks()
+        background_tasks.add_task(minio_client.close_file_stream, file)
+
+        return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
 
 
 async def create_private_chat(
-    friend_user: User,
+    other_user: User,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await backend.routers.users.validation_service.validate_are_users_not_blocked(selected_user, friend_user, db)
-    await validation_service.validate_users_dont_have_private_chat(selected_user, friend_user, db)
+    await validators.validate_create_private_chat(selected_user, other_user, db)
 
     async with db.begin():
         new_chat: Chat = Chat(
@@ -204,7 +201,7 @@ async def create_private_chat(
 
         second_chat_user: ChatMembership = ChatMembership(
         chat_id = new_chat.id,
-        chat_user_id = friend_user.id,
+        chat_user_id = other_user.id,
         date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
         db.add(first_chat_user)
@@ -217,7 +214,6 @@ async def create_group_chat(
     data: GroupChatModel,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
-
 
     async with db.begin():
         new_chat: Chat = Chat(
@@ -248,9 +244,7 @@ async def update_chat_avatar(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
-    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
+    await validators.validate_update_avatar_or_name(selected_chat, selected_user, db)
 
     old_avatar_path: str | None = selected_chat.avatar_photo_path
 
@@ -270,9 +264,7 @@ async def update_chat_name(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
-    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
+    await validators.validate_update_avatar_or_name(selected_chat, selected_user, db)
 
     selected_chat.name = data.name
     await db.commit()
@@ -286,19 +278,9 @@ async def update_chat_owner(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
-    await validation_service.validate_are_users_not_the_same(selected_user, new_owner_user)
-    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, new_owner_user, db)
-
-    old_owner_membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, selected_user, db)
-    if not old_owner_membership:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
+    old_owner_membership: ChatMembership = await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
     
-    new_owner_membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, new_owner_user, db)
-    if not new_owner_membership:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
+    new_owner_membership: ChatMembership = await validators.validate_update_chat_owner_and_add_admin(selected_chat, selected_user, new_owner_user, db)
 
     async with db.begin():
         selected_chat.owner_user_id = new_owner_user.id
@@ -314,18 +296,9 @@ async def add_chat_admin(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_is_chat_user_owner(selected_chat, selected_user)
-    await validation_service.validate_are_users_not_the_same(selected_user, new_admin_user)
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, new_admin_user, db)
+    new_admin_membership: ChatMembership = await validators.validate_update_chat_owner_and_add_admin(selected_chat, selected_user, new_admin_user, db)
 
-    membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, new_admin_user, db)
-    if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
-
-    await validation_service.validate_is_chat_user_not_admin(selected_chat, new_admin_user, db)
-
-    membership.chat_role = ChatRole.ADMIN
+    new_admin_membership.chat_role = ChatRole.ADMIN
     await db.commit()
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
@@ -336,18 +309,9 @@ async def delete_chat_admin(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_is_chat_user_owner(selected_chat, selected_user)
-    await validation_service.validate_are_users_not_the_same(selected_user, admin_user)
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, admin_user, db)
+    admin_membership: ChatMembership = await validators.validate_delete_chat_admin(selected_chat, selected_user, admin_user, db)
 
-    membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, admin_user, db)
-    if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
-
-    await validation_service.validate_is_chat_user_admin(selected_chat, admin_user, db)
-
-    membership.chat_role = ChatRole.USER
+    admin_membership.chat_role = ChatRole.USER
     await db.commit()
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
@@ -359,11 +323,7 @@ async def add_chat_user(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
-    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
-    await validation_service.validate_are_users_not_the_same(selected_user, new_user)
-    await backend.routers.users.validation_service.validate_are_users_friends(selected_user, new_user, db)
+    await validators.validate_add_user(selected_chat, selected_user, new_user, db)
 
     membership: ChatMembership = ChatMembership(
     chat_id = selected_chat.id,
@@ -374,7 +334,7 @@ async def add_chat_user(
     db.add(membership)
     await db.commit()
 
-    return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def delete_chat_user(
@@ -383,15 +343,7 @@ async def delete_chat_user(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
-    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
-    await validation_service.validate_are_users_not_the_same(selected_user, chat_user)
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, chat_user, db)
-
-    membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, chat_user, db)
-    if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
+    membership: ChatMembership = await validators.validate_delete_user(selected_chat, selected_user, chat_user, db)
 
     await db.delete(membership)
     await db.commit()
@@ -405,11 +357,7 @@ async def leave_chat(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-
-    membership: ChatMembership | None = await utils.get_chat_user_membership(selected_chat, selected_user, db)
-    if not membership:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
+    membership: ChatMembership = await validators.validate_leave_chat(selected_chat, selected_user, db)
 
     background_tasks = fastapi.background.BackgroundTasks()
 
@@ -418,8 +366,6 @@ async def leave_chat(
         background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
 
         await db.delete(selected_chat)
-    elif selected_chat.owner_user_id == selected_user.id:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.owner_cannot_leave_chat_error.error_status_code, detail = ErrorRegistry.owner_cannot_leave_chat_error)
     else:
         await db.delete(membership)
 
@@ -434,9 +380,7 @@ async def delete_chat(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_chat_has_avatar_and_name(selected_chat)
-    await validation_service.validate_is_chat_user_owner(selected_chat, selected_user)
+    await validators.validate_delete_chat(selected_chat, selected_user, db)
 
     attachments_to_delete: list[BucketWithFiles] = await minio_deletion_service.get_all_chat_attachments_to_delete(selected_chat, db)
     background_tasks = fastapi.background.BackgroundTasks()
@@ -500,14 +444,13 @@ async def get_user_profile(
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_profile), status_code = fastapi.status.HTTP_200_OK)
 
 
-async def get_chat_user(
+async def get_chat_membership(
     selected_chat: Chat,
     selected_membership: ChatMembership,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_does_chat_membership_belong_to_chat(selected_chat, selected_membership)
+    await validators.validate_get_chat_membership(selected_chat, selected_membership, selected_user, db)
 
     chat_user: ChatMembershipResponseModel = ChatMembershipResponseModel(
     id = selected_membership.id,

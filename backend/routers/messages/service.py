@@ -10,7 +10,8 @@ from request_models import (MessageRequestModel, MessagePostRequestModel)
 from response_models import (MessageResponseModel)
 import backend.routers.dependencies
 import backend.routers.parameters as parameters
-import validation_service
+import validation.validators as validators
+import backend.routers.common_validators.validators as common_validators
 import minio_deletion_service
 import utils
 
@@ -20,7 +21,7 @@ async def get_chat_messages(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
 
     messages_list_raw: Sequence[tuple[Message, bool]] = ((await db.execute(sqlalchemy.select(Message,
     sqlalchemy.case(
@@ -54,10 +55,7 @@ async def get_chat_message_comments(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
-    await validation_service.validate_chat_has_comments(selected_chat)
-    await validation_service.validate_message_is_root(selected_message)
+    await validators.validate_chat_message_has_comments(selected_chat, selected_message, selected_user, db)
 
     message_comments_list_raw: Sequence[Message] = ((await db.execute(
     sqlalchemy.select(Message)
@@ -87,8 +85,7 @@ async def get_chat_message_by_id(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
+    await common_validators.validate_get_message(selected_chat, selected_message, selected_user, db)
 
     message_data: MessageResponseModel = MessageResponseModel(
         id = selected_message.id,
@@ -106,7 +103,7 @@ async def post_message(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await validation_service.validate_post_message(selected_chat, selected_user, data.reply_message_id, data.parent_message_id, db)
+    await validators.validate_post_message(selected_chat, selected_user, data.reply_message_id, data.parent_message_id, db)
 
     new_message: Message = Message(
     chat_id = selected_chat.id,
@@ -120,7 +117,7 @@ async def post_message(
     await db.commit()
     await db.refresh(new_message)
 
-    return fastapi.responses.JSONResponse({"id": new_message.id}, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse({"id": new_message.id}, status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def delete_message(
@@ -130,7 +127,7 @@ async def delete_message(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await validation_service.validate_update_delete_message(selected_chat, selected_message, selected_user, True, db)
+    await validators.validate_update_delete_message(selected_chat, selected_message, selected_user, True, db)
 
     attachments_to_delete: list[BucketWithFiles] = await minio_deletion_service.get_all_message_attachments_to_delete(selected_message, db)
 
@@ -150,7 +147,7 @@ async def update_message(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await validation_service.validate_update_delete_message(selected_chat, selected_message, selected_user, False, db)
+    await validators.validate_update_delete_message(selected_chat, selected_message, selected_user, False, db)
 
     selected_message.message_text = data.message_text
     selected_message.date_and_time_edited = datetime.datetime.now(datetime.timezone.utc)
@@ -166,7 +163,7 @@ async def search_messages_in_chat(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
+    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
 
     messages_list_raw: Sequence[tuple[Message, bool]] = ((await db.execute(
     sqlalchemy.select(Message,
@@ -203,10 +200,7 @@ async def search_comments_in_chat(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
-    await validation_service.validate_chat_has_comments(selected_chat)
-    await validation_service.validate_message_is_root(selected_message)
+    await validators.validate_chat_message_has_comments(selected_chat, selected_message, selected_user, db)
 
     message_comments_list_raw: Sequence[Message] = ((await db.execute(
     sqlalchemy.select(Message)
@@ -238,11 +232,7 @@ async def mark_message_as_read(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
-    await validation_service.validate_chat_does_not_have_comments(selected_chat)
-    await validation_service.validate_is_user_not_message_sender(selected_message, selected_user)
-    await validation_service.validate_is_message_already_marked_as_received(selected_message, selected_user, db)
+    await validators.validate_message_receipt(selected_chat, selected_message, selected_user, db)
 
     message_read_mark: MessageReceipt = MessageReceipt(
     message_id = selected_message.id,

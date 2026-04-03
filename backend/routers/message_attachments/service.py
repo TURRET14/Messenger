@@ -4,15 +4,10 @@ import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 from typing import Sequence
 
-
 from backend.storage import *
-import backend.routers.errors
-import backend.routers.dependencies
-import backend.routers.parameters
 from response_models import *
-import backend.routers.messages.utils
-import validation_service
-import backend.routers.messages.validation_service
+import validation.validators as validators
+import backend.routers.common_validators.validators as common_validators
 
 
 async def get_message_attachments_list(
@@ -21,10 +16,7 @@ async def get_message_attachments_list(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    membership: ChatMembership
-
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await backend.routers.messages.validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
+    await common_validators.validate_get_message(selected_chat, selected_message, selected_user, db)
 
     attachments_list_raw: Sequence[MessageAttachment] = ((await db.execute(
     sqlalchemy.select(MessageAttachment)
@@ -48,14 +40,15 @@ async def get_message_attachment_file(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.StreamingResponse:
 
-    await backend.routers.messages.validation_service.validate_chat_user_membership(selected_chat, selected_user, db)
-    await backend.routers.messages.validation_service.validate_message_belonging_to_chat(selected_chat, selected_message)
-    await validation_service.validate_message_attachment_belonging_to_message(selected_message, selected_attachment)
+    await validators.validate_get_message_attachment(selected_chat, selected_message, selected_attachment, selected_user, db)
 
     file = await minio_client.get_file(MinioBucket.messages_attachments, selected_attachment.attachment_file_path)
     file_stat = await minio_client.get_file_stat(MinioBucket.messages_attachments, selected_attachment.attachment_file_path)
 
-    return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK)
+    background_tasks = fastapi.BackgroundTasks()
+    background_tasks.add_task(minio_client.close_file_stream, file)
+
+    return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
 
 
 async def add_message_attachment_file(
@@ -66,7 +59,7 @@ async def add_message_attachment_file(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    await validation_service.validate_post_message_attachment(selected_chat, selected_message, selected_user, db)
+    await validators.validate_add_message_attachment(selected_chat, selected_message, selected_user, db)
 
     message_attachment_name: str = await minio_client.put_file(MinioBucket.messages_attachments, file)
 
@@ -88,7 +81,7 @@ async def delete_message_attachment_file(
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await validation_service.validate_post_message_attachment(selected_chat, selected_message, selected_user, db)
+    await validators.validate_delete_message_attachment(selected_chat, selected_message, selected_attachment, selected_user, db)
 
     await minio_client.delete_file(MinioBucket.messages_attachments, selected_attachment.attachment_file_path)
 

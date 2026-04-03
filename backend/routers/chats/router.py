@@ -187,11 +187,11 @@ async def get_user_wall(
     return await backend.routers.chats.service.get_user_profile(wall_user, current_user, db)
 
 
-@chats_router.get("/chats/id/{chat_id}/chat-users/id/{chat_user_id}")
-async def get_chat_user(
+@chats_router.get("/chats/id/{chat_id}/memberships/id/{chat_user_id}")
+async def get_chat_membership(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_chat_user: ChatMembership = fastapi.Depends(backend.routers.dependencies.get_chat_membership_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.chats.service.get_chat_user(selected_chat, selected_chat_user, current_user, db)
+    return await backend.routers.chats.service.get_chat_membership(selected_chat, selected_chat_user, current_user, db)
