@@ -36,7 +36,7 @@ async def validate_session(
     selected_user: User,
     redis_client: RedisClient) -> SessionModel:
 
-    session_data: SessionModel | None = await redis_client.get_user_session_data(session_id)
+    session_data: SessionModel = await redis_client.get_user_session_data(session_id)
 
     if not session_data:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.invalid_session_error.error_status_code, detail = ErrorRegistry.invalid_session_error)
@@ -107,7 +107,7 @@ async def validate_send_friend_request(
     await common_checks.check_are_users_different(selected_user, receiver_user)
     await checks.check_user_friend_request_doesnt_exist(selected_user, receiver_user, db)
     await checks.check_are_users_not_friends(selected_user, receiver_user, db)
-    await common_checks.check_users_are_not_blocked(selected_user, receiver_user, db)
+    await common_checks.check_are_users_not_blocked(selected_user, receiver_user, db)
 
 
 async def validate_accept_friend_request(
@@ -118,7 +118,7 @@ async def validate_accept_friend_request(
 
     sender_user: User = await common_checks.check_is_user_found(friend_request.sender_user_id, db)
     await checks.check_is_user_friend_request_receiver(friend_request, selected_user)
-    await common_checks.check_users_are_not_blocked(selected_user, sender_user, db)
+    await common_checks.check_are_users_not_blocked(selected_user, sender_user, db)
 
 
 async def validate_decline_friend_request(
@@ -136,13 +136,11 @@ async def validate_delete_sent_friend_request(
 
 
 async def validate_friendship(
-    first_user: User,
-    second_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> Friendship:
+    friendship: Friendship,
+    selected_user: User):
 
-    friendship: Friendship = await common_checks.check_users_friendship(first_user, second_user, db)
-
-    return friendship
+    if friendship.user_id != selected_user.id and friendship.friend_user_id != selected_user.id:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)
 
 
 async def validate_is_user_not_blocked(
@@ -151,17 +149,12 @@ async def validate_is_user_not_blocked(
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
     if await utils.get_user_block(selected_user, user_to_block, db):
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_blocked_error.error_status_code, detail = ErrorRegistry.user_is_blocked_error)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_already_blocked_error.error_status_code, detail = ErrorRegistry.user_is_already_blocked_error)
 
 
-async def validate_is_user_blocked(
-    selected_user: User,
-    blocked_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> UserBlock:
+async def validate_is_user_block_creator(
+    user_block: UserBlock,
+    selected_user: User):
 
-    user_block: UserBlock | None = await utils.get_user_block(selected_user, blocked_user, db)
-
-    if not user_block:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_block_not_found_error.error_status_code, detail = ErrorRegistry.user_block_not_found_error)
-
-    return user_block
+    if not user_block.user_id != selected_user.id:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)

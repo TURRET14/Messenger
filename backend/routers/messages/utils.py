@@ -16,4 +16,5 @@ async def is_message_read(
         .where(sqlalchemy.and_(MessageReceipt.message_id == selected_message.id,
         MessageReceipt.receiver_user_id != selected_user.id))))
         .scalars().first())
+
         return bool(message_receipt)

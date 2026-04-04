@@ -6,6 +6,7 @@ import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 
 from backend.routers.common_models import *
+from backend.routers.messages.request_models import (MessagePostRequestModel)
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)
 from backend.storage.redis_handler import SessionModel
@@ -112,3 +113,38 @@ async def get_friend_request_by_path_id(
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friend_request_not_found_error.error_status_code, detail = ErrorRegistry.friend_request_not_found_error)
     else:
         return friend_request
+
+
+async def get_friendship_by_path_id(
+    friendship_id: int = fastapi.Path(ge = 0),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> Friendship:
+
+    friendship: Friendship | None = (await db.execute(sqlalchemy.select(Friendship).where(Friendship.id == friendship_id))).scalars().first()
+
+    if not friendship:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friendship_not_found_error.error_status_code, detail = ErrorRegistry.friendship_not_found_error)
+    else:
+        return friendship
+
+
+async def get_user_block_by_path_id(
+    user_block_id: int = fastapi.Path(ge = 0),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> UserBlock:
+
+    user_block: UserBlock | None = (await db.execute(sqlalchemy.select(UserBlock).where(UserBlock.id == user_block_id))).scalars().first()
+
+    if not user_block:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_block_not_found_error.error_status_code, detail = ErrorRegistry.user_block_not_found_error)
+    else:
+        return user_block
+
+
+async def get_post_message_data_from_form(
+    message_text: str = fastapi.Form(),
+    reply_message_id: int | None = fastapi.Form(),
+    parent_message_id: int | None = fastapi.Form()) -> MessagePostRequestModel:
+
+    return MessagePostRequestModel(
+    message_text = message_text,
+    reply_message_id = reply_message_id,
+    parent_message_id = parent_message_id)

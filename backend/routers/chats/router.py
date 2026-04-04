@@ -3,10 +3,10 @@ import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 
 from backend.storage import *
-from models import *
+from request_models import (ChatNameRequestModel)
+from response_models import (ChatResponseModel, ChatMembershipResponseModel)
 import service
 import backend.routers.dependencies
-from backend.routers.messages.response_models import MessageResponseModel
 from websocket_listeners_router import chats_websocket_listener_router
 
 chats_router = fastapi.APIRouter()
@@ -18,7 +18,7 @@ async def get_all_chats(
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.chats.service.get_all_chats(offset_multiplier, current_user, db)
+    return await service.get_all_chats(offset_multiplier, current_user, db)
 
 
 @chats_router.get("/chats/id/{chat_id}", response_class = fastapi.responses.JSONResponse, response_model = list[ChatResponseModel])
@@ -27,50 +27,41 @@ async def get_chat(
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.chats.service.get_chat(selected_chat, current_user, db)
+    return await service.get_chat(selected_chat, current_user, db)
 
 
-@chats_router.get("/chats/id/{chat_id}/users", response_class = fastapi.responses.JSONResponse, response_model = list[ChatUserModel])
+@chats_router.get("/chats/id/{chat_id}/memberships", response_class = fastapi.responses.JSONResponse, response_model = list[ChatMembershipResponseModel])
 async def get_chat_members(
     offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.chats.service.get_chat_members(offset_multiplier, selected_chat, current_user, db)
+    return await service.get_chat_members(offset_multiplier, selected_chat, current_user, db)
 
 
-@chats_router.get("/chats/id/{chat_id}/messages/last", response_class = fastapi.responses.JSONResponse, response_model = MessageResponseModel)
-async def get_chat_last_message(
-    selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
-    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
-
-    return await backend.routers.chats.service.get_chat_last_message(selected_chat, current_user, db)
-
-
-@chats_router.get("/chats/id/{chat_id}/avatar")
+@chats_router.get("/chats/id/{chat_id}/avatar", response_class = fastapi.responses.StreamingResponse)
 async def get_chat_avatar(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client),
-    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.StreamingResponse | fastapi.responses.FileResponse:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.StreamingResponse:
 
-    return await backend.routers.chats.service.get_chat_avatar(selected_chat, current_user, minio_client, db)
+    return await service.get_chat_avatar(selected_chat, current_user, minio_client, db)
 
 
 @chats_router.post("/chats/private", response_class = fastapi.responses.JSONResponse)
 async def create_private_chat(
-    friend_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
+    other_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.chats.service.create_private_chat(friend_user, current_user, db)
+    return await backend.routers.chats.service.create_private_chat(other_user, current_user, db)
 
 
 @chats_router.post("/chats/group", response_class = fastapi.responses.JSONResponse)
 async def create_group_chat(
-    data: GroupChatModel = fastapi.Body(),
+    data: ChatNameRequestModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
@@ -91,7 +82,7 @@ async def update_chat_avatar(
 @chats_router.patch("/chats/id/{chat_id}/name", response_class = fastapi.responses.Response)
 async def update_chat_name(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
-    data: GroupChatModel = fastapi.Body(),
+    data: ChatNameRequestModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
@@ -113,8 +104,7 @@ async def add_chat_admin(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     new_admin_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(
-    database.get_db)) -> fastapi.responses.Response:
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
     return await backend.routers.chats.service.add_chat_admin(selected_chat, new_admin_user, current_user, db)
 
@@ -171,27 +161,26 @@ async def delete_chat(
 
 @chats_router.post("/chats/channels", response_class = fastapi.responses.JSONResponse)
 async def create_channel(
-    data: GroupChatModel = fastapi.Body(),
+    data: ChatNameRequestModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.create_channel(data, current_user, db)
 
 
-@chats_router.get("/chats/walls/users/id/{user_id}", response_class = fastapi.responses.JSONResponse, response_model = ChatResponseModel)
-async def get_user_wall(
-    wall_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_path_user_id),
-    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+@chats_router.get("users/id/{user_id}/profile", response_class = fastapi.responses.JSONResponse, response_model = ChatResponseModel, dependencies = [fastapi.Depends(backend.routers.dependencies.get_session_user)])
+async def get_user_profile(
+    profile_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_path_user_id),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.chats.service.get_user_profile(wall_user, current_user, db)
+    return await backend.routers.chats.service.get_user_profile(profile_user, db)
 
 
 @chats_router.get("/chats/id/{chat_id}/memberships/id/{chat_user_id}")
 async def get_chat_membership(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
-    selected_chat_user: ChatMembership = fastapi.Depends(backend.routers.dependencies.get_chat_membership_by_path_id),
+    selected_chat_membership: ChatMembership = fastapi.Depends(backend.routers.dependencies.get_chat_membership_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await backend.routers.chats.service.get_chat_membership(selected_chat, selected_chat_user, current_user, db)
+    return await backend.routers.chats.service.get_chat_membership(selected_chat, selected_chat_membership, current_user, db)

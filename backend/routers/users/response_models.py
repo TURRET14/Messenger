@@ -12,8 +12,14 @@ class UserInListResponseModel(pydantic.BaseModel):
     second_name: str | None = pydantic.Field()
 
 
+class FriendUserInListResponseModel(UserInListResponseModel):
+    date_and_time_added: datetime.datetime = pydantic.Field()
+
+
 class FriendRequestResponseModel(pydantic.BaseModel):
     id: int = pydantic.Field()
+    sender_user_id: int = pydantic.Field()
+    receiver_user_id: int = pydantic.Field()
     date_and_time_sent: datetime.datetime = pydantic.Field()
 
 
@@ -25,10 +31,13 @@ class UserResponseModel(pydantic.BaseModel):
     second_name: str | None = pydantic.Field()
     date_of_birth: datetime.date | None = pydantic.Field()
     gender: Gender | None = pydantic.Field()
-    email_address: str = pydantic.Field()
     phone_number: str | None = pydantic.Field()
     about: str | None = pydantic.Field()
     date_and_time_registered: datetime.datetime = pydantic.Field()
+
+
+class CurrentUserResponseModel(UserResponseModel):
+    email_address: str = pydantic.Field()
 
 class LoginResponseModel(pydantic.BaseModel):
     login: str = pydantic.Field()

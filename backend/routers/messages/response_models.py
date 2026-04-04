@@ -8,3 +8,7 @@ class MessageResponseModel(pydantic.BaseModel):
     date_and_time_edited: datetime.datetime | None = pydantic.Field()
     message_text: str = pydantic.Field()
     is_read: bool = pydantic.Field()
+
+
+class LastMessageResponseModel(pydantic.BaseModel):
+    message: MessageResponseModel | None = pydantic.Field(default = None)

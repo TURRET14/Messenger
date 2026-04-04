@@ -1,11 +1,17 @@
 import dataclasses
 import os
 
+import fastapi
 import redis.asyncio
 import asyncio
 import secrets
 import datetime
+
+from django.conf.locale import fa
+
 import backend.routers.parameters as parameters
+from backend.routers.errors import ErrorRegistry
+
 
 @dataclasses.dataclass()
 class SessionModel:
@@ -41,9 +47,9 @@ class RedisClient:
         return await self.client.smembers(f"user:{user_id}:sessions")
 
 
-    async def get_user_session_data(self, session_id: str) -> SessionModel | None:
+    async def get_user_session_data(self, session_id: str) -> SessionModel:
         if not await self.client.exists(f"session:{session_id}:data"):
-            return None
+            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.invalid_session_error.error_status_code, detail = ErrorRegistry.invalid_session_error)
 
         session_dict: dict[str, str] = await self.client.hgetall(f"session:{session_id}:data")
         session: SessionModel = SessionModel(
@@ -54,6 +60,15 @@ class RedisClient:
         expiration_datetime = int(session_dict["expiration_datetime"]))
 
         return session
+
+
+    async def get_all_user_sessions_data(self, user_id: int) -> list[SessionModel]:
+        session_ids: set[str] = await self.client.smembers(f"user:{user_id}:sessions")
+        sessions_data_list: list[SessionModel] = list()
+        for session_id in session_ids:
+            sessions_data_list.append(await self.get_user_session_data(session_id))
+
+        return sessions_data_list
 
 
     async def delete_user_session(self, session_id: str):

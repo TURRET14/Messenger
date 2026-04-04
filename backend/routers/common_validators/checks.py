@@ -6,6 +6,7 @@ import backend.routers.users.utils
 import backend.routers.chats.utils
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)
+from backend.storage import Chat, Message
 
 
 async def check_are_users_different(
@@ -16,7 +17,7 @@ async def check_are_users_different(
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.selected_user_is_request_sender_error.error_status_code, detail = ErrorRegistry.selected_user_is_request_sender_error)
 
 
-async def check_users_are_not_blocked(
+async def check_are_users_not_blocked(
     first_user: User,
     second_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
@@ -80,3 +81,11 @@ async def check_does_message_exist(
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_not_found_error.error_status_code, detail = ErrorRegistry.message_not_found_error)
 
     return selected_message
+
+
+async def check_does_message_belong_to_chat(
+    selected_chat: Chat,
+    selected_message: Message):
+
+    if selected_message.chat_id != selected_chat.id:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_does_not_belong_to_chat_error.error_status_code, detail = ErrorRegistry.message_does_not_belong_to_chat_error)

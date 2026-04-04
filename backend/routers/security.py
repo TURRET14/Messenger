@@ -1,6 +1,4 @@
 import argon2
-import fastapi
-from backend.routers.errors import (ErrorRegistry)
 
 
 password_hasher = argon2.PasswordHasher()

@@ -57,6 +57,7 @@ class Error(enum.Enum):
     error_uploading_file_error = "ERROR_UPLOADING_FILE_ERROR"
     error_deleting_file_error = "ERROR_DELETING_FILE_ERROR"
     user_is_message_sender_error = "USER_IS_MESSAGE_SENDER_ERROR"
+    user_is_already_blocked_error = "USER_IS_ALREADY_BLOCKED_ERROR"
 
 
 class ErrorRegistry:
@@ -107,3 +108,4 @@ class ErrorRegistry:
     error_uploading_file_error = ErrorInfo(error_code = Error.error_uploading_file_error, error_message ="Произошла ошибка при загрузке файла!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)
     error_deleting_file_error = ErrorInfo(error_code = Error.error_deleting_file_error, error_message = "Произошла ошибка при удалении файла!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)
     user_is_message_sender_error = ErrorInfo(error_code = Error.user_is_message_sender_error, error_message = "Текущий пользователь является отправителем указанного сообщения!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    user_is_already_blocked_error = ErrorInfo(error_code = Error.user_is_already_blocked_error, error_message = "Указанный пользователь уже заблокирован вами!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)

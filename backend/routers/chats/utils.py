@@ -28,7 +28,11 @@ async def get_users_private_chat(
     .where(ChatMembership.chat_user_id == second_user.id).join(Chat, Chat.id == ChatMembership.chat_id)
     .where(Chat.chat_kind == ChatKind.PRIVATE).subquery())
 
-    chat: Chat | None = (await db.execute(sqlalchemy.select(Chat).select_from(first_subquery).join(second_subquery,second_subquery.c.right_chat_id == first_subquery.c.left_chat_id).join(Chat, Chat.id == first_subquery.c.left_chat_id))).scalars().first()
+    chat: Chat | None = (await db.execute(
+    sqlalchemy.select(Chat)
+    .select_from(first_subquery)
+    .join(second_subquery, second_subquery.c.right_chat_id == first_subquery.c.left_chat_id)
+    .join(Chat, Chat.id == first_subquery.c.left_chat_id))).scalars().first()
 
     return chat
 
@@ -36,17 +40,18 @@ async def get_users_private_chat(
 async def get_chat_name(
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> str:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> str | None:
 
     if selected_chat.name:
         return selected_chat.name
     else:
-        chat_name: str = str(((await db.execute(
-        sqlalchemy.select(sqlalchemy.func.string_agg(User.name + " " + User.surname + " " + User.second_name, ", "))
+        chat_name: str | None = ((await db.execute(
+        sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name))
         .select_from(ChatMembership)
         .where(sqlalchemy.and_(ChatMembership.chat_id == selected_chat.id, ChatMembership.chat_user_id != selected_user.id))
-        .join(User, User.id == ChatMembership.chat_user_id)))
-        .scalars().first()))
+        .join(User, User.id == ChatMembership.chat_user_id)
+        .limit(1)))
+        .scalars().first())
 
         return chat_name
 

@@ -6,14 +6,17 @@ import backend.routers.common_validators.validators as common_validators
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)
 import checks
+import backend.routers.chats.utils as utils
 
 async def validate_get_chat_avatar(
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession):
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> str:
 
     await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
-    await checks.check_avatar_photo_path(selected_chat, selected_user, db)
+    avatar_photo_path: str = await checks.check_avatar_photo_path(selected_chat, selected_user, db)
+
+    return avatar_photo_path
 
 
 async def validate_create_private_chat(
@@ -21,7 +24,7 @@ async def validate_create_private_chat(
     other_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
-    await checks.check_are_users_blocked(selected_user, other_user, db)
+    await common_checks.check_are_users_not_blocked(selected_user, other_user, db)
     await checks.check_users_dont_have_private_chat(selected_user, other_user, db)
 
 
@@ -73,7 +76,6 @@ async def validate_add_user(
     await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
     await checks.check_chat_has_avatar_and_name_and_owner(selected_chat)
     await common_checks.check_are_users_different(selected_user, new_user)
-    await checks.check_is_chat_user_owner_or_admin(selected_chat, selected_user, db)
     await common_checks.check_users_friendship(selected_user, new_user, db)
 
 
@@ -100,6 +102,9 @@ async def validate_leave_chat(
     selected_chat: Chat,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> ChatMembership:
+
+    if selected_chat.chat_kind in [ChatKind.PROFILE]:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.not_allowed_chat_type_error.error_status_code, detail = ErrorRegistry.not_allowed_chat_type_error)
 
     selected_user_chat_membership: ChatMembership | None = await common_checks.check_chat_user_membership(selected_chat, selected_user, db)
 
@@ -130,3 +135,17 @@ async def validate_get_chat_membership(
 
     await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
     await checks.check_does_chat_membership_belong_to_chat(selected_chat, chat_membership)
+
+
+async def validate_get_chat(
+    selected_chat: Chat,
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> str:
+
+    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
+
+    chat_name: str | None = await utils.get_chat_name(selected_chat, selected_user, db)
+    if not chat_name:
+        chat_name: str = str()
+
+    return chat_name

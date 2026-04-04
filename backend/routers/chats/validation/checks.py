@@ -4,7 +4,6 @@ from backend.routers.errors import (ErrorRegistry)
 from backend.storage import *
 import backend.routers.chats.utils as utils
 import backend.routers.common_validators.validators as common_validators
-import backend.routers.users.validation.validators as users_validations
 
 async def check_avatar_photo_path(
     selected_chat: Chat,
@@ -34,14 +33,6 @@ async def check_avatar_photo_path(
             return chat_owner.avatar_photo_path
     else:
         return str()
-
-async def check_are_users_blocked(
-    first_user: User,
-    second_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession):
-
-    await users_validations.validate_is_user_blocked(first_user, second_user, db)
-    await users_validations.validate_is_user_blocked(second_user, first_user, db)
 
 
 async def check_users_dont_have_private_chat(
@@ -104,4 +95,4 @@ async def check_does_chat_membership_belong_to_chat(
     chat_membership: ChatMembership):
 
     if chat_membership.chat_id != selected_chat.id:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)

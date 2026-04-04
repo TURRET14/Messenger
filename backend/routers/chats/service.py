@@ -6,19 +6,17 @@ from typing import Sequence
 import datetime
 
 from backend.routers.chats import minio_deletion_service
+from backend.routers.common_models import IDModel
 from backend.storage import *
-from request_models import (GroupChatModel)
+from request_models import (ChatNameRequestModel)
 from response_models import (ChatResponseModel, ChatMembershipResponseModel)
-from backend.routers.messages.response_models import (MessageResponseModel)
 import backend.routers.errors
 import backend.routers.dependencies
 import backend.routers.parameters
-import utils
 import backend.routers.users.utils
 import backend.routers.messages.utils
 import validation.validators as validators
 import backend.routers.common_validators.validators as common_validators
-from backend.routers.errors import (ErrorRegistry)
 import backend.routers.users.service
 
 
@@ -36,7 +34,7 @@ async def get_all_chats(
     chats_list_raw: Sequence[tuple[Chat, str]] = ((await db.execute(
     sqlalchemy.select(
     Chat,
-    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.string_agg(User.name + " " + User.surname + " " + User.second_name, ", ") ).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id)).label("chat_name"))
+    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name)).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id).limit(1).scalar_subquery()).label("chat_name"))
     .select_from(ChatMembership)
     .where(sqlalchemy.and_(ChatMembership.chat_user_id == selected_user.id))
     .join(Chat, Chat.id == ChatMembership.chat_id)
@@ -64,12 +62,7 @@ async def get_chat(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
-
-    chat_name: str | None = selected_chat.name
-
-    if not chat_name:
-        chat_name: str = await utils.get_chat_name(selected_chat, selected_user, db)
+    chat_name: str = await validators.validate_get_chat(selected_chat, selected_user, db)
 
     selected_chat: ChatResponseModel = ChatResponseModel(
         id = selected_chat.id,
@@ -95,7 +88,7 @@ async def get_chat_members(
     .select_from(ChatMembership)
     .where(sqlalchemy.and_(ChatMembership.chat_id == selected_chat.id))
     .join(User, User.id == ChatMembership.chat_user_id)
-    .order_by(Chat.id)
+    .order_by(User.id)
     .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
     .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
     .scalars().all())
@@ -113,69 +106,21 @@ async def get_chat_members(
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(memberships_list), status_code = fastapi.status.HTTP_200_OK)
 
 
-async def get_chat_last_message(
-    selected_chat: Chat,
-    selected_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
-
-    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
-
-    last_message_raw: Message | None = ((await db.execute(sqlalchemy.select(Message)
-    .select_from(Message)
-    .where(Message.chat_id == selected_chat.id)
-    .order_by(Message.date_and_time_sent.desc())
-    .limit(1)))
-    .scalars().first())
-
-    if not last_message_raw:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_not_found_error.error_status_code, detail = ErrorRegistry.message_attachment_not_found_error)
-
-    last_message: MessageResponseModel = MessageResponseModel(
-    id = last_message_raw.id,
-    chat_id = last_message_raw.chat_id,
-    date_and_time_sent = last_message_raw.date_and_time_sent,
-    date_and_time_edited = last_message_raw.date_and_time_edited,
-    message_text = last_message_raw.message_text,
-    is_read = await backend.routers.messages.utils.is_message_read(last_message_raw, selected_user, db))
-
-    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(last_message), status_code = fastapi.status.HTTP_200_OK)
-
-
 async def get_chat_avatar(
     selected_chat: Chat,
     selected_user: User,
     minio_client: MinioClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.StreamingResponse:
 
-    await validators.validate_get_chat_avatar(selected_chat, selected_user, db)
+    avatar_photo_path: str = await validators.validate_get_chat_avatar(selected_chat, selected_user, db)
 
-    if selected_chat.chat_kind in [ChatKind.PRIVATE]:
+    file = await minio_client.get_file(MinioBucket.chats_avatars, avatar_photo_path)
+    file_stat = await minio_client.get_file_stat(MinioBucket.chats_avatars, avatar_photo_path)
 
-        other_user: User | None = await utils.get_other_chat_user(selected_chat, selected_user, db)
-        if not other_user:
-            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
+    background_tasks = fastapi.BackgroundTasks()
+    background_tasks.add_task(minio_client.close_file_stream, file)
 
-        return await backend.routers.users.service.get_user_avatar(other_user, minio_client)
-
-    elif selected_chat.chat_kind in [ChatKind.PROFILE]:
-
-        owner_user: User | None = (await db.execute(sqlalchemy.select(User).where(User.id == selected_chat.owner_user_id))).scalars().first()
-
-        if not owner_user:
-            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
-
-        return await backend.routers.users.service.get_user_avatar(owner_user, minio_client)
-    else:
-        if not selected_chat.avatar_photo_path:
-            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.avatar_not_found_error.error_status_code, detail = ErrorRegistry.avatar_not_found_error)
-
-        file = await minio_client.get_file(MinioBucket.chats_avatars, selected_chat.avatar_photo_path)
-        file_stat = await minio_client.get_file_stat(MinioBucket.chats_avatars, selected_chat.avatar_photo_path)
-
-        background_tasks = fastapi.BackgroundTasks()
-        background_tasks.add_task(minio_client.close_file_stream, file)
-
-        return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
+    return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
 
 
 async def create_private_chat(
@@ -197,21 +142,23 @@ async def create_private_chat(
         first_chat_user: ChatMembership = ChatMembership(
         chat_id = new_chat.id,
         chat_user_id = selected_user.id,
+        chat_role = ChatRole.USER,
         date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
         second_chat_user: ChatMembership = ChatMembership(
         chat_id = new_chat.id,
         chat_user_id = other_user.id,
+        chat_role = ChatRole.USER,
         date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
         db.add(first_chat_user)
         db.add(second_chat_user)
 
-    return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(IDModel(id = new_chat.id), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def create_group_chat(
-    data: GroupChatModel,
+    data: ChatNameRequestModel,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
@@ -229,12 +176,12 @@ async def create_group_chat(
         membership: ChatMembership = ChatMembership(
         chat_id = new_chat.id,
         chat_user_id = selected_user.id,
-        date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-        chat_role = ChatRole.OWNER)
+        chat_role = ChatRole.OWNER,
+        date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
         db.add(membership)
 
-    return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(IDModel(id = new_chat.id), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def update_chat_avatar(
@@ -247,10 +194,15 @@ async def update_chat_avatar(
     await validators.validate_update_avatar_or_name(selected_chat, selected_user, db)
 
     old_avatar_path: str | None = selected_chat.avatar_photo_path
-
     new_avatar_photo_path: str = await minio_client.put_file(MinioBucket.chats_avatars, file)
-    selected_chat.avatar_photo_path = new_avatar_photo_path
-    await db.commit()
+    try:
+        selected_chat.avatar_photo_path = new_avatar_photo_path
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        await minio_client.delete_file(MinioBucket.chats_avatars, new_avatar_photo_path)
+
+        raise
 
     if old_avatar_path:
         await minio_client.delete_file(MinioBucket.chats_avatars, old_avatar_path)
@@ -260,7 +212,7 @@ async def update_chat_avatar(
 
 async def update_chat_name(
     selected_chat: Chat,
-    data: GroupChatModel,
+    data: ChatNameRequestModel,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
@@ -334,7 +286,7 @@ async def add_chat_user(
     db.add(membership)
     await db.commit()
 
-    return fastapi.responses.JSONResponse({"id": membership.id}, status_code = fastapi.status.HTTP_201_CREATED)
+    return fastapi.responses.JSONResponse(IDModel(id = membership.id), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def delete_chat_user(
@@ -348,7 +300,7 @@ async def delete_chat_user(
     await db.delete(membership)
     await db.commit()
 
-    return fastapi.responses.Response(status_code=fastapi.status.HTTP_204_NO_CONTENT)
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def leave_chat(
@@ -393,7 +345,7 @@ async def delete_chat(
 
 
 async def create_channel(
-    data: GroupChatModel,
+    data: ChatNameRequestModel,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
@@ -411,28 +363,27 @@ async def create_channel(
         membership: ChatMembership = ChatMembership(
         chat_id = new_chat.id,
         chat_user_id = selected_user.id,
-        date_and_time_added = datetime.datetime.now(datetime.timezone.utc),
-        chat_role = ChatRole.OWNER)
+        chat_role = ChatRole.OWNER,
+        date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
         db.add(membership)
 
-    return fastapi.responses.JSONResponse({"id": new_chat.id}, status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(IDModel(id = new_chat.id), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def get_user_profile(
-    wall_user: User,
-    selected_user: User,
+    profile_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
     user_profile_raw: Chat
     chat_name: str
 
-    user_profile_raw, chat_name = ((await db.execute(sqlalchemy.select(Chat,
-    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.string_agg(User.name + " " + User.surname + " " + User.second_name, ", ") ).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id)).label("chat_name"))
+    user_profile_raw, chat_name = ((await db.execute(
+    sqlalchemy.select(Chat, sqlalchemy.func.coalesce(Chat.name, sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name)))
     .select_from(Chat)
-    .where(sqlalchemy.and_(Chat.owner_user_id == wall_user.id, Chat.chat_kind == ChatKind.PROFILE))))
-    .scalars().first())
-
+    .where(sqlalchemy.and_(Chat.chat_kind == ChatKind.PROFILE, Chat.owner_user_id == profile_user.id))
+    .join(User, User.id == Chat.owner_user_id)))
+    .tuples().first())
 
     user_profile: ChatResponseModel = ChatResponseModel(
     id = user_profile_raw.id,

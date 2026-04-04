@@ -1,4 +1,4 @@
 import pydantic
 
-class GroupChatModel(pydantic.BaseModel):
-    name: str | None = pydantic.Field(max_length = 100)
+class ChatNameRequestModel(pydantic.BaseModel):
+    name: str = pydantic.Field(max_length = 100)
