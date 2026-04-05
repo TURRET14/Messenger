@@ -10,8 +10,7 @@ import backend.routers.messages.router
 import backend.routers.message_attachments.router
 import backend.routers.messages.websockets.websockets
 import backend.routers.messages.websockets.listeners.router
-import backend.routers.chats.websockets
-import environment
+import backend.environment as environment
 import contextlib
 from backend.storage import database
 
@@ -41,7 +40,6 @@ app.include_router(backend.routers.messages.websockets.websockets.messages_webso
 app.include_router(backend.routers.messages.websockets.listeners.router.messages_websocket_listener_router)
 
 app.include_router(backend.routers.message_attachments.router.message_attachments_router)
-app.include_router(backend.routers.message_attachments.websocket_listeners_router.message_attachments_router)
 
 
 @app.exception_handler(fastapi.exceptions.HTTPException)
@@ -49,4 +47,4 @@ async def http_exception_handler(request: fastapi.requests.Request, exception: f
     return fastapi.responses.JSONResponse(exception.detail, status_code = exception.status_code)
 
 
-uvicorn.run(app, host = "0.0.0.0", port = int(environment.BACKEND_PORT), reload = True)
+uvicorn.run(app, host = "0.0.0.0", port = int(environment.BACKEND_PORT))

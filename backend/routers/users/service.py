@@ -22,7 +22,7 @@ from backend.routers.users import utils
 from backend.routers.users.validation import validators
 from backend.routers.users.validation import checks
 
-from request_models import (
+from backend.routers.users.request_models import (
     RegisterRequestModel,
     LoginRequestModel,
     SessionRequestModel,
@@ -30,7 +30,7 @@ from request_models import (
     UserUpdateLoginRequestModel,
     UserUpdatePasswordRequestModel)
 
-from response_models import (
+from backend.routers.users.response_models import (
     FriendRequestResponseModel,
     UserResponseModel,
     UserInListResponseModel,

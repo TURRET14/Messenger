@@ -1,7 +1,7 @@
 fastapi
 pydantic
 sqlalchemy
-psycopg
+asyncpg
 uvicorn
 email-validator
 redis
@@ -9,4 +9,4 @@ minio
 argon2-cffi
 python-dotenv
 urllib3
-booktype
+python-multipart

@@ -16,9 +16,9 @@ from backend.routers.errors import ErrorRegistry
 import backend.environment as environment
 
 class MinioBucket(str, enum.Enum):
-    users_avatars = "users:avatars"
-    chats_avatars = "chats:avatars"
-    messages_attachments = "messages:attachments"
+    users_avatars = "usersavatars"
+    chats_avatars = "chatsavatars"
+    messages_attachments = "messagesattachments"
 
 
 @dataclasses.dataclass
@@ -28,11 +28,14 @@ class BucketWithFiles:
 
 class MinioClient:
     def __init__(self, endpoint: str, access_key: str, secret_key: str):
-        self.client = minio.Minio(endpoint = endpoint, access_key = access_key, secret_key = secret_key)
+        self.client = minio.Minio(endpoint = endpoint, access_key = access_key, secret_key = secret_key, secure = False)
 
-        self.client.make_bucket(MinioBucket.users_avatars.value)
-        self.client.make_bucket(MinioBucket.chats_avatars.value)
-        self.client.make_bucket(MinioBucket.messages_attachments.value)
+        if not self.client.bucket_exists(MinioBucket.users_avatars.value):
+            self.client.make_bucket(MinioBucket.users_avatars.value)
+        if not self.client.bucket_exists(MinioBucket.chats_avatars.value):
+            self.client.make_bucket(MinioBucket.chats_avatars.value)
+        if not self.client.bucket_exists(MinioBucket.messages_attachments.value):
+            self.client.make_bucket(MinioBucket.messages_attachments.value)
 
 
     async def get_file(self, bucket_name: MinioBucket, object_name: str) -> urllib3.BaseHTTPResponse:

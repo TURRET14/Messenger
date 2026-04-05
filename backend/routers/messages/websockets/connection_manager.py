@@ -3,9 +3,9 @@ import fastapi.encoders
 import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 from typing import Sequence
-import utils
 import enum
 
+from backend.routers.messages.websockets import utils
 from backend.routers.messages.websockets.models import (MessagePubsubWebsocketModel, ReadMarkPubsubWebsocketModel)
 from backend.routers.common_models import (IDModel)
 from backend.routers.messages.response_models import (MessageResponseModel, MessageReadMarkResponseModel)

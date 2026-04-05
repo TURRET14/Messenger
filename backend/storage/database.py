@@ -160,7 +160,7 @@ class UserBlock(Base):
                     sqlalchemy.Index('idx_user_blocks_user_id_blocked_user_id', user_id, blocked_user_id))
 
 database_url: sqlalchemy.engine.URL = sqlalchemy.engine.URL.create(
-    drivername = "postgresql+psycopg",
+    drivername = "postgresql+asyncpg",
     username = environment.POSTGRES_USER,
     password = environment.POSTGRES_PASSWORD,
     host = environment.POSTGRES_HOST,

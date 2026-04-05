@@ -6,7 +6,7 @@ import backend.routers.dependencies
 from backend.routers.users.response_models import CurrentUserResponseModel, FriendUserInListResponseModel
 from backend.storage import *
 
-from request_models import (
+from backend.routers.users.request_models import (
     RegisterRequestModel,
     LoginRequestModel,
     SessionRequestModel,
@@ -14,7 +14,7 @@ from request_models import (
     UserUpdateLoginRequestModel,
     UserUpdatePasswordRequestModel)
 
-from response_models import (
+from backend.routers.users.response_models import (
     UserInListResponseModel,
     UserResponseModel,
     FriendRequestResponseModel,
