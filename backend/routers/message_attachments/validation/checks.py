@@ -1,6 +1,5 @@
 import fastapi
 import fastapi.encoders
-import sqlalchemy.ext.asyncio
 
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)

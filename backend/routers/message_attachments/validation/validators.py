@@ -1,10 +1,8 @@
-import fastapi
-import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 
 import backend.routers.common_validators.validators as common_validators
 from backend.storage import *
-import checks
+from backend.routers.message_attachments.validation import checks
 
 
 async def validate_get_message_attachment(

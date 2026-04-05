@@ -5,7 +5,7 @@ import backend.routers.common_validators.checks as common_checks
 import backend.routers.common_validators.validators as common_validators
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)
-import checks
+import backend.routers.chats.validation.checks as checks
 import backend.routers.chats.utils as utils
 
 async def validate_get_chat_avatar(

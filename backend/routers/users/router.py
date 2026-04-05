@@ -1,7 +1,7 @@
 import fastapi
 import sqlalchemy.ext.asyncio
 
-import service
+from backend.routers.users import service
 import backend.routers.dependencies
 from backend.routers.users.response_models import CurrentUserResponseModel, FriendUserInListResponseModel
 from backend.storage import *

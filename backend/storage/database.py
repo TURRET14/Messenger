@@ -3,20 +3,23 @@ import os
 import datetime
 import sqlalchemy.orm
 import sqlalchemy.event
-import sqlalchemy.dialects
-import database_triggers
+import sqlalchemy.dialects.postgresql
 import sqlalchemy.ext.asyncio
-import asyncio
+import sqlalchemy.engine
+import backend.environment as environment
+
 
 class Gender(enum.Enum):
     MALE = "MALE"
     FEMALE = "FEMALE"
+
 
 class ChatKind(enum.Enum):
     PRIVATE = "PRIVATE"
     GROUP = "GROUP"
     CHANNEL = "CHANNEL"
     PROFILE = "PROFILE"
+
 
 class ChatRole(enum.Enum):
     USER = "USER"
@@ -156,30 +159,23 @@ class UserBlock(Base):
                     sqlalchemy.Index('idx_user_blocks_blocked_user_id', blocked_user_id),
                     sqlalchemy.Index('idx_user_blocks_user_id_blocked_user_id', user_id, blocked_user_id))
 
+database_url: sqlalchemy.engine.URL = sqlalchemy.engine.URL.create(
+    drivername = "postgresql+psycopg",
+    username = environment.POSTGRES_USER,
+    password = environment.POSTGRES_PASSWORD,
+    host = environment.POSTGRES_HOST,
+    port = environment.POSTGRES_PORT,
+    database = environment.POSTGRES_DB)
 
-sqlalchemy.event.listen(ChatMembership, "after_insert", database_triggers.chat_user_after_insert)
-sqlalchemy.event.listen(ChatMembership, "after_delete", database_triggers.chat_user_after_delete)
-sqlalchemy.event.listen(ChatMembership, "after_update", database_triggers.chat_user_after_update)
-sqlalchemy.event.listen(Chat, "after_update", database_triggers.chat_after_update)
-sqlalchemy.event.listen(Message, "after_insert", database_triggers.message_after_insert)
-sqlalchemy.event.listen(Message, "after_update", database_triggers.message_after_update)
-sqlalchemy.event.listen(Message, "after_delete", database_triggers.message_after_delete)
-sqlalchemy.event.listen(MessageReceipt, "after_insert", database_triggers.message_read_mark_after_insert)
-sqlalchemy.event.listen(MessageAttachment, "after_insert", database_triggers.message_attachment_after_insert)
-sqlalchemy.event.listen(MessageAttachment, "after_delete", database_triggers.message_attachment_after_delete)
-
-database_url: str = "postgresql+psycopg://" + str(os.getenv("POSTGRES_USER")) + ":" + str(os.getenv("POSTGRES_PASSWORD")) + "@" + str(os.getenv("POSTGRES_HOST")) + ":" + str(os.getenv("POSTGRES_PORT")) + "/" + str(os.getenv("POSTGRES_DB"))
 db_engine: sqlalchemy.ext.asyncio.AsyncEngine = sqlalchemy.ext.asyncio.create_async_engine(database_url)
-session_maker: sqlalchemy.ext.asyncio.async_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=db_engine)
+async_session_maker: sqlalchemy.ext.asyncio.async_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=db_engine)
 
 async def init_db():
     async with db_engine.connect() as conn:
         await conn.run_sync(lambda sync_connection: Base.metadata.create_all(sync_connection))
 
-asyncio.create_task(init_db())
-
 async def get_db():
-    db = session_maker()
+    db = async_session_maker()
     try:
         yield db
     finally:

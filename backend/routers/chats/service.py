@@ -8,14 +8,14 @@ import datetime
 from backend.routers.chats import minio_deletion_service
 from backend.routers.common_models import IDModel
 from backend.storage import *
-from request_models import (ChatNameRequestModel)
-from response_models import (ChatResponseModel, ChatMembershipResponseModel)
+from backend.routers.chats.request_models import (ChatNameRequestModel)
+from backend.routers.chats.response_models import (ChatResponseModel, ChatMembershipResponseModel)
 import backend.routers.errors
 import backend.routers.dependencies
 import backend.routers.parameters
 import backend.routers.users.utils
 import backend.routers.messages.utils
-import validation.validators as validators
+from backend.routers.chats.validation import validators
 import backend.routers.common_validators.validators as common_validators
 import backend.routers.users.service
 
@@ -40,8 +40,8 @@ async def get_all_chats(
     .join(Chat, Chat.id == ChatMembership.chat_id)
     .join(subquery_chat_last_message_datetime, subquery_chat_last_message_datetime.c.chat_id == Chat.id)
     .order_by(subquery_chat_last_message_datetime.c.date_and_time_sent.desc())
-    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .tuples().all())
 
     chats_list: list[ChatResponseModel] = list()
@@ -89,8 +89,8 @@ async def get_chat_members(
     .where(sqlalchemy.and_(ChatMembership.chat_id == selected_chat.id))
     .join(User, User.id == ChatMembership.chat_user_id)
     .order_by(User.id)
-    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
 
     memberships_list: list[ChatMembershipResponseModel] = list()

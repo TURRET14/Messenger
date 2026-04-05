@@ -1,4 +1,3 @@
-import fastapi
 import sqlalchemy.ext.asyncio
 
 import backend.routers.common_validators.checks as common_checks

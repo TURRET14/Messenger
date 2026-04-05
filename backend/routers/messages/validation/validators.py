@@ -4,7 +4,7 @@ import sqlalchemy.ext.asyncio
 import backend.routers.common_validators.checks as common_checks
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)
-import checks
+from backend.routers.messages.validation import checks
 
 
 async def validate_chat_message_get_comments(

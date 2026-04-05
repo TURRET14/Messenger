@@ -5,7 +5,7 @@ import backend.routers.common_validators.checks as common_checks
 from backend.routers.users import utils
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)
-import checks
+from backend.routers.users.validation import checks
 
 
 async def validate_register(

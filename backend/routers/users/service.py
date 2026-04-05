@@ -12,15 +12,15 @@ import urllib3
 import backend.routers.dependencies
 import backend.routers.security
 import backend.routers.parameters as parameters
-import minio_deletion_service
+from backend.routers.users import minio_deletion_service
 from backend.storage import *
 import backend.routers.chats.utils
 from backend.storage.minio_handler import (MinioClient)
 from backend.storage.redis_handler import (RedisClient)
 import backend.routers.chats.minio_deletion_service
-import utils
-import validation.validators as validators
-import validation.checks as checks
+from backend.routers.users import utils
+from backend.routers.users.validation import validators
+from backend.routers.users.validation import checks
 
 from request_models import (
     RegisterRequestModel,
@@ -83,7 +83,7 @@ async def login(
     session_id: str = await redis_client.create_user_session(selected_user.id, user_agent)
 
     response: fastapi.responses.Response = fastapi.responses.Response()
-    response.set_cookie("session_id", value = session_id, max_age = parameters.redis_session_expiration_time_seconds, httponly = True, secure = True, samesite ="strict")
+    response.set_cookie("session_id", value = session_id, max_age = parameters.REDIS_USER_SESSION_EXPIRATION_TIME_SECONDS, httponly = True, secure = True, samesite ="strict")
     response.status_code = fastapi.status.HTTP_200_OK
 
     return response
@@ -280,8 +280,8 @@ async def get_users(
     users_list_raw: Sequence[User] = ((await db.execute(
     sqlalchemy.select(User)
     .order_by(User.id)
-    .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
-    .limit(parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
 
     users_list: list[UserInListResponseModel] = list()
@@ -306,8 +306,8 @@ async def search_users_by_username(
     sqlalchemy.select(User)
     .where(User.username.like(f"{search_username.upper()}%"))
     .order_by(User.id)
-    .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
-    .limit(parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
 
     users_list: list[UserInListResponseModel] = list()
@@ -342,8 +342,8 @@ async def search_users_by_names(
 
     users_list_raw: Sequence[User] = ((await db.execute(
     select_request.order_by(User.id)
-    .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
-    .limit(parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
 
     users_list: list[UserInListResponseModel] = list()
@@ -374,8 +374,8 @@ async def get_friends(
     .where(Friendship.friend_user_id == selected_user.id)
     .join(User, User.id == Friendship.user_id))
     .order_by(User.id)
-    .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
-    .limit(parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .tuples().all())
 
     friends_list: list[FriendUserInListResponseModel] = list()
@@ -411,8 +411,8 @@ async def search_friends_by_username(
     .join(User, User.id == Friendship.user_id)
     .where(User.username.like(f"{username.upper()}%")))
     .order_by(User.id)
-    .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
-    .limit(parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .tuples().all())
 
     friends_list: list[FriendUserInListResponseModel] = list()
@@ -462,8 +462,8 @@ async def search_friends_by_names(
     friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
     first_select_request.union(second_select_request)
     .order_by(User.id)
-    .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
-    .limit(parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .tuples().all())
 
     friends_list: list[FriendUserInListResponseModel] = list()
@@ -489,8 +489,8 @@ async def get_user_sent_friend_requests(
     sqlalchemy.select(FriendRequest)
     .where(FriendRequest.sender_user_id == selected_user.id)
     .order_by(User.id)
-    .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
-    .limit(parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
 
     friend_requests_list: list[FriendRequestResponseModel] = list()
@@ -515,8 +515,8 @@ async def get_user_received_friend_requests(
     .select_from(FriendRequest)
     .where(FriendRequest.receiver_user_id == selected_user.id)
     .order_by(User.id)
-    .offset(offset_multiplier * parameters.number_of_table_entries_in_selection)
-    .limit(parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
 
     friend_requests_list: list[FriendRequestResponseModel] = list()

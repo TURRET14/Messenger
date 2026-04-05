@@ -8,6 +8,5 @@ redis
 minio
 argon2-cffi
 python-dotenv
-booktype
-argon2
 urllib3
+booktype

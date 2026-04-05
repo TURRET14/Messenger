@@ -1,16 +1,13 @@
 import fastapi
-import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 
 from backend.storage import *
-from request_models import (ChatNameRequestModel)
-from response_models import (ChatResponseModel, ChatMembershipResponseModel)
-import service
+from backend.routers.chats.request_models import (ChatNameRequestModel)
+from backend.routers.chats.response_models import (ChatResponseModel, ChatMembershipResponseModel)
+from backend.routers.chats import service
 import backend.routers.dependencies
-from websocket_listeners_router import chats_websocket_listener_router
 
 chats_router = fastapi.APIRouter()
-chats_router.include_router(chats_websocket_listener_router)
 
 @chats_router.get("/chats", response_class = fastapi.responses.JSONResponse, response_model = ChatResponseModel)
 async def get_all_chats(

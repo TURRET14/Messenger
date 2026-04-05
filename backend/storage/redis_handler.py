@@ -1,4 +1,5 @@
 import dataclasses
+import enum
 import os
 
 import fastapi
@@ -7,10 +8,12 @@ import asyncio
 import secrets
 import datetime
 
-from django.conf.locale import fa
+from backend.routers.messages.websockets.models import (MessagePubsubWebsocketModel, ReadMarkPubsubWebsocketModel)
+from backend.routers.chats.websockets.models import (ChatMembershipPubsubModel, ChatWithReceiversPubsubDeleteModel, ChatPubsubModel)
 
 import backend.routers.parameters as parameters
 from backend.routers.errors import ErrorRegistry
+import backend.environment as environment
 
 
 @dataclasses.dataclass()
@@ -22,6 +25,21 @@ class SessionModel:
     expiration_datetime: int
 
 
+class RedisPubsubChannel(enum.Enum):
+    MESSAGES_POST = "MESSAGES_POST"
+    MESSAGES_PUT = "MESSAGES_PUT"
+    MESSAGES_DELETE = "MESSAGES_DELETE"
+    MESSAGES_READ_POST = "MESSAGES_READ_POST"
+
+    CHATS_POST = "CHATS_POST"
+    CHATS_PUT = "CHATS_PUT"
+    CHATS_DELETE = "CHATS_DELETE"
+
+    CHAT_MEMBERSHIPS_POST = "CHAT_MEMBERSHIPS_POST"
+    CHAT_MEMBERSHIPS_PUT = "CHAT_MEMBERSHIPS_PUT"
+    CHAT_MEMBERSHIPS_DELETE = "CHAT_MEMBERSHIPS_DELETE"
+
+
 class RedisClient:
     def __init__(self, host, port, password):
         self.client = redis.asyncio.Redis(host = host, port = port, password = password, decode_responses = True)
@@ -29,7 +47,7 @@ class RedisClient:
     async def create_user_session(self, user_id: int, user_agent: str) -> str:
         session_id = secrets.token_urlsafe(64)
         creation_datetime: int = int(datetime.datetime.now().timestamp())
-        expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds = parameters.redis_session_expiration_time_seconds).total_seconds())
+        expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds = parameters.REDIS_USER_SESSION_EXPIRATION_TIME_SECONDS).total_seconds())
 
         coroutines: list = list()
         coroutines.append(self.client.sadd(f"user:{user_id}:sessions", session_id))
@@ -93,7 +111,64 @@ class RedisClient:
             await asyncio.gather(*coroutines)
 
 
-redis_client: RedisClient = RedisClient("redis", os.getenv("REDIS_PORT"), os.getenv("REDIS_PASSWORD"))
+    async def pubsub_subscribe(self, subscription: RedisPubsubChannel) -> redis.asyncio.client.PubSub:
+        pubsub: redis.asyncio.client.PubSub = self.client.pubsub()
+        await pubsub.subscribe(subscription.value)
+
+        return pubsub
+
+
+    async def pubsub_publish(
+        self,
+        subscription: RedisPubsubChannel,
+        data: MessagePubsubWebsocketModel | ReadMarkPubsubWebsocketModel | ChatPubsubModel | ChatWithReceiversPubsubDeleteModel | ChatMembershipPubsubModel):
+        await self.client.publish(subscription.value, data.model_dump_json())
+
+
+    async def pubsub_publish_post_message(self, message: MessagePubsubWebsocketModel):
+        await self.pubsub_publish(RedisPubsubChannel.MESSAGES_POST, message)
+
+
+    async def pubsub_publish_put_message(self, message: MessagePubsubWebsocketModel):
+        await self.pubsub_publish(RedisPubsubChannel.MESSAGES_PUT, message)
+
+
+    async def pubsub_publish_delete_message(self, message: MessagePubsubWebsocketModel):
+        await self.pubsub_publish(RedisPubsubChannel.MESSAGES_DELETE, message)
+
+
+    async def pubsub_publish_message_read_post(self, message: ReadMarkPubsubWebsocketModel):
+        await self.pubsub_publish(RedisPubsubChannel.MESSAGES_READ_POST, message)
+
+
+    async def pubsub_publish_post_chat(self, chat: ChatPubsubModel):
+        await self.pubsub_publish(RedisPubsubChannel.CHATS_POST, chat)
+
+
+    async def pubsub_publish_put_chat(self, chat: ChatPubsubModel):
+        await self.pubsub_publish(RedisPubsubChannel.CHATS_PUT, chat)
+
+
+    async def pubsub_publish_delete_chat(self, chat: ChatWithReceiversPubsubDeleteModel):
+        await self.pubsub_publish(RedisPubsubChannel.CHATS_DELETE, chat)
+
+
+    async def pubsub_publish_post_chat_membership(self, chat_membership: ChatMembershipPubsubModel):
+        await self.pubsub_publish(RedisPubsubChannel.CHAT_MEMBERSHIPS_POST, chat_membership)
+
+
+    async def pubsub_publish_put_chat_membership(self, chat_membership: ChatMembershipPubsubModel):
+        await self.pubsub_publish(RedisPubsubChannel.CHAT_MEMBERSHIPS_PUT, chat_membership)
+
+
+    async def pubsub_publish_delete_chat_membership(self, chat_membership: ChatMembershipPubsubModel):
+        await self.pubsub_publish(RedisPubsubChannel.CHAT_MEMBERSHIPS_DELETE, chat_membership)
+
+
+redis_client: RedisClient = RedisClient(
+    host = environment.REDIS_HOST,
+    port = int(environment.REDIS_PORT),
+    password = environment.REDIS_PASSWORD)
 
 
 async def get_redis_client() -> RedisClient:

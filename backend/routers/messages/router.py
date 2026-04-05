@@ -1,17 +1,15 @@
 import fastapi
-import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 
 from backend.routers.messages.response_models import LastMessageResponseModel
 from backend.storage import *
-from request_models import (MessageRequestModel, MessagePostRequestModel)
-from response_models import (MessageResponseModel)
-import service
+from backend.routers.messages.request_models import (MessageRequestModel, MessagePostRequestModel)
+from backend.routers.messages.response_models import (MessageResponseModel)
+from backend.routers.messages import service
 import backend.routers.dependencies
-from websocket_listeners_router import messages_websocket_router
+
 
 messages_router = fastapi.APIRouter()
-messages_router.include_router(messages_websocket_router)
 
 
 @messages_router.get("/chats/id/{chat_id}/messages", response_class = fastapi.responses.JSONResponse, response_model = list[MessageResponseModel])

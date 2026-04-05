@@ -1,6 +1,5 @@
 import enum
 import dataclasses
-
 import fastapi
 
 @dataclasses.dataclass()

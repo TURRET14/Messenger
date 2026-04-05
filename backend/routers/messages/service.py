@@ -8,14 +8,14 @@ import datetime
 from backend.routers.common_models import (IDModel)
 from backend.routers.messages.response_models import LastMessageResponseModel
 from backend.storage import *
-from request_models import (MessageRequestModel, MessagePostRequestModel)
-from response_models import (MessageResponseModel)
+from backend.routers.messages.request_models import (MessageRequestModel, MessagePostRequestModel)
+from backend.routers.messages.response_models import (MessageResponseModel)
 import backend.routers.dependencies
 import backend.routers.parameters as parameters
-import validation.validators as validators
+from backend.routers.messages.validation import validators
 import backend.routers.common_validators.validators as common_validators
-import minio_deletion_service
-import utils
+from backend.routers.messages import minio_deletion_service
+from backend.routers.messages import utils
 
 async def get_chat_messages(
     offset_multiplier: int,
@@ -32,8 +32,8 @@ async def get_chat_messages(
     .select_from(Message)
     .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id is None))
     .order_by(Message.date_and_time_sent.desc())
-    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .tuples().all())
 
     messages_list: list[MessageResponseModel] = list()
@@ -63,8 +63,8 @@ async def get_chat_message_comments(
     sqlalchemy.select(Message)
     .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id == selected_message.id))
     .order_by(Message.date_and_time_sent.desc())
-    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
 
     message_comments_list: list[MessageResponseModel] = list()
@@ -199,8 +199,8 @@ async def search_messages_in_chat(
     .where(sqlalchemy.and_(Message.chat_id == selected_chat.id,
     Message.message_text_tsvector.op("@@")(sqlalchemy.func.websearch_to_tsquery('russian', message_text))))
     .order_by(Message.date_and_time_sent.desc())
-    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .tuples().all())
 
     messages_list: list[MessageResponseModel] = list()
@@ -233,8 +233,8 @@ async def search_comments_in_chat(
     .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id == selected_message.id,
     Message.message_text_tsvector.op("@@")(sqlalchemy.func.websearch_to_tsquery('russian', message_text))))
     .order_by(Message.date_and_time_sent.desc())
-    .offset(offset_multiplier * backend.routers.parameters.number_of_table_entries_in_selection)
-    .limit(backend.routers.parameters.number_of_table_entries_in_selection)))
+    .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
 
     message_comments_list: list[MessageResponseModel] = list()

@@ -1,17 +1,14 @@
 import fastapi
-import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 
 from backend.storage import *
-from models import *
-import service
+from backend.routers.message_attachments.response_models import (MessageAttachmentResponseModel)
+from backend.routers.message_attachments import service
 import backend.routers.dependencies
-from websocket_listeners_router import message_websocket_attachments_router
 
 message_attachments_router = fastapi.APIRouter()
-message_attachments_router.include_router(message_websocket_attachments_router)
 
-@message_attachments_router.get("/chats/id/{chat_id}/messages/id/{message_id}/attachments", response_class = fastapi.responses.JSONResponse, response_model = list[MessageAttachmentModel])
+@message_attachments_router.get("/chats/id/{chat_id}/messages/id/{message_id}/attachments", response_class = fastapi.responses.JSONResponse, response_model = list[MessageAttachmentResponseModel])
 async def get_message_attachments_list(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
