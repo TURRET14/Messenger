@@ -6,6 +6,7 @@ from typing import Sequence
 import datetime
 
 from backend.routers.chats import minio_deletion_service
+from backend.routers.chats.websockets.models import ChatPubsubModel, ChatMembershipPubsubModel
 from backend.routers.common_models import IDModel
 from backend.storage import *
 from backend.routers.chats.request_models import (ChatNameRequestModel)
@@ -13,11 +14,13 @@ from backend.routers.chats.response_models import (ChatResponseModel, ChatMember
 import backend.routers.errors
 import backend.routers.dependencies
 import backend.routers.parameters
+import backend.routers.chats.utils
 import backend.routers.users.utils
 import backend.routers.messages.utils
 from backend.routers.chats.validation import validators
 import backend.routers.common_validators.validators as common_validators
 import backend.routers.users.service
+import utils
 
 
 async def get_all_chats(
@@ -126,6 +129,7 @@ async def get_chat_avatar(
 async def create_private_chat(
     other_user: User,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
     await validators.validate_create_private_chat(selected_user, other_user, db)
@@ -154,12 +158,23 @@ async def create_private_chat(
         db.add(first_chat_user)
         db.add(second_chat_user)
 
+
+    await redis_client.pubsub_publish_post_chat(ChatPubsubModel(
+    id = new_chat.id,
+    chat_kind = new_chat.chat_kind,
+    name = await backend.routers.chats.utils.get_chat_name(new_chat, selected_user, db),
+    owner_user_id = new_chat.owner_user_id,
+    date_and_time_created = new_chat.date_and_time_created,
+    is_avatar_changed = False,
+    receivers = [first_chat_user.chat_user_id, second_chat_user.chat_user_id]))
+
     return fastapi.responses.JSONResponse(IDModel(id = new_chat.id), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def create_group_chat(
     data: ChatNameRequestModel,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
     async with db.begin():
@@ -181,6 +196,15 @@ async def create_group_chat(
 
         db.add(membership)
 
+    await redis_client.pubsub_publish_post_chat(ChatPubsubModel(
+        id = new_chat.id,
+        chat_kind = new_chat.chat_kind,
+        name = await backend.routers.chats.utils.get_chat_name(new_chat, selected_user, db),
+        owner_user_id = new_chat.owner_user_id,
+        date_and_time_created = new_chat.date_and_time_created,
+        is_avatar_changed = False,
+        receivers = [membership.chat_user_id]))
+
     return fastapi.responses.JSONResponse(IDModel(id = new_chat.id), status_code = fastapi.status.HTTP_201_CREATED)
 
 
@@ -189,6 +213,7 @@ async def update_chat_avatar(
     file: fastapi.UploadFile,
     selected_user: User,
     minio_client: MinioClient,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     await validators.validate_update_avatar_or_name(selected_chat, selected_user, db)
@@ -207,6 +232,15 @@ async def update_chat_avatar(
     if old_avatar_path:
         await minio_client.delete_file(MinioBucket.chats_avatars, old_avatar_path)
 
+    await redis_client.pubsub_publish_put_chat(ChatPubsubModel(
+        id = selected_chat.id,
+        chat_kind = selected_chat.chat_kind,
+        name = await backend.routers.chats.utils.get_chat_name(selected_chat, selected_user, db),
+        owner_user_id = selected_chat.owner_user_id,
+        date_and_time_created = selected_chat.date_and_time_created,
+        is_avatar_changed = True,
+        receivers = await utils.get_chat_member_ids(selected_chat, db)))
+
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
@@ -214,12 +248,22 @@ async def update_chat_name(
     selected_chat: Chat,
     data: ChatNameRequestModel,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     await validators.validate_update_avatar_or_name(selected_chat, selected_user, db)
 
     selected_chat.name = data.name
     await db.commit()
+
+    await redis_client.pubsub_publish_put_chat(ChatPubsubModel(
+        id = selected_chat.id,
+        chat_kind = selected_chat.chat_kind,
+        name = await backend.routers.chats.utils.get_chat_name(selected_chat, selected_user, db),
+        owner_user_id = selected_chat.owner_user_id,
+        date_and_time_created = selected_chat.date_and_time_created,
+        is_avatar_changed = False,
+        receivers = await utils.get_chat_member_ids(selected_chat, db)))
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
@@ -228,6 +272,7 @@ async def update_chat_owner(
     selected_chat: Chat,
     new_owner_user: User,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     old_owner_membership: ChatMembership = await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
@@ -239,6 +284,15 @@ async def update_chat_owner(
         old_owner_membership.chat_role = ChatRole.USER
         new_owner_membership.chat_role = ChatRole.OWNER
 
+    await redis_client.pubsub_publish_put_chat(ChatPubsubModel(
+        id = selected_chat.id,
+        chat_kind = selected_chat.chat_kind,
+        name = await backend.routers.chats.utils.get_chat_name(selected_chat, selected_user, db),
+        owner_user_id = selected_chat.owner_user_id,
+        date_and_time_created = selected_chat.date_and_time_created,
+        is_avatar_changed = False,
+        receivers = await utils.get_chat_member_ids(selected_chat, db)))
+
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
@@ -246,6 +300,7 @@ async def add_chat_admin(
     selected_chat: Chat,
     new_admin_user: User,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     new_admin_membership: ChatMembership = await validators.validate_update_chat_owner_and_add_admin(selected_chat, selected_user, new_admin_user, db)
@@ -253,18 +308,35 @@ async def add_chat_admin(
     new_admin_membership.chat_role = ChatRole.ADMIN
     await db.commit()
 
+    await redis_client.pubsub_publish_put_chat_membership(ChatMembershipPubsubModel(
+        id = new_admin_membership.id,
+        chat_user_id = new_admin_membership.chat_user_id,
+        chat_id = new_admin_membership.chat_id,
+        date_and_time_added = new_admin_membership.date_and_time_added,
+        chat_role = new_admin_membership.chat_role,
+        receivers = await utils.get_chat_member_ids(selected_chat, db)))
+
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 async def delete_chat_admin(
     selected_chat: Chat,
     admin_user: User,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     admin_membership: ChatMembership = await validators.validate_delete_chat_admin(selected_chat, selected_user, admin_user, db)
 
     admin_membership.chat_role = ChatRole.USER
     await db.commit()
+
+    await redis_client.pubsub_publish_put_chat_membership(ChatMembershipPubsubModel(
+        id = admin_membership.id,
+        chat_user_id = admin_membership.chat_user_id,
+        chat_id = admin_membership.chat_id,
+        date_and_time_added = admin_membership.date_and_time_added,
+        chat_role = admin_membership.chat_role,
+        receivers = await utils.get_chat_member_ids(selected_chat, db)))
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
@@ -273,6 +345,7 @@ async def add_chat_user(
     selected_chat: Chat,
     new_user: User,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
     await validators.validate_add_user(selected_chat, selected_user, new_user, db)
@@ -286,6 +359,23 @@ async def add_chat_user(
     db.add(membership)
     await db.commit()
 
+    await redis_client.pubsub_publish_post_chat_membership(ChatMembershipPubsubModel(
+        id = membership.id,
+        chat_user_id = membership.chat_user_id,
+        chat_id = membership.chat_id,
+        date_and_time_added = membership.date_and_time_added,
+        chat_role = membership.chat_role,
+        receivers = await utils.get_chat_member_ids(selected_chat, db, membership.chat_user_id)))
+
+    await redis_client.pubsub_publish_post_chat(ChatPubsubModel(
+        id = selected_chat.id,
+        chat_kind = selected_chat.chat_kind,
+        name = await backend.routers.chats.utils.get_chat_name(selected_chat, selected_user, db),
+        owner_user_id = selected_chat.owner_user_id,
+        date_and_time_created = selected_chat.date_and_time_created,
+        is_avatar_changed = True,
+        receivers = [membership.chat_user_id]))
+
     return fastapi.responses.JSONResponse(IDModel(id = membership.id), status_code = fastapi.status.HTTP_201_CREATED)
 
 
@@ -293,12 +383,30 @@ async def delete_chat_user(
     selected_chat: Chat,
     chat_user: User,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     membership: ChatMembership = await validators.validate_delete_user(selected_chat, selected_user, chat_user, db)
 
     await db.delete(membership)
     await db.commit()
+
+    await redis_client.pubsub_publish_delete_chat_membership(ChatMembershipPubsubModel(
+        id = membership.id,
+        chat_user_id = membership.chat_user_id,
+        chat_id = membership.chat_id,
+        date_and_time_added = membership.date_and_time_added,
+        chat_role = membership.chat_role,
+        receivers = await utils.get_chat_member_ids(selected_chat, db, membership.chat_user_id)))
+
+    await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
+        id = selected_chat.id,
+        chat_kind = selected_chat.chat_kind,
+        name = await backend.routers.chats.utils.get_chat_name(selected_chat, selected_user, db),
+        owner_user_id = selected_chat.owner_user_id,
+        date_and_time_created = selected_chat.date_and_time_created,
+        is_avatar_changed = True,
+        receivers = [membership.chat_user_id]))
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
@@ -307,11 +415,15 @@ async def leave_chat(
     selected_chat: Chat,
     selected_user: User,
     minio_client: MinioClient,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     membership: ChatMembership = await validators.validate_leave_chat(selected_chat, selected_user, db)
 
     background_tasks = fastapi.background.BackgroundTasks()
+
+    chat_member_ids: list[int] = await utils.get_chat_member_ids(selected_chat, db)
+    chat_name: str = await backend.routers.chats.utils.get_chat_name(selected_chat, selected_user, db)
 
     if selected_chat.chat_kind == ChatKind.PRIVATE:
         attachments_to_delete: list[BucketWithFiles] = await minio_deletion_service.get_all_chat_attachments_to_delete(selected_chat, db)
@@ -323,6 +435,33 @@ async def leave_chat(
 
     await db.commit()
 
+    if selected_chat.chat_kind == ChatKind.PRIVATE:
+        await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
+            id = selected_chat.id,
+            chat_kind = selected_chat.chat_kind,
+            name = chat_name,
+            owner_user_id = selected_chat.owner_user_id,
+            date_and_time_created = selected_chat.date_and_time_created,
+            is_avatar_changed = False,
+            receivers = chat_member_ids))
+    else:
+        await redis_client.pubsub_publish_delete_chat_membership(ChatMembershipPubsubModel(
+            id = membership.id,
+            chat_user_id = membership.chat_user_id,
+            chat_id = membership.chat_id,
+            date_and_time_added = membership.date_and_time_added,
+            chat_role = membership.chat_role,
+            receivers = await utils.get_chat_member_ids(selected_chat, db, membership.chat_user_id)))
+
+        await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
+            id = selected_chat.id,
+            chat_kind = selected_chat.chat_kind,
+            name = chat_name,
+            owner_user_id = selected_chat.owner_user_id,
+            date_and_time_created = selected_chat.date_and_time_created,
+            is_avatar_changed = False,
+            receivers = [membership.chat_user_id]))
+
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT, background = background_tasks)
 
 
@@ -330,9 +469,13 @@ async def delete_chat(
     selected_chat: Chat,
     selected_user: User,
     minio_client: MinioClient,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     await validators.validate_delete_chat(selected_chat, selected_user, db)
+
+    chat_member_ids: list[int] = await utils.get_chat_member_ids(selected_chat, db)
+    chat_name: str = await backend.routers.chats.utils.get_chat_name(selected_chat, selected_user, db)
 
     attachments_to_delete: list[BucketWithFiles] = await minio_deletion_service.get_all_chat_attachments_to_delete(selected_chat, db)
     background_tasks = fastapi.background.BackgroundTasks()
@@ -341,12 +484,22 @@ async def delete_chat(
     await db.delete(selected_chat)
     await db.commit()
 
+    await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
+            id = selected_chat.id,
+            chat_kind = selected_chat.chat_kind,
+            name = chat_name,
+            owner_user_id = selected_chat.owner_user_id,
+            date_and_time_created = selected_chat.date_and_time_created,
+            is_avatar_changed = False,
+            receivers = chat_member_ids))
+
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT, background = background_tasks)
 
 
 async def create_channel(
     data: ChatNameRequestModel,
     selected_user: User,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
     async with db.begin():
@@ -367,6 +520,15 @@ async def create_channel(
         date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
         db.add(membership)
+
+    await redis_client.pubsub_publish_post_chat(ChatPubsubModel(
+        id = new_chat.id,
+        chat_kind = new_chat.chat_kind,
+        name = await backend.routers.chats.utils.get_chat_name(new_chat, selected_user, db),
+        owner_user_id = new_chat.owner_user_id,
+        date_and_time_created = new_chat.date_and_time_created,
+        is_avatar_changed = False,
+        receivers = [membership.chat_user_id]))
 
     return fastapi.responses.JSONResponse(IDModel(id = new_chat.id), status_code = fastapi.status.HTTP_201_CREATED)
 

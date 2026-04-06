@@ -1,5 +1,6 @@
 import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
+from sqlalchemy import Sequence
 
 from backend.storage import *
 
@@ -42,3 +43,18 @@ async def get_friendship(
     .scalars().first())
 
     return friendship
+
+
+async def get_all_user_dependent_chats(
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> Sequence[Chat]:
+
+    chats_list: Sequence[Chat] = ((await db.execute(
+    sqlalchemy.select(Chat)
+    .select_from(ChatMembership)
+    .where(ChatMembership.chat_user_id == selected_user.id)
+    .join(Chat, Chat.id == ChatMembership.chat_id)
+    .where(sqlalchemy.or_(Chat.owner_user_id == selected_user.id, Chat.chat_kind == ChatKind.PRIVATE))))
+    .scalars().all())
+
+    return chats_list

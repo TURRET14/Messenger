@@ -144,8 +144,6 @@ async def validate_get_chat(
 
     await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
 
-    chat_name: str | None = await utils.get_chat_name(selected_chat, selected_user, db)
-    if not chat_name:
-        chat_name: str = str()
+    chat_name: str = await utils.get_chat_name(selected_chat, selected_user, db)
 
     return chat_name

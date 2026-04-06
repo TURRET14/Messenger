@@ -148,3 +148,14 @@ async def get_post_message_data_from_form(
     message_text = message_text,
     reply_message_id = reply_message_id,
     parent_message_id = parent_message_id)
+
+
+async def get_parent_message_by_query_id(
+    parent_message_id: int | None = fastapi.Query(ge = 0, default = None),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)):
+    if parent_message_id is None:
+        return parent_message_id
+
+    parent_message: Message | None = (await db.execute(sqlalchemy.select(Message).where(Message.id == parent_message_id))).scalars().first()
+
+    return parent_message

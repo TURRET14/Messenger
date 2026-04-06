@@ -146,9 +146,10 @@ async def update_user_avatar(
 async def delete_user(
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
-    return await service.delete_user(current_user, minio_client, db)
+    return await service.delete_user(current_user, minio_client, redis_client, db)
 
 
 @users_router.get("/users", response_class = fastapi.responses.JSONResponse, response_model = list[UserInListResponseModel], dependencies = [fastapi.Depends(backend.routers.dependencies.get_session_user)])
@@ -276,9 +277,10 @@ async def block_user(
     blocked_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_data_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: MinioClient = fastapi.Depends(get_minio_client),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await service.block_user(blocked_user, current_user, minio_client, db)
+    return await service.block_user(blocked_user, current_user, minio_client, redis_client, db)
 
 
 @users_router.delete("/users/me/blocks/id/{user_block_id}", response_class = fastapi.responses.Response)

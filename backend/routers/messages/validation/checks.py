@@ -57,7 +57,7 @@ async def check_is_message_not_marked_as_received_by_user(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
-    is_message_read: bool = await backend.routers.messages.utils.is_message_read(selected_message, selected_user, db)
+    is_message_read: bool | None = await backend.routers.messages.utils.is_message_read(selected_message, selected_user, db)
 
     if is_message_read:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_was_already_marked_as_read_error.error_status_code, detail = ErrorRegistry.message_was_already_marked_as_read_error)

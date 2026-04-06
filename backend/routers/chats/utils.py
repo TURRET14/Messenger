@@ -2,6 +2,7 @@ import sqlalchemy
 import sqlalchemy.orm
 import sqlalchemy.sql
 import sqlalchemy.ext.asyncio
+from typing import Sequence
 
 from backend.storage import *
 
@@ -15,6 +16,7 @@ async def get_chat_user_membership(
     ChatMembership.chat_user_id == selected_user.id)))).scalars().first()
 
     return membership
+
 
 async def get_users_private_chat(
     first_user: User,
@@ -40,10 +42,23 @@ async def get_users_private_chat(
 async def get_chat_name(
     selected_chat: Chat,
     selected_user: User,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> str | None:
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> str:
 
     if selected_chat.name:
         return selected_chat.name
+    elif selected_chat.chat_kind == ChatKind.PROFILE:
+        chat_name: str | None = ((await db.execute(
+        sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name))
+        .select_from(Chat)
+        .where(Chat.id == selected_chat.id)
+        .join(User, User.id == Chat.owner_user_id)
+        .limit(1)))
+        .scalars().first())
+
+        if not chat_name:
+            chat_name: str = str()
+
+        return chat_name
     else:
         chat_name: str | None = ((await db.execute(
         sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name))
@@ -52,6 +67,9 @@ async def get_chat_name(
         .join(User, User.id == ChatMembership.chat_user_id)
         .limit(1)))
         .scalars().first())
+
+        if not chat_name:
+            chat_name: str = str()
 
         return chat_name
 
@@ -68,3 +86,16 @@ async def get_other_chat_user(
     .scalars().first())
 
     return other_user
+
+
+async def get_chat_member_ids(
+    selected_chat: Chat,
+    db: sqlalchemy.ext.asyncio.AsyncSession,
+    exception_user_id: int | None = None) -> list[int]:
+
+    chat_member_ids: Sequence[int] = ((await db.execute(
+    sqlalchemy.select(ChatMembership.chat_user_id)
+    .where(sqlalchemy.and_(ChatMembership.chat_id == selected_chat.id, ChatMembership.chat_user_id != exception_user_id))))
+    .scalars().all())
+
+    return list(chat_member_ids)

@@ -88,7 +88,7 @@ class Chat(Base):
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, primary_key=True, autoincrement=True)
     chat_kind: sqlalchemy.orm.Mapped[ChatKind] = sqlalchemy.orm.mapped_column(sqlalchemy.Enum(ChatKind, name='chat_types_enum'), nullable=False)
     name: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(100))
-    owner_user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'))
+    owner_user_id: sqlalchemy.orm.Mapped[int | None] = sqlalchemy.orm.mapped_column(sqlalchemy.BIGINT, sqlalchemy.ForeignKey('users.id', ondelete='CASCADE'))
     date_and_time_created: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP(timezone=True), nullable=False)
     avatar_photo_path: sqlalchemy.orm.Mapped[str | None] = sqlalchemy.orm.mapped_column(sqlalchemy.VARCHAR(250))
     __table_args__ = (sqlalchemy.Index('idx_chats_name', sqlalchemy.func.upper(name)),

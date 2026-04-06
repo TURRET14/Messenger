@@ -12,6 +12,7 @@ import urllib3
 import backend.routers.dependencies
 import backend.routers.security
 import backend.routers.parameters as parameters
+from backend.routers.chats.websockets.models import ChatPubsubModel
 from backend.routers.users import minio_deletion_service
 from backend.storage import *
 import backend.routers.chats.utils
@@ -251,12 +252,18 @@ async def update_user_avatar(
 async def delete_user(
     selected_user: User,
     minio_client: MinioClient,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     attachments_to_delete: list[BucketWithFiles] = await minio_deletion_service.get_all_user_attachments_to_delete(selected_user, db)
 
     background_tasks = fastapi.background.BackgroundTasks()
     background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
+
+    chat_users_dict: dict[Chat, list[int]] = {}
+    user_chats_for_deletion: Sequence[Chat] = await backend.routers.users.utils.get_all_user_dependent_chats(selected_user, db)
+    for chat in user_chats_for_deletion:
+        chat_users_dict[chat] = await backend.routers.chats.utils.get_chat_member_ids(chat, db)
 
     async with db.begin():
         await db.execute(
@@ -269,6 +276,16 @@ async def delete_user(
         .where(Chat.chat_kind == ChatKind.PRIVATE))))
 
         await db.delete(selected_user)
+
+    for chat, chat_members in chat_users_dict.items():
+        await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
+            id = chat.id,
+            chat_kind = chat.chat_kind,
+            name = str(chat.name or ""),
+            owner_user_id = chat.owner_user_id,
+            date_and_time_created = chat.date_and_time_created,
+            is_avatar_changed = False,
+            receivers = chat_members))
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT, background = background_tasks)
 
@@ -614,6 +631,7 @@ async def block_user(
     user_to_block: User,
     selected_user: User,
     minio_client: MinioClient,
+    redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
     await validators.validate_is_user_not_blocked(selected_user, user_to_block, db)
@@ -634,6 +652,15 @@ async def block_user(
             background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
 
             await db.delete(users_chat)
+
+            await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
+                id = users_chat.id,
+                chat_kind = users_chat.chat_kind,
+                name = str(users_chat.name or ""),
+                owner_user_id = users_chat.owner_user_id,
+                date_and_time_created = users_chat.date_and_time_created,
+                is_avatar_changed = False,
+                receivers = [selected_user.id, user_to_block.id]))
 
         friend_request_to_blocked: FriendRequest | None = await utils.get_friend_request(selected_user, user_to_block, db)
         if friend_request_to_blocked:

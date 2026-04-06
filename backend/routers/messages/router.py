@@ -50,9 +50,10 @@ async def post_message(
     file_attachments_list: list[fastapi.UploadFile] = fastapi.File(default = list()),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: MinioClient = fastapi.Depends(get_minio_client),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await service.post_message(selected_chat, form_data, file_attachments_list, current_user, minio_client, db)
+    return await service.post_message(selected_chat, form_data, file_attachments_list, current_user, minio_client, redis_client, db)
 
 
 @messages_router.delete("/chats/id/{chat_id}/messages/id/{message_id}", response_class = fastapi.responses.Response)
@@ -61,9 +62,10 @@ async def delete_message(
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     minio_client: MinioClient = fastapi.Depends(get_minio_client),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
-    return await service.delete_message(selected_chat, selected_message, current_user, minio_client, db)
+    return await service.delete_message(selected_chat, selected_message, current_user, minio_client, redis_client, db)
 
 @messages_router.put("/chats/id/{chat_id}/messages/id/{message_id}", response_class = fastapi.responses.Response)
 async def update_message(
@@ -71,9 +73,10 @@ async def update_message(
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
     data: MessageRequestModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
-    return await service.update_message(selected_chat, selected_message, data, current_user, db)
+    return await service.update_message(selected_chat, selected_message, data, current_user, redis_client, db)
 
 @messages_router.get("/chats/id/{chat_id}/messages/search")
 async def search_messages_in_chat(
@@ -102,9 +105,10 @@ async def mark_message_as_read(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await service.mark_message_as_read(selected_chat, selected_message, current_user, db)
+    return await service.mark_message_as_read(selected_chat, selected_message, current_user, redis_client, db)
 
 
 @messages_router.get("/chats/id/{chat_id}/messages/last", response_class = fastapi.responses.JSONResponse, response_model = LastMessageResponseModel)

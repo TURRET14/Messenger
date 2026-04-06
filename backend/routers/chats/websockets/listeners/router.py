@@ -50,6 +50,13 @@ async def websocket_chat_memberships_delete_listener(
     await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chat_memberships_delete_listener(redis_client, chats_websocket_connection_manager)
 
 
+async def websocket_chat_last_message_update_listener(
+    redis_client: RedisClient,
+    chats_websocket_connection_manager: WebsocketConnectionManager):
+
+    await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chat_last_message_update_listener(redis_client, chats_websocket_connection_manager)
+
+
 @contextlib.asynccontextmanager
 async def on_startup(app):
     redis_client: RedisClient = await redis_handler.get_redis_client()
@@ -63,6 +70,8 @@ async def on_startup(app):
     chat_user_put_task = asyncio.create_task(websocket_chat_memberships_put_listener(redis_client, connection_manager))
     chat_user_delete_task = asyncio.create_task(websocket_chat_memberships_delete_listener(redis_client, connection_manager))
 
+    chat_last_message_update_task = asyncio.create_task(websocket_chat_last_message_update_listener(redis_client, connection_manager))
+
     yield
 
     post_task.cancel()
@@ -71,6 +80,7 @@ async def on_startup(app):
     chat_user_post_task.cancel()
     chat_user_put_task.cancel()
     chat_user_delete_task.cancel()
+    chat_last_message_update_task.cancel()
 
 
 chats_websocket_listener_router = fastapi.APIRouter(lifespan = on_startup)

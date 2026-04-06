@@ -1,6 +1,5 @@
 import dataclasses
 import enum
-import os
 
 import fastapi
 import redis.asyncio
@@ -8,8 +7,9 @@ import asyncio
 import secrets
 import datetime
 
-from backend.routers.messages.websockets.models import (MessagePubsubWebsocketModel, ReadMarkPubsubWebsocketModel)
-from backend.routers.chats.websockets.models import (ChatMembershipPubsubModel, ChatWithReceiversPubsubDeleteModel, ChatPubsubModel)
+from backend.routers.messages.websockets.models import (MessagePubsubWebsocketModel, ReadMarkPubsubWebsocketModel,
+                                                        LastMessagePubsubWebsocketModel)
+from backend.routers.chats.websockets.models import (ChatMembershipPubsubModel, ChatPubsubModel, ChatPubsubModel)
 
 import backend.routers.parameters as parameters
 from backend.routers.errors import ErrorRegistry
@@ -38,6 +38,8 @@ class RedisPubsubChannel(enum.Enum):
     CHAT_MEMBERSHIPS_POST = "CHAT_MEMBERSHIPS_POST"
     CHAT_MEMBERSHIPS_PUT = "CHAT_MEMBERSHIPS_PUT"
     CHAT_MEMBERSHIPS_DELETE = "CHAT_MEMBERSHIPS_DELETE"
+
+    CHAT_LAST_MESSAGE_UPDATE = "CHAT_LAST_MESSAGE_UPDATE"
 
 
 class RedisClient:
@@ -121,7 +123,7 @@ class RedisClient:
     async def pubsub_publish(
         self,
         subscription: RedisPubsubChannel,
-        data: MessagePubsubWebsocketModel | ReadMarkPubsubWebsocketModel | ChatPubsubModel | ChatWithReceiversPubsubDeleteModel | ChatMembershipPubsubModel):
+        data: MessagePubsubWebsocketModel | ReadMarkPubsubWebsocketModel | ChatPubsubModel | ChatPubsubModel | ChatMembershipPubsubModel | LastMessagePubsubWebsocketModel):
         await self.client.publish(subscription.value, data.model_dump_json())
 
 
@@ -149,7 +151,7 @@ class RedisClient:
         await self.pubsub_publish(RedisPubsubChannel.CHATS_PUT, chat)
 
 
-    async def pubsub_publish_delete_chat(self, chat: ChatWithReceiversPubsubDeleteModel):
+    async def pubsub_publish_delete_chat(self, chat: ChatPubsubModel):
         await self.pubsub_publish(RedisPubsubChannel.CHATS_DELETE, chat)
 
 
@@ -163,6 +165,10 @@ class RedisClient:
 
     async def pubsub_publish_delete_chat_membership(self, chat_membership: ChatMembershipPubsubModel):
         await self.pubsub_publish(RedisPubsubChannel.CHAT_MEMBERSHIPS_DELETE, chat_membership)
+
+
+    async def pubsub_publish_chat_last_message_update(self, chat_message_data: LastMessagePubsubWebsocketModel):
+        await self.pubsub_publish(RedisPubsubChannel.CHAT_LAST_MESSAGE_UPDATE, chat_message_data)
 
 
 redis_client: RedisClient = RedisClient(
