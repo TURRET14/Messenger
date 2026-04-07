@@ -8,11 +8,13 @@ import sqlalchemy.exc
 import datetime
 from typing import Sequence
 import urllib3
+from starlette.status import HTTP_204_NO_CONTENT
 
 import backend.routers.dependencies
 import backend.routers.security
 import backend.routers.parameters as parameters
 from backend.routers.chats.websockets.models import ChatPubsubModel
+from backend.routers.errors import ErrorRegistry
 from backend.routers.users import minio_deletion_service
 from backend.storage import *
 import backend.routers.chats.utils
@@ -22,14 +24,15 @@ import backend.routers.chats.minio_deletion_service
 from backend.routers.users import utils
 from backend.routers.users.validation import validators
 from backend.routers.users.validation import checks
-
 from backend.routers.users.request_models import (
     RegisterRequestModel,
     LoginRequestModel,
     SessionRequestModel,
     UserUpdateRequestModel,
     UserUpdateLoginRequestModel,
-    UserUpdatePasswordRequestModel)
+    UserUpdatePasswordRequestModel,
+    CodeModel,
+    EmailRequestModel)
 
 from backend.routers.users.response_models import (
     FriendRequestResponseModel,
@@ -41,23 +44,44 @@ from backend.routers.users.response_models import (
     FriendUserInListResponseModel)
 
 from backend.routers.common_models import (IDModel)
+from backend.email_service import EmailService
 
 
-async def create_user(
+async def register(
     data: RegisterRequestModel,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+    redis_client: RedisClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
     await validators.validate_register(data.username, data.email_address, data.login, db)
 
+    register_session_code: str = await redis_client.create_register_session(data)
+
+    await EmailService.send_email_confirmation(data.email_address, register_session_code)
+
+    return fastapi.responses.Response(status_code = HTTP_204_NO_CONTENT)
+
+
+async def create_user(
+    register_session: CodeModel,
+    redis_client: RedisClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+
+    register_data: RegisterRequestModel | None = await redis_client.get_register_session(register_session.code)
+
+    if not register_data:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.invalid_email_code_error.error_status_code, detail = ErrorRegistry.invalid_email_code_error)
+
+    await validators.validate_register(register_data.username, register_data.email_address, register_data.login, db)
+
     async with db.begin():
         new_user: User = User(
-        username = data.username,
-        name = data.name,
-        email_address = data.email_address,
-        login = data.login,
-        password = await backend.routers.security.hash_password(data.password),
-        surname = data.surname,
-        second_name = data.second_name,
+        username = register_data.username,
+        name = register_data.name,
+        email_address = register_data.email_address,
+        login = register_data.login,
+        password = await backend.routers.security.hash_password(register_data.password),
+        surname = register_data.surname,
+        second_name = register_data.second_name,
         date_and_time_registered = datetime.datetime.now(datetime.timezone.utc))
 
         db.add(new_user)
@@ -67,6 +91,8 @@ async def create_user(
 
         user_profile: Chat = Chat(owner_user_id = new_user.id, chat_kind = ChatKind.PROFILE)
         db.add(user_profile)
+
+    await redis_client.delete_register_session(register_session.code)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(IDModel(id = new_user.id)), status_code = fastapi.status.HTTP_201_CREATED)
 
@@ -181,6 +207,51 @@ async def update_user(
     await db.commit()
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
+
+
+async def update_user_email(
+    email_data: EmailRequestModel,
+    selected_user: User,
+    redis_client: RedisClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
+
+    if selected_user.email_address == email_data.email_address:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.bad_request_error.error_status_code, detail = ErrorRegistry.bad_request_error)
+
+    await checks.check_is_email_address_not_taken(email_data.email_address, db)
+
+    code: str = await redis_client.create_change_email_request(selected_user.id, email_data)
+    await EmailService.send_email_confirmation(email_data.email_address, code)
+
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
+
+
+async def confirm_update_user_email(
+    confirmation_code: CodeModel,
+    selected_user: User,
+    redis_client: RedisClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession):
+
+    update_user_email_request_data: ChangeEmailRequestModel | None = await redis_client.get_change_email_request(confirmation_code.code)
+
+    if not update_user_email_request_data:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.invalid_email_code_error.error_status_code, detail = ErrorRegistry.invalid_email_code_error)
+
+    if update_user_email_request_data.user_id != selected_user.id:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)
+
+    if selected_user.email_address == update_user_email_request_data.new_email_address:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.bad_request_error.error_status_code, detail = ErrorRegistry.bad_request_error)
+
+    await checks.check_is_email_address_not_taken(update_user_email_request_data.new_email_address, db)
+
+    selected_user.email_address = update_user_email_request_data.new_email_address
+
+    await db.commit()
+
+    await redis_client.delete_change_email_request(confirmation_code.code)
+
+    return fastapi.responses.Response
 
 
 async def update_user_login(

@@ -5,6 +5,7 @@ from backend.storage.minio_handler import BucketWithFiles
 from backend.storage.minio_handler import MinioClient
 from backend.storage.minio_handler import get_minio_client
 from backend.storage.redis_handler import SessionModel
+from backend.storage.redis_handler import ChangeEmailRequestModel
 from backend.storage.redis_handler import RedisPubsubChannel
 from backend.storage.redis_handler import RedisClient
 from backend.storage.redis_handler import get_redis_client

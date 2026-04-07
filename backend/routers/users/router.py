@@ -12,7 +12,7 @@ from backend.routers.users.request_models import (
     SessionRequestModel,
     UserUpdateRequestModel,
     UserUpdateLoginRequestModel,
-    UserUpdatePasswordRequestModel)
+    UserUpdatePasswordRequestModel, CodeModel, EmailRequestModel)
 
 from backend.routers.users.response_models import (
     UserInListResponseModel,
@@ -26,13 +26,22 @@ from backend.routers.common_models import (IDModel)
 
 users_router = fastapi.APIRouter()
 
+@users_router.post("/users/register", response_class = fastapi.responses.Response)
+async def register(
+    data: RegisterRequestModel = fastapi.Body(),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await service.register(data, redis_client, db)
+
 
 @users_router.post("/users", response_class = fastapi.responses.JSONResponse, response_model = IDModel)
 async def create_user(
-    data: RegisterRequestModel = fastapi.Body(),
+    data: CodeModel = fastapi.Body(),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await service.create_user(data, db)
+    return await service.create_user(data, redis_client, db)
 
 
 @users_router.post("/login", response_class = fastapi.responses.Response)
@@ -89,7 +98,6 @@ async def get_current_user_login(
 
     return await service.get_user_login(current_user)
 
-
 @users_router.patch("/users/me", response_class = fastapi.responses.Response)
 async def update_user(
     user_data: UserUpdateRequestModel = fastapi.Body(),
@@ -97,6 +105,26 @@ async def update_user(
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
     return await service.update_user(user_data, current_user, db)
+
+
+@users_router.patch("/users/me/email", response_class = fastapi.responses.Response)
+async def update_user_email(
+    email_data: EmailRequestModel = fastapi.Body(),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await service.update_user_email(email_data, current_user, redis_client, db)
+
+
+@users_router.patch("/users/me/email/confirm", response_class = fastapi.responses.Response)
+async def confirm_update_user_email(
+    code_data: CodeModel = fastapi.Body(),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await service.confirm_update_user_email(code_data, current_user, redis_client, db)
 
 
 @users_router.put("/users/me/login", response_class = fastapi.responses.Response)

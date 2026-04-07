@@ -7,7 +7,7 @@ class MessageResponseModel(pydantic.BaseModel):
     sender_user_id: int | None = pydantic.Field()
     date_and_time_sent: datetime.datetime = pydantic.Field()
     date_and_time_edited: datetime.datetime | None = pydantic.Field()
-    message_text: str = pydantic.Field()
+    message_text: str | None = pydantic.Field()
     reply_message_id: int | None = pydantic.Field()
     parent_message_id: int | None = pydantic.Field()
     is_read: bool | None = pydantic.Field()

@@ -57,6 +57,8 @@ class Error(enum.Enum):
     error_deleting_file_error = "ERROR_DELETING_FILE_ERROR"
     user_is_message_sender_error = "USER_IS_MESSAGE_SENDER_ERROR"
     user_is_already_blocked_error = "USER_IS_ALREADY_BLOCKED_ERROR"
+    invalid_email_code_error = "INVALID_EMAIL_CODE_ERROR"
+    empty_message_error = "EMPTY_MESSAGE_ERROR"
 
 
 class ErrorRegistry:
@@ -108,3 +110,5 @@ class ErrorRegistry:
     error_deleting_file_error = ErrorInfo(error_code = Error.error_deleting_file_error, error_message = "Произошла ошибка при удалении файла!", error_status_code = fastapi.status.HTTP_500_INTERNAL_SERVER_ERROR)
     user_is_message_sender_error = ErrorInfo(error_code = Error.user_is_message_sender_error, error_message = "Текущий пользователь является отправителем указанного сообщения!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     user_is_already_blocked_error = ErrorInfo(error_code = Error.user_is_already_blocked_error, error_message = "Указанный пользователь уже заблокирован вами!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    invalid_email_code_error = ErrorInfo(error_code = Error.invalid_email_code_error, error_message ="Введенный код подтверждения не является действительным!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    empty_message_error = ErrorInfo(error_code = Error.empty_message_error, error_message = "Сообщение не может быть пустым!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)

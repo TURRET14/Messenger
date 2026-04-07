@@ -7,13 +7,13 @@ import asyncio
 import secrets
 import datetime
 
-from backend.routers.messages.websockets.models import (MessagePubsubWebsocketModel, ReadMarkPubsubWebsocketModel,
-                                                        LastMessagePubsubWebsocketModel)
-from backend.routers.chats.websockets.models import (ChatMembershipPubsubModel, ChatPubsubModel, ChatPubsubModel)
+from backend.routers.messages.websockets.models import (MessagePubsubWebsocketModel, ReadMarkPubsubWebsocketModel, LastMessagePubsubWebsocketModel)
+from backend.routers.chats.websockets.models import (ChatMembershipPubsubModel, ChatPubsubModel)
 
 import backend.routers.parameters as parameters
 from backend.routers.errors import ErrorRegistry
 import backend.environment as environment
+from backend.routers.users.request_models import RegisterRequestModel, EmailRequestModel
 
 
 @dataclasses.dataclass()
@@ -23,6 +23,11 @@ class SessionModel:
     user_agent: str
     creation_datetime: int
     expiration_datetime: int
+
+@dataclasses.dataclass()
+class ChangeEmailRequestModel:
+    user_id: int
+    new_email_address: str
 
 
 class RedisPubsubChannel(enum.Enum):
@@ -45,6 +50,63 @@ class RedisPubsubChannel(enum.Enum):
 class RedisClient:
     def __init__(self, host, port, password):
         self.client = redis.asyncio.Redis(host = host, port = port, password = password, decode_responses = True)
+
+    async def create_register_session(self, register_data: RegisterRequestModel) -> str:
+        session_id = secrets.token_urlsafe(64)
+        creation_datetime: int = int(datetime.datetime.now().timestamp())
+        expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds=parameters.REDIS_REGISTER_SESSION_EXPIRATION_TIME_SECONDS).total_seconds())
+
+        self.client.hset(f"register:session_id:{session_id}",
+        mapping = {"email_address": register_data.email_address,
+                "username": register_data.username,
+                "name": register_data.name,
+                "surname": register_data.surname,
+                "second_name": register_data.second_name,
+                "login": register_data.login,
+                "password": register_data.password})
+
+        await self.client.expireat(f"register:session_id:{session_id}", expiration_datetime)
+        return session_id
+
+
+    async def get_register_session(self, session_id: str) -> RegisterRequestModel | None:
+        if self.client.exists(f"register:session_id:{session_id}"):
+            session_data: RegisterRequestModel = RegisterRequestModel.model_validate(await self.client.hgetall(f"register:session_id:{session_id}"))
+            return session_data
+        else:
+            return None
+
+
+    async def delete_register_session(self, session_id: str):
+        if self.client.exists(f"register:session_id:{session_id}"):
+            await self.client.delete(f"register:session_id:{session_id}")
+
+
+    async def create_change_email_request(self, user_id: int, email_data: EmailRequestModel) -> str:
+        request_id = secrets.token_urlsafe(64)
+        creation_datetime: int = int(datetime.datetime.now().timestamp())
+        expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds=parameters.REDIS_REGISTER_SESSION_EXPIRATION_TIME_SECONDS).total_seconds())
+
+        self.client.hset(f"change_email:request_id:{request_id}",
+                         mapping = {"user_id": user_id, "new_email_address": email_data.email_address})
+
+        await self.client.expireat(f"change_email:request_id:{request_id}", expiration_datetime)
+        return request_id
+
+
+    async def get_change_email_request(self, request_id: str) -> ChangeEmailRequestModel | None:
+        if self.client.exists(f"change_email:request_id:{request_id}"):
+            change_email_request_data: dict = await self.client.hgetall(f"change_email:request_id:{request_id}")
+            change_email_request_model: ChangeEmailRequestModel = ChangeEmailRequestModel(user_id = change_email_request_data["user_id"], new_email_address = change_email_request_data["new_email_address"])
+            return change_email_request_model
+        else:
+            return None
+
+
+    async def delete_change_email_request(self, request_id: str):
+        if self.client.exists(f"change_email:request_id:{request_id}"):
+            await self.client.delete(f"change_email:request_id:{request_id}")
+
 
     async def create_user_session(self, user_id: int, user_agent: str) -> str:
         session_id = secrets.token_urlsafe(64)

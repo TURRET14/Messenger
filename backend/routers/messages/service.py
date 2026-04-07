@@ -120,9 +120,10 @@ async def post_message(
     redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    await validators.validate_post_message(selected_chat, selected_user, data.reply_message_id, data.parent_message_id, db)
+    await validators.validate_post_message(data, selected_chat, selected_user, file_attachments_list, db)
 
     attachment_names_list: list[str] = list()
+
     try:
         async with db.begin():
             new_message: Message = Message(
@@ -251,7 +252,7 @@ async def update_message(
     redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
 
-    await validators.validate_update_delete_message(selected_chat, selected_message, selected_user, False, db)
+    await validators.validate_update_delete_message(selected_chat, selected_message, selected_user, False, db, data)
 
     selected_message.message_text = data.message_text
     selected_message.date_and_time_edited = datetime.datetime.now(datetime.timezone.utc)

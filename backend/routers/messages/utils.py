@@ -47,3 +47,15 @@ async def get_chat_last_root_message(
     .scalars().first())
 
     return last_chat_root_message
+
+
+async def does_message_have_attachments(
+    selected_message: Message,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> bool:
+
+    return bool((await db.execute(
+    sqlalchemy.select(1).
+    select_from(MessageAttachment)
+    .where(MessageAttachment.message_id == selected_message.id)
+    .limit(1)))
+    .scalars().first())

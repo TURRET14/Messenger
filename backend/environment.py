@@ -13,7 +13,7 @@ POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minio")
-MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minio")
+MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minio_minio")
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
 
 
@@ -24,3 +24,10 @@ REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "localhost:3000")
 BACKEND_PORT = os.getenv("BACKEND_PORT", "3000")
+
+SMTP_HOSTNAME = os.getenv("SMTP_HOSTNAME", "smtp.yandex.ru")
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "Messenger")
+SMTP_FROM = os.getenv("SMTP_FROM", "Messenger")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "SMTP")
+
+SERVICE_PUBLIC_NAME = os.getenv("SERVICE_PUBLIC_NAME", "Мессенджер")
