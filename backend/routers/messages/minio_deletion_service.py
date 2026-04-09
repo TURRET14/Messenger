@@ -4,6 +4,9 @@ from typing import Sequence
 
 from backend.storage import *
 
+"""
+Функция для удаления всех вложений, объекты которых будут удалены из базы данных вместе с сообщением.
+"""
 async def get_all_message_attachments_to_delete(
     selected_message: Message,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> list[BucketWithFiles]:

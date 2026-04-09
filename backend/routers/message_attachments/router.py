@@ -8,7 +8,11 @@ import backend.routers.dependencies
 
 message_attachments_router = fastapi.APIRouter()
 
-@message_attachments_router.get("/chats/id/{chat_id}/messages/id/{message_id}/attachments", response_class = fastapi.responses.JSONResponse, response_model = list[MessageAttachmentResponseModel])
+@message_attachments_router.get("/chats/id/{chat_id}/messages/id/{message_id}/attachments", response_class = fastapi.responses.JSONResponse, response_model = list[MessageAttachmentResponseModel],
+description =
+"""
+Маршрут получения всех записей вложений у указанному сообщению в указанном чате.
+""")
 async def get_message_attachments_list(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
@@ -18,7 +22,11 @@ async def get_message_attachments_list(
     return await service.get_message_attachments_list(selected_chat, selected_message, selected_user, db)
 
 
-@message_attachments_router.get("chats/id/{chat_id}/messages/id/{message_id}/attachments/id/{attachment_id}", response_class = fastapi.responses.StreamingResponse)
+@message_attachments_router.get("chats/id/{chat_id}/messages/id/{message_id}/attachments/id/{attachment_id}", response_class = fastapi.responses.StreamingResponse,
+description =
+"""
+Маршрут для получения файла указанного вложения к указанному сообщению в указанном чате.
+""")
 async def get_message_attachment_file(
     selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
     selected_message: Message = fastapi.Depends(backend.routers.dependencies.get_message_by_path_id),
