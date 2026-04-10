@@ -1,10 +1,13 @@
 import redis.asyncio
+import asyncio
+import logging
 
 from backend.routers.messages.websockets.models import MessagePubsubWebsocketModel, LastMessagePubsubWebsocketModel
 from backend.storage import *
 from backend.routers.chats.websockets.connection_manager import (WebsocketConnectionManager)
 from backend.routers.chats.websockets.models import (ChatMembershipPubsubModel, ChatPubsubModel)
 
+logger = logging.getLogger(__name__)
 
 async def websocket_chats_post_listener(
     redis_client: RedisClient,
@@ -21,7 +24,8 @@ async def websocket_chats_post_listener(
                 selected_chat_model: ChatPubsubModel = ChatPubsubModel.model_validate_json(selected_chat_data)
                 await chats_websocket_connection_manager.chats_post_update(selected_chat_model, True)
         except Exception:
-            pass
+            logger.exception("Chats post listener failed")
+            await asyncio.sleep(1)
 
 
 async def websocket_chats_put_listener(
@@ -40,7 +44,8 @@ async def websocket_chats_put_listener(
                 selected_chat_model: ChatPubsubModel = ChatPubsubModel.model_validate_json(selected_chat_data)
                 await chats_websocket_connection_manager.chats_post_update(selected_chat_model, False)
         except Exception:
-            pass
+            logger.exception("Chats put listener failed")
+            await asyncio.sleep(1)
 
 
 async def websocket_chats_delete_listener(
@@ -59,7 +64,8 @@ async def websocket_chats_delete_listener(
                 chat_with_receivers_model: ChatPubsubModel = ChatPubsubModel.model_validate_json(selected_chat_with_receivers_data)
                 await chats_websocket_connection_manager.chats_delete(chat_with_receivers_model)
         except Exception:
-            pass
+            logger.exception("Chats delete listener failed")
+            await asyncio.sleep(1)
 
 
 async def websocket_chat_memberships_post_listener(
@@ -78,7 +84,8 @@ async def websocket_chat_memberships_post_listener(
                 selected_chat_membership_model: ChatMembershipPubsubModel = ChatMembershipPubsubModel.model_validate_json(selected_chat_membership_data)
                 await chats_websocket_connection_manager.chat_memberships_post_update(selected_chat_membership_model,True)
         except Exception:
-            pass
+            logger.exception("Chat memberships post listener failed")
+            await asyncio.sleep(1)
 
 
 async def websocket_chat_memberships_put_listener(
@@ -97,7 +104,8 @@ async def websocket_chat_memberships_put_listener(
                 selected_chat_membership_model: ChatMembershipPubsubModel = ChatMembershipPubsubModel.model_validate_json(selected_chat_membership_data)
                 await chats_websocket_connection_manager.chat_memberships_post_update(selected_chat_membership_model,False)
         except Exception:
-            pass
+            logger.exception("Chat memberships put listener failed")
+            await asyncio.sleep(1)
 
 
 async def websocket_chat_memberships_delete_listener(
@@ -116,7 +124,8 @@ async def websocket_chat_memberships_delete_listener(
                 selected_chat_membership_model: ChatMembershipPubsubModel = ChatMembershipPubsubModel.model_validate_json(selected_chat_membership_data)
                 await chats_websocket_connection_manager.chat_memberships_delete(selected_chat_membership_model)
         except Exception:
-            pass
+            logger.exception("Chat memberships delete listener failed")
+            await asyncio.sleep(1)
 
 
 async def websocket_chat_last_message_update_listener(
@@ -135,4 +144,5 @@ async def websocket_chat_last_message_update_listener(
                 async with async_session_maker() as db:
                     await chats_websocket_connection_manager.chat_last_message_update(selected_message_model, db)
         except Exception:
-            pass
+            logger.exception("Chat last message listener failed")
+            await asyncio.sleep(1)

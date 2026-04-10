@@ -20,9 +20,14 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "redis")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
+REDIS_DB = os.getenv("REDIS_DB", "0")
+
+MINIO_USERS_AVATARS_BUCKET = os.getenv("MINIO_USERS_AVATARS_BUCKET", "usersavatars")
+MINIO_CHATS_AVATARS_BUCKET = os.getenv("MINIO_CHATS_AVATARS_BUCKET", "chatsavatars")
+MINIO_MESSAGES_ATTACHMENTS_BUCKET = os.getenv("MINIO_MESSAGES_ATTACHMENTS_BUCKET", "messagesattachments")
 
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "localhost:3000")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 BACKEND_PORT = os.getenv("BACKEND_PORT", "3000")
 
 SMTP_HOSTNAME = os.getenv("SMTP_HOSTNAME", "smtp.yandex.ru")

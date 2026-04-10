@@ -2,6 +2,7 @@ import datetime
 import pydantic
 
 from backend.storage import *
+from backend.storage.database import Gender as DatabaseGender
 
 
 class RegisterRequestModel(pydantic.BaseModel):
@@ -61,3 +62,6 @@ class UserUpdatePasswordRequestModel(pydantic.BaseModel):
 
 class CodeModel(pydantic.BaseModel):
     code: str = pydantic.Field(max_length = 100)
+
+
+UserUpdateRequestModel.model_rebuild(_types_namespace={"Gender": DatabaseGender})

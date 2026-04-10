@@ -148,6 +148,8 @@ async def validate_is_user_not_blocked(
     user_to_block: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
+    await common_checks.check_are_users_different(selected_user, user_to_block)
+
     if await utils.get_user_block(selected_user, user_to_block, db):
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_is_already_blocked_error.error_status_code, detail = ErrorRegistry.user_is_already_blocked_error)
 
@@ -156,5 +158,5 @@ async def validate_is_user_block_creator(
     user_block: UserBlock,
     selected_user: User):
 
-    if not user_block.user_id != selected_user.id:
+    if user_block.user_id != selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)

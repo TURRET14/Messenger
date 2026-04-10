@@ -22,11 +22,10 @@ async def on_startup(app):
 app = fastapi.FastAPI(lifespan = on_startup)
 
 app.add_middleware(fastapi.middleware.cors.CORSMiddleware,
-                allow_origins = [os.getenv("FRONTEND_URL")],
+                allow_origins = [environment.FRONTEND_URL],
                 allow_credentials = True,
                 allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"],
-                allow_headers = ["session_id"],
-                expose_headers = ["session_id"])
+                allow_headers = ["*"])
 
 
 app.include_router(backend.routers.users.router.users_router)
@@ -47,4 +46,5 @@ async def http_exception_handler(request: fastapi.requests.Request, exception: f
     return fastapi.responses.JSONResponse(exception.detail, status_code = exception.status_code)
 
 
-uvicorn.run(app, host = "0.0.0.0", port = int(environment.BACKEND_PORT))
+if __name__ == "__main__":
+    uvicorn.run(app, host = "0.0.0.0", port = int(environment.BACKEND_PORT))

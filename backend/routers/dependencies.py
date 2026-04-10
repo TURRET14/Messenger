@@ -13,9 +13,12 @@ from backend.storage.redis_handler import SessionModel
 
 
 async def get_session_user(
-    session_id: str = fastapi.Cookie(),
+    session_id: str | None = fastapi.Cookie(default = None),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db),
     redis_client: RedisClient = fastapi.Depends(redis_handler.get_redis_client)) -> User:
+
+    if not session_id:
+        raise fastapi.HTTPException(status_code = ErrorRegistry.unauthorized_error.error_status_code, detail = ErrorRegistry.unauthorized_error)
 
     session: SessionModel | None = await redis_client.get_user_session_data(session_id)
     if session:
@@ -141,8 +144,8 @@ async def get_user_block_by_path_id(
 
 async def get_post_message_data_from_form(
     message_text: str = fastapi.Form(),
-    reply_message_id: int | None = fastapi.Form(),
-    parent_message_id: int | None = fastapi.Form()) -> MessagePostRequestModel:
+    reply_message_id: int | None = fastapi.Form(default = None),
+    parent_message_id: int | None = fastapi.Form(default = None)) -> MessagePostRequestModel:
 
     return MessagePostRequestModel(
     message_text = message_text,

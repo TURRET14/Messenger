@@ -288,9 +288,9 @@ description =
 """)
 async def search_users_by_names(
     offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
-    name: str | None = fastapi.Query(max_length = 100),
-    surname: str | None = fastapi.Query(max_length = 100),
-    second_name: str | None = fastapi.Query(max_length = 100),
+    name: str | None = fastapi.Query(default = None, max_length = 100),
+    surname: str | None = fastapi.Query(default = None, max_length = 100),
+    second_name: str | None = fastapi.Query(default = None, max_length = 100),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await service.search_users_by_names(offset_multiplier, name, surname, second_name, db)
@@ -329,9 +329,9 @@ description =
 """)
 async def search_friends_by_names(
     offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
-    name: str | None = fastapi.Query(max_length = 100),
-    surname: str | None = fastapi.Query(max_length = 100),
-    second_name: str | None = fastapi.Query(max_length = 100),
+    name: str | None = fastapi.Query(default = None, max_length = 100),
+    surname: str | None = fastapi.Query(default = None, max_length = 100),
+    second_name: str | None = fastapi.Query(default = None, max_length = 100),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
@@ -422,7 +422,7 @@ description =
 Маршрут удаления указанной дружбы между пользователями по ее ID.
 """)
 async def delete_friendship(
-    friendship: Friendship = fastapi.Depends(backend.routers.dependencies.get_user_block_by_path_id),
+    friendship: Friendship = fastapi.Depends(backend.routers.dependencies.get_friendship_by_path_id),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
@@ -455,3 +455,15 @@ async def unblock_user(
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
     return await service.unblock_user(user_block, current_user, db)
+
+
+@users_router.get("/users/me/blocks", response_class = fastapi.responses.JSONResponse,
+description =
+"""
+Маршрут получения блокировок пользователей.
+""")
+async def get_blocks(
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await service.get_blocks(current_user, db)

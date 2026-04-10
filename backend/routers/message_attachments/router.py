@@ -22,7 +22,7 @@ async def get_message_attachments_list(
     return await service.get_message_attachments_list(selected_chat, selected_message, selected_user, db)
 
 
-@message_attachments_router.get("chats/id/{chat_id}/messages/id/{message_id}/attachments/id/{attachment_id}", response_class = fastapi.responses.StreamingResponse,
+@message_attachments_router.get("/chats/id/{chat_id}/messages/id/{message_id}/attachments/id/{attachment_id}", response_class = fastapi.responses.StreamingResponse,
 description =
 """
 Маршрут для получения файла указанного вложения к указанному сообщению в указанном чате.

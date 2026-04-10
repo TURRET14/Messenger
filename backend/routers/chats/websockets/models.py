@@ -1,6 +1,7 @@
 import pydantic
 import datetime
 from backend.storage import *
+from backend.storage.database import ChatKind, ChatRole
 
 
 class ChatPubsubModel(pydantic.BaseModel):
@@ -20,3 +21,7 @@ class ChatMembershipPubsubModel(pydantic.BaseModel):
     date_and_time_added: datetime.datetime = pydantic.Field()
     chat_role: ChatRole = pydantic.Field()
     receivers: list[int] = pydantic.Field()
+
+
+ChatPubsubModel.model_rebuild(_types_namespace={"ChatKind": ChatKind})
+ChatMembershipPubsubModel.model_rebuild(_types_namespace={"ChatRole": ChatRole})

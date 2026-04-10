@@ -19,7 +19,7 @@ async def get_all_user_attachments_to_delete(
     chat_avatars_files_list: Sequence[str] = ((await db.execute(
     sqlalchemy.select(Chat.avatar_photo_path)
     .select_from(Chat)
-    .where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.avatar_photo_path is not None))))
+    .where(sqlalchemy.and_(Chat.owner_user_id == selected_user.id, Chat.avatar_photo_path.is_not(None)))))
     .scalars().all())
 
     attachments_to_delete.append(BucketWithFiles(MinioBucket.chats_avatars, list(chat_avatars_files_list)))

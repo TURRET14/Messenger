@@ -62,7 +62,7 @@ async def validate_delete_chat_admin(
 
     admin_membership: ChatMembership = await validate_update_chat_owner_and_add_admin(selected_chat, selected_user, admin_user, db)
 
-    await checks.check_is_chat_user_admin(selected_chat, selected_user, db)
+    await checks.check_is_chat_user_admin(selected_chat, admin_user, db)
 
     return admin_membership
 

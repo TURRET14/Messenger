@@ -10,6 +10,7 @@ from typing import Sequence
 import urllib3
 from starlette.status import HTTP_204_NO_CONTENT
 
+import backend.environment as environment
 import backend.routers.dependencies
 import backend.routers.security
 import backend.routers.parameters as parameters
@@ -41,7 +42,7 @@ from backend.routers.users.response_models import (
     LoginResponseModel,
     SessionResponseModel,
     CurrentUserResponseModel,
-    FriendUserInListResponseModel)
+    FriendUserInListResponseModel, UserBlockResponseModel)
 
 from backend.routers.common_models import (IDModel)
 from backend.email_service import EmailService
@@ -73,8 +74,7 @@ async def create_user(
 
     await validators.validate_register(register_data.username, register_data.email_address, register_data.login, db)
 
-    async with db.begin():
-        new_user: User = User(
+    new_user: User = User(
         username = register_data.username,
         name = register_data.name,
         email_address = register_data.email_address,
@@ -84,13 +84,17 @@ async def create_user(
         second_name = register_data.second_name,
         date_and_time_registered = datetime.datetime.now(datetime.timezone.utc))
 
-        db.add(new_user)
+    db.add(new_user)
 
-        await db.flush()
-        await db.refresh(new_user)
+    await db.flush()
+    await db.refresh(new_user)
 
-        user_profile: Chat = Chat(owner_user_id = new_user.id, chat_kind = ChatKind.PROFILE)
-        db.add(user_profile)
+    user_profile: Chat = Chat(
+        owner_user_id = new_user.id,
+        chat_kind = ChatKind.PROFILE,
+        date_and_time_created = datetime.datetime.now(datetime.timezone.utc))
+    db.add(user_profile)
+    await db.commit()
 
     await redis_client.delete_register_session(register_session.code)
 
@@ -110,7 +114,13 @@ async def login(
     session_id: str = await redis_client.create_user_session(selected_user.id, user_agent)
 
     response: fastapi.responses.Response = fastapi.responses.Response()
-    response.set_cookie("session_id", value = session_id, max_age = parameters.REDIS_USER_SESSION_EXPIRATION_TIME_SECONDS, httponly = True, secure = True, samesite ="strict")
+    response.set_cookie(
+        "session_id",
+        value = session_id,
+        max_age = parameters.REDIS_USER_SESSION_EXPIRATION_TIME_SECONDS,
+        httponly = True,
+        secure = environment.FRONTEND_URL.startswith("https://"),
+        samesite = "strict")
     response.status_code = fastapi.status.HTTP_200_OK
 
     return response
@@ -251,7 +261,7 @@ async def confirm_update_user_email(
 
     await redis_client.delete_change_email_request(confirmation_code.code)
 
-    return fastapi.responses.Response
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def update_user_login(
@@ -336,17 +346,17 @@ async def delete_user(
     for chat in user_chats_for_deletion:
         chat_users_dict[chat] = await backend.routers.chats.utils.get_chat_member_ids(chat, db)
 
-    async with db.begin():
-        await db.execute(
-        sqlalchemy.delete(Chat)
-        .where(Chat.id.in_(
-        sqlalchemy.select(Chat.id)
-        .select_from(ChatMembership)
-        .where(ChatMembership.chat_user_id == selected_user.id)
-        .join(Chat, Chat.id == ChatMembership.chat_id)
-        .where(Chat.chat_kind == ChatKind.PRIVATE))))
+    await db.execute(
+    sqlalchemy.delete(Chat)
+    .where(Chat.id.in_(
+    sqlalchemy.select(Chat.id)
+    .select_from(ChatMembership)
+    .where(ChatMembership.chat_user_id == selected_user.id)
+    .join(Chat, Chat.id == ChatMembership.chat_id)
+    .where(Chat.chat_kind == ChatKind.PRIVATE))))
 
-        await db.delete(selected_user)
+    await db.delete(selected_user)
+    await db.commit()
 
     for chat, chat_members in chat_users_dict.items():
         await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
@@ -392,7 +402,7 @@ async def search_users_by_username(
 
     users_list_raw: Sequence[User] = ((await db.execute(
     sqlalchemy.select(User)
-    .where(User.username.like(f"{search_username.upper()}%"))
+    .where(User.username.ilike(f"{search_username}%"))
     .order_by(User.id)
     .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
@@ -422,11 +432,11 @@ async def search_users_by_names(
     select_request = sqlalchemy.select(User)
 
     if search_name:
-        select_request = select_request.where(User.name.like(f"{search_name.upper()}%"))
+        select_request = select_request.where(User.name.ilike(f"{search_name}%"))
     if search_surname:
-        select_request = select_request.where(User.surname.like(f"{search_surname.upper()}%"))
+        select_request = select_request.where(User.surname.ilike(f"{search_surname}%"))
     if search_second_name:
-        select_request = select_request.where(User.second_name.like(f"{search_second_name.upper()}%"))
+        select_request = select_request.where(User.second_name.ilike(f"{search_second_name}%"))
 
     users_list_raw: Sequence[User] = ((await db.execute(
     select_request.order_by(User.id)
@@ -451,16 +461,18 @@ async def get_friends(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
-    sqlalchemy.select(User, Friendship.date_and_time_added)
-    .select_from(Friendship)
+    friends_subquery = (
+    sqlalchemy.select(Friendship.friend_user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
     .where(Friendship.user_id == selected_user.id)
-    .join(User, User.id == Friendship.friend_user_id)
     .union(
-    sqlalchemy.select(User, Friendship.date_and_time_added)
-    .select_from(Friendship)
-    .where(Friendship.friend_user_id == selected_user.id)
-    .join(User, User.id == Friendship.user_id))
+    sqlalchemy.select(Friendship.user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
+    .where(Friendship.friend_user_id == selected_user.id))
+    .subquery())
+
+    friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
+    sqlalchemy.select(User, friends_subquery.c.date_and_time_added)
+    .select_from(friends_subquery)
+    .join(User, User.id == friends_subquery.c.friend_id)
     .order_by(User.id)
     .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
@@ -486,18 +498,19 @@ async def search_friends_by_username(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
-    sqlalchemy.select(User, Friendship.date_and_time_added)
-    .select_from(Friendship)
+    friends_subquery = (
+    sqlalchemy.select(Friendship.friend_user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
     .where(Friendship.user_id == selected_user.id)
-    .join(User, User.id == Friendship.friend_user_id)
-    .where(User.username.like(f"{username.upper()}%"))
     .union(
-    sqlalchemy.select(User, Friendship.date_and_time_added)
-    .select_from(Friendship)
-    .where(Friendship.friend_user_id == selected_user.id)
-    .join(User, User.id == Friendship.user_id)
-    .where(User.username.like(f"{username.upper()}%")))
+    sqlalchemy.select(Friendship.user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
+    .where(Friendship.friend_user_id == selected_user.id))
+    .subquery())
+
+    friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
+    sqlalchemy.select(User, friends_subquery.c.date_and_time_added)
+    .select_from(friends_subquery)
+    .join(User, User.id == friends_subquery.c.friend_id)
+    .where(User.username.ilike(f"{username}%"))
     .order_by(User.id)
     .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
@@ -527,29 +540,28 @@ async def search_friends_by_names(
 
     await validators.validate_user_search_parameters(search_name, search_surname, search_second_name)
 
-    first_select_request = (sqlalchemy.select(User, Friendship.date_and_time_added)
-    .select_from(Friendship)
+    friends_subquery = (
+    sqlalchemy.select(Friendship.friend_user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
     .where(Friendship.user_id == selected_user.id)
-    .join(User, User.id == Friendship.friend_user_id))
+    .union(
+    sqlalchemy.select(Friendship.user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
+    .where(Friendship.friend_user_id == selected_user.id))
+    .subquery())
 
-    second_select_request = (sqlalchemy.select(User, Friendship.date_and_time_added)
-    .select_from(Friendship)
-    .where(Friendship.friend_user_id == selected_user.id)
-    .join(User, User.id == Friendship.user_id))
+    select_request = (
+    sqlalchemy.select(User, friends_subquery.c.date_and_time_added)
+    .select_from(friends_subquery)
+    .join(User, User.id == friends_subquery.c.friend_id))
 
     if search_name:
-        first_select_request = first_select_request.where(User.name.like(f"{search_name.upper()}%"))
-        second_select_request = second_select_request.where(User.name.like(f"{search_name.upper()}%"))
+        select_request = select_request.where(User.name.ilike(f"{search_name}%"))
     if search_surname:
-        first_select_request = first_select_request.where(User.surname.like(f"{search_surname.upper()}%"))
-        second_select_request = second_select_request.where(User.surname.like(f"{search_surname.upper()}%"))
+        select_request = select_request.where(User.surname.ilike(f"{search_surname}%"))
     if search_second_name:
-        first_select_request = first_select_request.where(User.second_name.like(f"{search_second_name.upper()}%"))
-        second_select_request = second_select_request.where(User.second_name.like(f"{search_second_name.upper()}%"))
+        select_request = select_request.where(User.second_name.ilike(f"{search_second_name}%"))
 
     friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
-    first_select_request.union(second_select_request)
-    .order_by(User.id)
+    select_request.order_by(User.id)
     .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .tuples().all())
@@ -576,7 +588,7 @@ async def get_user_sent_friend_requests(
     friend_requests_list_raw: Sequence[FriendRequest] = ((await db.execute(
     sqlalchemy.select(FriendRequest)
     .where(FriendRequest.sender_user_id == selected_user.id)
-    .order_by(User.id)
+    .order_by(FriendRequest.id)
     .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
@@ -602,7 +614,7 @@ async def get_user_received_friend_requests(
     sqlalchemy.select(FriendRequest)
     .select_from(FriendRequest)
     .where(FriendRequest.receiver_user_id == selected_user.id)
-    .order_by(User.id)
+    .order_by(FriendRequest.id)
     .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
     .scalars().all())
@@ -635,7 +647,7 @@ async def send_friend_request(
     await db.commit()
     await db.refresh(friend_request)
 
-    return fastapi.responses.JSONResponse(IDModel(id = friend_request.id), status_code = fastapi.status.HTTP_201_CREATED)
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(IDModel(id = friend_request.id)), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def accept_friend_request(
@@ -645,18 +657,18 @@ async def accept_friend_request(
 
     await validators.validate_accept_friend_request(friend_request, selected_user, db)
 
-    async with db.begin():
-        friendship: Friendship = Friendship(
-        user_id = min(friend_request.sender_user_id, friend_request.receiver_user_id),
-        friend_user_id = max(friend_request.sender_user_id, friend_request.receiver_user_id),
-        date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
+    friendship: Friendship = Friendship(
+    user_id = min(friend_request.sender_user_id, friend_request.receiver_user_id),
+    friend_user_id = max(friend_request.sender_user_id, friend_request.receiver_user_id),
+    date_and_time_added = datetime.datetime.now(datetime.timezone.utc))
 
-        await db.delete(friend_request)
-        db.add(friendship)
+    await db.delete(friend_request)
+    db.add(friendship)
+    await db.commit()
 
     await db.refresh(friendship)
 
-    return fastapi.responses.JSONResponse(IDModel(id = friendship.id), status_code = fastapi.status.HTTP_201_CREATED)
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(IDModel(id = friendship.id)), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def decline_received_friend_request(
@@ -709,43 +721,44 @@ async def block_user(
 
     background_tasks = fastapi.background.BackgroundTasks()
 
-    async with db.begin():
-        new_block: UserBlock = UserBlock(user_id = selected_user.id, blocked_user_id = user_to_block.id, date_and_time_blocked = datetime.datetime.now(datetime.timezone.utc))
+    new_block: UserBlock = UserBlock(user_id = selected_user.id, blocked_user_id = user_to_block.id, date_and_time_blocked = datetime.datetime.now(datetime.timezone.utc))
 
-        friendship: Friendship | None = await utils.get_friendship(selected_user, user_to_block, db)
+    friendship: Friendship | None = await utils.get_friendship(selected_user, user_to_block, db)
 
-        if friendship:
-            await db.delete(friendship)
+    if friendship:
+        await db.delete(friendship)
 
-        users_chat: Chat | None = await backend.routers.chats.utils.get_users_private_chat(selected_user, user_to_block, db)
-        if users_chat:
-            attachments_to_delete: list[BucketWithFiles] = await backend.routers.chats.minio_deletion_service.get_all_chat_attachments_to_delete(users_chat, db)
-            background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
+    users_chat: Chat | None = await backend.routers.chats.utils.get_users_private_chat(selected_user, user_to_block, db)
+    if users_chat:
+        attachments_to_delete: list[BucketWithFiles] = await backend.routers.chats.minio_deletion_service.get_all_chat_attachments_to_delete(users_chat, db)
+        background_tasks.add_task(minio_client.delete_all_files, attachments_to_delete)
 
-            await db.delete(users_chat)
+        await db.delete(users_chat)
 
-            await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
-                id = users_chat.id,
-                chat_kind = users_chat.chat_kind,
-                name = str(users_chat.name or ""),
-                owner_user_id = users_chat.owner_user_id,
-                date_and_time_created = users_chat.date_and_time_created,
-                is_avatar_changed = False,
-                receivers = [selected_user.id, user_to_block.id]))
+    friend_request_to_blocked: FriendRequest | None = await utils.get_friend_request(selected_user, user_to_block, db)
+    if friend_request_to_blocked:
+        await db.delete(friend_request_to_blocked)
 
-        friend_request_to_blocked: FriendRequest | None = await utils.get_friend_request(selected_user, user_to_block, db)
-        if friend_request_to_blocked:
-            await db.delete(friend_request_to_blocked)
+    friend_request_from_blocked: FriendRequest | None = await utils.get_friend_request(user_to_block, selected_user, db)
+    if friend_request_from_blocked:
+        await db.delete(friend_request_from_blocked)
 
-        friend_request_from_blocked: FriendRequest | None = await utils.get_friend_request(user_to_block, selected_user, db)
-        if friend_request_from_blocked:
-            await db.delete(friend_request_from_blocked)
+    db.add(new_block)
+    await db.commit()
 
-        db.add(new_block)
+    if users_chat:
+        await redis_client.pubsub_publish_delete_chat(ChatPubsubModel(
+            id = users_chat.id,
+            chat_kind = users_chat.chat_kind,
+            name = str(users_chat.name or ""),
+            owner_user_id = users_chat.owner_user_id,
+            date_and_time_created = users_chat.date_and_time_created,
+            is_avatar_changed = False,
+            receivers = [selected_user.id, user_to_block.id]))
 
     await db.refresh(new_block)
 
-    return fastapi.responses.JSONResponse(IDModel(id = new_block.id), status_code = fastapi.status.HTTP_201_CREATED, background = background_tasks)
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(IDModel(id = new_block.id)), status_code = fastapi.status.HTTP_201_CREATED, background = background_tasks)
 
 
 async def unblock_user(
@@ -759,3 +772,21 @@ async def unblock_user(
     await db.commit()
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
+
+
+async def get_blocks(
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+
+    blocks_list_raw: Sequence[UserBlock] = (await db.execute(sqlalchemy.select(UserBlock).where(UserBlock.user_id == selected_user.id))).scalars().all()
+
+    blocks_list: list[UserBlockResponseModel] = list()
+
+    for block in blocks_list_raw:
+        blocks_list.append(UserBlockResponseModel(
+        id = block.id,
+        user_id = block.user_id,
+        blocked_user_id = block.blocked_user_id,
+        date_and_time_blocked = block.date_and_time_blocked))
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(blocks_list), status_code = fastapi.status.HTTP_200_OK)

@@ -12,49 +12,49 @@ async def websocket_chats_post_listener(
     redis_client: RedisClient,
     chats_websocket_connection_manager: WebsocketConnectionManager):
 
-    await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chats_post_listener(redis_client, chats_websocket_connection_manager)
+    await service.websocket_chats_post_listener(redis_client, chats_websocket_connection_manager)
 
 
 async def websocket_chats_put_listener(
     redis_client: RedisClient,
     chats_websocket_connection_manager: WebsocketConnectionManager):
 
-    await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chats_put_listener(redis_client, chats_websocket_connection_manager)
+    await service.websocket_chats_put_listener(redis_client, chats_websocket_connection_manager)
 
 
 async def websocket_chats_delete_listener(
     redis_client: RedisClient,
     chats_websocket_connection_manager: WebsocketConnectionManager):
 
-    await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chats_delete_listener(redis_client, chats_websocket_connection_manager)
+    await service.websocket_chats_delete_listener(redis_client, chats_websocket_connection_manager)
 
 
 async def websocket_chat_memberships_post_listener(
     redis_client: RedisClient,
     chats_websocket_connection_manager: WebsocketConnectionManager):
 
-    await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chat_memberships_post_listener(redis_client, chats_websocket_connection_manager)
+    await service.websocket_chat_memberships_post_listener(redis_client, chats_websocket_connection_manager)
 
 
 async def websocket_chat_memberships_put_listener(
     redis_client: RedisClient,
     chats_websocket_connection_manager: WebsocketConnectionManager):
 
-    await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chat_memberships_put_listener(redis_client, chats_websocket_connection_manager)
+    await service.websocket_chat_memberships_put_listener(redis_client, chats_websocket_connection_manager)
 
 
 async def websocket_chat_memberships_delete_listener(
     redis_client: RedisClient,
     chats_websocket_connection_manager: WebsocketConnectionManager):
 
-    await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chat_memberships_delete_listener(redis_client, chats_websocket_connection_manager)
+    await service.websocket_chat_memberships_delete_listener(redis_client, chats_websocket_connection_manager)
 
 
 async def websocket_chat_last_message_update_listener(
     redis_client: RedisClient,
     chats_websocket_connection_manager: WebsocketConnectionManager):
 
-    await backend.routers.chats.websockets.listeners.websocket_listeners_service.websocket_chat_last_message_update_listener(redis_client, chats_websocket_connection_manager)
+    await service.websocket_chat_last_message_update_listener(redis_client, chats_websocket_connection_manager)
 
 
 @contextlib.asynccontextmanager

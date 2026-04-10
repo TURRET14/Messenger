@@ -13,7 +13,7 @@ from backend.storage import *
 
 class WebsocketType(enum.Enum):
     MESSAGE_POST = "MESSAGE_POST"
-    MESSAGE_PUT = "MESSAGE_DELETE"
+    MESSAGE_PUT = "MESSAGE_PUT"
     MESSAGE_DELETE = "MESSAGE_DELETE"
     MESSAGE_READ_POST = "MESSAGE_READ_POST"
 
@@ -147,7 +147,7 @@ class WebsocketConnectionManager:
 
         websockets_list: dict
 
-        if websocket_type.MESSAGE_READ_POST:
+        if websocket_type == WebsocketType.MESSAGE_READ_POST:
             websockets_list: dict[int, dict[int, set[fastapi.WebSocket]]] = self.message_read_post_websockets
 
             if not websockets_list.get(selected_user_id, None):
@@ -179,7 +179,7 @@ class WebsocketConnectionManager:
         selected_user_id: int,
         websocket_type: WebsocketType,
         parent_message_id: int | None = None):
-        if websocket_type.MESSAGE_READ_POST:
+        if websocket_type == WebsocketType.MESSAGE_READ_POST:
             websockets_list: dict[int, dict[int, set[fastapi.WebSocket]]] = self.message_read_post_websockets
 
             if selected_user_id not in websockets_list:

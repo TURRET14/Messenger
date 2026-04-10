@@ -48,15 +48,15 @@ class RedisPubsubChannel(enum.Enum):
 
 
 class RedisClient:
-    def __init__(self, host, port, password):
-        self.client = redis.asyncio.Redis(host = host, port = port, password = password, decode_responses = True)
+    def __init__(self, host, port, password, db: int = 0):
+        self.client = redis.asyncio.Redis(host = host, port = port, password = password, db = db, decode_responses = True)
 
     async def create_register_session(self, register_data: RegisterRequestModel) -> str:
         session_id = secrets.token_urlsafe(64)
         creation_datetime: int = int(datetime.datetime.now().timestamp())
         expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds=parameters.REDIS_REGISTER_SESSION_EXPIRATION_TIME_SECONDS).total_seconds())
 
-        self.client.hset(f"register:session_id:{session_id}",
+        await self.client.hset(f"register:session_id:{session_id}",
         mapping = {"email_address": register_data.email_address,
                 "username": register_data.username,
                 "name": register_data.name,
@@ -70,7 +70,7 @@ class RedisClient:
 
 
     async def get_register_session(self, session_id: str) -> RegisterRequestModel | None:
-        if self.client.exists(f"register:session_id:{session_id}"):
+        if await self.client.exists(f"register:session_id:{session_id}"):
             session_data: RegisterRequestModel = RegisterRequestModel.model_validate(await self.client.hgetall(f"register:session_id:{session_id}"))
             return session_data
         else:
@@ -78,7 +78,7 @@ class RedisClient:
 
 
     async def delete_register_session(self, session_id: str):
-        if self.client.exists(f"register:session_id:{session_id}"):
+        if await self.client.exists(f"register:session_id:{session_id}"):
             await self.client.delete(f"register:session_id:{session_id}")
 
 
@@ -87,7 +87,7 @@ class RedisClient:
         creation_datetime: int = int(datetime.datetime.now().timestamp())
         expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds=parameters.REDIS_REGISTER_SESSION_EXPIRATION_TIME_SECONDS).total_seconds())
 
-        self.client.hset(f"change_email:request_id:{request_id}",
+        await self.client.hset(f"change_email:request_id:{request_id}",
                          mapping = {"user_id": user_id, "new_email_address": email_data.email_address})
 
         await self.client.expireat(f"change_email:request_id:{request_id}", expiration_datetime)
@@ -95,16 +95,16 @@ class RedisClient:
 
 
     async def get_change_email_request(self, request_id: str) -> ChangeEmailRequestModel | None:
-        if self.client.exists(f"change_email:request_id:{request_id}"):
+        if await self.client.exists(f"change_email:request_id:{request_id}"):
             change_email_request_data: dict = await self.client.hgetall(f"change_email:request_id:{request_id}")
-            change_email_request_model: ChangeEmailRequestModel = ChangeEmailRequestModel(user_id = change_email_request_data["user_id"], new_email_address = change_email_request_data["new_email_address"])
+            change_email_request_model: ChangeEmailRequestModel = ChangeEmailRequestModel(user_id = int(change_email_request_data["user_id"]), new_email_address = change_email_request_data["new_email_address"])
             return change_email_request_model
         else:
             return None
 
 
     async def delete_change_email_request(self, request_id: str):
-        if self.client.exists(f"change_email:request_id:{request_id}"):
+        if await self.client.exists(f"change_email:request_id:{request_id}"):
             await self.client.delete(f"change_email:request_id:{request_id}")
 
 
@@ -236,7 +236,8 @@ class RedisClient:
 redis_client: RedisClient = RedisClient(
     host = environment.REDIS_HOST,
     port = int(environment.REDIS_PORT),
-    password = environment.REDIS_PASSWORD)
+    password = environment.REDIS_PASSWORD,
+    db = int(environment.REDIS_DB))
 
 
 async def get_redis_client() -> RedisClient:

@@ -49,3 +49,10 @@ class SessionResponseModel(pydantic.BaseModel):
     user_agent: str = pydantic.Field()
     creation_datetime: int = pydantic.Field()
     expiration_datetime: int = pydantic.Field()
+
+
+class UserBlockResponseModel(pydantic.BaseModel):
+    id: int = pydantic.Field()
+    user_id: int = pydantic.Field()
+    blocked_user_id: int = pydantic.Field()
+    date_and_time_blocked: datetime.datetime = pydantic.Field()

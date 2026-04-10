@@ -17,7 +17,13 @@ async def is_message_read(
 
         return bool(message_receipt)
     else:
-        return None
+        message_receipt: MessageReceipt | None = ((await db.execute(
+        sqlalchemy.select(MessageReceipt)
+        .where(sqlalchemy.and_(MessageReceipt.message_id == selected_message.id,
+        MessageReceipt.receiver_user_id == selected_user.id))))
+        .scalars().first())
+
+        return bool(message_receipt)
 
 
 
@@ -27,12 +33,15 @@ async def is_message_last_chat_message(
     selected_message: Message,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> bool:
 
-    return bool((await db.execute(
+    return bool(((await db.execute(
     sqlalchemy.select(Message.id)
     .select_from(Message)
-    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id == selected_message.parent_message_id)
-    .order_by(Message.date_and_time_sent.desc()))))
-    .scalars().first() == selected_message.id)
+    .where(sqlalchemy.and_(
+        Message.chat_id == selected_chat.id,
+        Message.parent_message_id == selected_message.parent_message_id))
+    .order_by(Message.date_and_time_sent.desc())
+    .limit(1)))
+    .scalars().first()) == selected_message.id)
 
 
 async def get_chat_last_root_message(
@@ -41,7 +50,7 @@ async def get_chat_last_root_message(
 
     last_chat_root_message: Message | None = ((await db.execute(sqlalchemy.select(Message)
     .select_from(Message)
-    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id is None))
+    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id.is_(None)))
     .order_by(Message.date_and_time_sent.desc())
     .limit(1)))
     .scalars().first())

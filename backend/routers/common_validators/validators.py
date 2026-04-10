@@ -10,7 +10,7 @@ async def validate_chat_user_membership(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
-    await common_checks.check_chat_user_membership(selected_chat, selected_user, db)
+    return await common_checks.check_chat_user_membership(selected_chat, selected_user, db)
 
 
 async def validate_get_message(

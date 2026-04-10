@@ -32,7 +32,7 @@ async def get_chat_messages(
     (Message.sender_user_id == selected_user.id, sqlalchemy.exists(sqlalchemy.select(True).select_from(MessageReceipt).where(sqlalchemy.and_(MessageReceipt.message_id == Message.id, MessageReceipt.receiver_user_id != selected_user.id)))),
     else_= None).label("is_read"))
     .select_from(Message)
-    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id is None))
+    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id.is_(None)))
     .order_by(Message.date_and_time_sent.desc())
     .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
@@ -125,28 +125,29 @@ async def post_message(
     attachment_names_list: list[str] = list()
 
     try:
-        async with db.begin():
-            new_message: Message = Message(
-            chat_id = selected_chat.id,
-            sender_user_id = selected_user.id,
-            date_and_time_sent = datetime.datetime.now(datetime.timezone.utc),
-            message_text = data.message_text,
-            reply_message_id = data.reply_message_id,
-            parent_message_id = data.parent_message_id)
+        new_message: Message = Message(
+        chat_id = selected_chat.id,
+        sender_user_id = selected_user.id,
+        date_and_time_sent = datetime.datetime.now(datetime.timezone.utc),
+        message_text = data.message_text,
+        reply_message_id = data.reply_message_id,
+        parent_message_id = data.parent_message_id)
 
-            db.add(new_message)
-            await db.flush()
-            await db.refresh(new_message)
+        db.add(new_message)
+        await db.flush()
+        await db.refresh(new_message)
 
-            for file_attachment in file_attachments_list:
-                message_attachment_name: str = await minio_client.put_file(MinioBucket.messages_attachments, file_attachment)
-                attachment_names_list.append(message_attachment_name)
+        for file_attachment in file_attachments_list:
+            message_attachment_name: str = await minio_client.put_file(MinioBucket.messages_attachments, file_attachment)
+            attachment_names_list.append(message_attachment_name)
 
-                new_attachment: MessageAttachment = MessageAttachment(
-                message_id = new_message.id,
-                attachment_file_path = message_attachment_name)
+            new_attachment: MessageAttachment = MessageAttachment(
+            message_id = new_message.id,
+            attachment_file_path = message_attachment_name)
 
-                db.add(new_attachment)
+            db.add(new_attachment)
+
+        await db.commit()
 
         receivers_list: list[int] = await chats_utils.get_chat_member_ids(selected_chat, db)
 
@@ -184,7 +185,7 @@ async def post_message(
 
         raise
 
-    return fastapi.responses.JSONResponse(IDModel(id = new_message.id), status_code = fastapi.status.HTTP_201_CREATED)
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(IDModel(id = new_message.id)), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def delete_message(
@@ -309,7 +310,7 @@ async def search_messages_in_chat(
     else_= True).label("is_read"))
     .select_from(Message)
     .where(sqlalchemy.and_(Message.chat_id == selected_chat.id,
-    Message.parent_message_id is None,
+    Message.parent_message_id.is_(None),
     Message.message_text_tsvector.op("@@")(sqlalchemy.func.websearch_to_tsquery('russian', message_text))))
     .order_by(Message.date_and_time_sent.desc())
     .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
@@ -398,7 +399,7 @@ async def mark_message_as_read(
             date_and_time_received = message_read_mark.date_and_time_received,
             receivers = [selected_message.sender_user_id]))
 
-    return fastapi.responses.JSONResponse(IDModel(id = message_read_mark.id), status_code = fastapi.status.HTTP_201_CREATED)
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(IDModel(id = message_read_mark.id)), status_code = fastapi.status.HTTP_201_CREATED)
 
 
 async def get_chat_last_message(
@@ -410,7 +411,7 @@ async def get_chat_last_message(
 
     last_message_raw: Message | None = ((await db.execute(sqlalchemy.select(Message)
     .select_from(Message)
-    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id is None))
+    .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id.is_(None)))
     .order_by(Message.date_and_time_sent.desc())
     .limit(1)))
     .scalars().first())

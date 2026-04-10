@@ -9,7 +9,7 @@ import backend.routers.dependencies
 
 chats_router = fastapi.APIRouter()
 
-@chats_router.get("/chats", response_class = fastapi.responses.JSONResponse, response_model = ChatResponseModel,
+@chats_router.get("/chats", response_class = fastapi.responses.JSONResponse, response_model = list[ChatResponseModel],
 description =
 """
 Маршрут получения списка всех чатов текущего пользователя (По указанному в параметрах сервера количеству записей за раз (50)).
@@ -22,7 +22,7 @@ async def get_all_chats(
     return await service.get_all_chats(offset_multiplier, current_user, db)
 
 
-@chats_router.get("/chats/id/{chat_id}", response_class = fastapi.responses.JSONResponse, response_model = list[ChatResponseModel],
+@chats_router.get("/chats/id/{chat_id}", response_class = fastapi.responses.JSONResponse, response_model = ChatResponseModel,
 description =
 """
 Маршрут получения подробной информации об указанном чате.
@@ -207,7 +207,7 @@ async def delete_chat_user(
     return await backend.routers.chats.service.delete_chat_user(selected_chat, chat_user, current_user, redis_client, db)
 
 
-@chats_router.delete("/chats/id/{chat_id}/users/me}", response_class = fastapi.responses.Response,
+@chats_router.delete("/chats/id/{chat_id}/users/me", response_class = fastapi.responses.Response,
 description =
 """
 Маршрут покидания указанного чата пользователем.
@@ -254,7 +254,7 @@ async def create_channel(
     return await backend.routers.chats.service.create_channel(data, current_user, redis_client, db)
 
 
-@chats_router.get("users/id/{user_id}/profile", response_class = fastapi.responses.JSONResponse, response_model = ChatResponseModel, dependencies = [fastapi.Depends(backend.routers.dependencies.get_session_user)],
+@chats_router.get("/users/id/{user_id}/profile", response_class = fastapi.responses.JSONResponse, response_model = ChatResponseModel, dependencies = [fastapi.Depends(backend.routers.dependencies.get_session_user)],
 description =
 """
 Маршрут получения чата профиля указанного пользователя. Это личная страница, которая есть у всех пользователей, где оставлять сообщения может только он, а комментировать сообщения могут все пользователи.
@@ -266,7 +266,7 @@ async def get_user_profile(
     return await backend.routers.chats.service.get_user_profile(profile_user, db)
 
 
-@chats_router.get("/chats/id/{chat_id}/memberships/id/{chat_user_id}",
+@chats_router.get("/chats/id/{chat_id}/memberships/id/{chat_membership_id}",
 description =
 """
 Маршрут получения данных об указанном членстве в указанном чате.
