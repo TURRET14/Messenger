@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { API_BASE_URL, apiFetch } from "../../api/client";
+import { apiFetch } from "../../api/client";
 
 const wrap = (size: number): CSSProperties => ({
   width: size,
@@ -24,6 +24,7 @@ export function Avatar({
   alt = "",
 }: {
   src: string | null;
+  /** Подпись и буква-заглушка (например ФИО или имя, не username) */
   label: string;
   size?: number;
   alt?: string;
@@ -80,10 +81,13 @@ export function Avatar({
   );
 }
 
-export function userAvatarUrl(userId: number): string {
-  return `${API_BASE_URL}/users/id/${userId}/avatar`;
+/** Путь для apiFetch (без хоста — buildUrl добавит VITE_API_BASE_URL) */
+export function userAvatarUrl(userId: number, cacheBust = 0): string {
+  const u = `/users/id/${userId}/avatar`;
+  return cacheBust ? `${u}?v=${cacheBust}` : u;
 }
 
-export function chatAvatarUrl(chatId: number): string {
-  return `${API_BASE_URL}/chats/id/${chatId}/avatar`;
+export function chatAvatarUrl(chatId: number, cacheBust = 0): string {
+  const u = `/chats/id/${chatId}/avatar`;
+  return cacheBust ? `${u}?v=${cacheBust}` : u;
 }

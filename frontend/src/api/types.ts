@@ -53,6 +53,15 @@ export interface Message {
   is_read: boolean | null;
 }
 
+/** Событие с вебсокета `/messages/read` для отправителя */
+export interface MessageReadMark {
+  id: number;
+  chat_id: number;
+  message_id: number;
+  date_and_time_received: string;
+  reader_user_id: number;
+}
+
 export interface MessageAttachmentMeta {
   id: number;
   message_id: number;

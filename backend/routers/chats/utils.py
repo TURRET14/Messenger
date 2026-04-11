@@ -48,7 +48,7 @@ async def get_chat_name(
         return selected_chat.name
     elif selected_chat.chat_kind == ChatKind.PROFILE:
         chat_name: str | None = ((await db.execute(
-        sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name))
+        sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.surname, User.name, User.second_name))
         .select_from(Chat)
         .where(Chat.id == selected_chat.id)
         .join(User, User.id == Chat.owner_user_id)
@@ -61,7 +61,7 @@ async def get_chat_name(
         return chat_name
     else:
         chat_name: str | None = ((await db.execute(
-        sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name))
+        sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.surname, User.name, User.second_name))
         .select_from(ChatMembership)
         .where(sqlalchemy.and_(ChatMembership.chat_id == selected_chat.id, ChatMembership.chat_user_id != selected_user.id))
         .join(User, User.id == ChatMembership.chat_user_id)

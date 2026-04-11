@@ -26,6 +26,42 @@ import backend.routers.common_validators.validators as common_validators
 import backend.routers.users.service
 
 
+async def _last_root_message_preview(
+    chat_id: int,
+    db: sqlalchemy.ext.asyncio.AsyncSession,
+) -> ChatLastMessagePreviewModel | None:
+
+    row = (await db.execute(
+        sqlalchemy.select(
+            Message.message_text,
+            Message.sender_user_id,
+            Message.date_and_time_sent,
+        )
+        .where(sqlalchemy.and_(Message.chat_id == chat_id, Message.parent_message_id.is_(None)))
+        .order_by(Message.date_and_time_sent.desc())
+        .limit(1)
+    )).first()
+    if not row:
+        return None
+    return ChatLastMessagePreviewModel(
+        message_text = row[0],
+        sender_user_id = row[1],
+        date_and_time_sent = row[2],
+    )
+
+
+async def get_private_chat_with_user(
+    other_user: User,
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+
+    chat: Chat | None = await backend.routers.chats.utils.get_users_private_chat(selected_user, other_user, db)
+    if not chat:
+        raise fastapi.exceptions.HTTPException(status_code = backend.routers.errors.ErrorRegistry.chat_not_found_error.error_status_code, detail = backend.routers.errors.ErrorRegistry.chat_not_found_error)
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(IDModel(id = chat.id)), status_code = fastapi.status.HTTP_200_OK)
+
+
 async def get_all_chats(
     offset_multiplier: int,
     selected_user: User,
@@ -68,7 +104,7 @@ async def get_all_chats(
     chats_list_raw: Sequence[tuple] = ((await db.execute(
     sqlalchemy.select(
     Chat,
-    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name)).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id).limit(1).scalar_subquery()).label("chat_name"),
+    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.surname, User.name, User.second_name)).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id).limit(1).scalar_subquery()).label("chat_name"),
     last_root_messages.c.message_text,
     last_root_messages.c.sender_user_id,
     last_root_messages.c.date_and_time_sent)
@@ -116,6 +152,8 @@ async def get_chat(
 
     chat_name: str = await validators.validate_get_chat(selected_chat, selected_user, db)
 
+    last_preview: ChatLastMessagePreviewModel | None = await _last_root_message_preview(selected_chat.id, db)
+
     chat_response = ChatResponseModel(
         id = selected_chat.id,
         chat_kind = selected_chat.chat_kind,
@@ -123,7 +161,7 @@ async def get_chat(
         owner_user_id = selected_chat.owner_user_id,
         date_and_time_created = selected_chat.date_and_time_created,
         has_avatar = selected_chat.avatar_photo_path is not None,
-        last_message = None)
+        last_message = last_preview)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chat_response), status_code = fastapi.status.HTTP_200_OK)
 
@@ -591,12 +629,21 @@ async def get_user_profile(
     user_profile_raw: Chat
     chat_name: str
 
-    user_profile_raw, chat_name = ((await db.execute(
-    sqlalchemy.select(Chat, sqlalchemy.func.coalesce(Chat.name, sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name)))
+    row = ((await db.execute(
+    sqlalchemy.select(Chat, sqlalchemy.func.coalesce(Chat.name, sqlalchemy.func.concat_ws(" ", User.surname, User.name, User.second_name)))
     .select_from(Chat)
     .where(sqlalchemy.and_(Chat.chat_kind == ChatKind.PROFILE, Chat.owner_user_id == profile_user.id))
     .join(User, User.id == Chat.owner_user_id)))
     .tuples().first())
+
+    if not row:
+        raise fastapi.exceptions.HTTPException(status_code = backend.routers.errors.ErrorRegistry.chat_not_found_error.error_status_code, detail = backend.routers.errors.ErrorRegistry.chat_not_found_error)
+
+    user_profile_raw: Chat
+    chat_name: str
+    user_profile_raw, chat_name = row
+
+    last_preview: ChatLastMessagePreviewModel | None = await _last_root_message_preview(user_profile_raw.id, db)
 
     user_profile: ChatResponseModel = ChatResponseModel(
     id = user_profile_raw.id,
@@ -605,7 +652,7 @@ async def get_user_profile(
     owner_user_id = user_profile_raw.owner_user_id,
     date_and_time_created = user_profile_raw.date_and_time_created,
     has_avatar = user_profile_raw.avatar_photo_path is not None,
-    last_message = None)
+    last_message = last_preview)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_profile), status_code = fastapi.status.HTTP_200_OK)
 

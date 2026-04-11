@@ -1,4 +1,5 @@
 import fastapi
+import starlette.websockets
 
 import backend.environment as environment
 import backend.routers.dependencies
@@ -43,7 +44,7 @@ async def websocket_connection_body(
     try:
         while True:
             await websocket.receive_text()
-    except fastapi.WebSocketDisconnect:
+    except starlette.websockets.WebSocketDisconnect:
         await connection_manager.remove_websocket(websocket, selected_chat.id, selected_user.id, websocket_type, parent_message_id)
 
 

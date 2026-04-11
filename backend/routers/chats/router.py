@@ -2,6 +2,7 @@ import fastapi
 import sqlalchemy.ext.asyncio
 
 from backend.storage import *
+from backend.routers.common_models import IDModel
 from backend.routers.chats.request_models import (ChatNameRequestModel)
 from backend.routers.chats.response_models import (ChatResponseModel, ChatMembershipResponseModel)
 from backend.routers.chats import service
@@ -77,6 +78,19 @@ async def create_private_chat(
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await backend.routers.chats.service.create_private_chat(other_user, current_user, redis_client, db)
+
+
+@chats_router.get("/chats/private/with-user/{user_id}", response_class = fastapi.responses.JSONResponse, response_model = IDModel,
+description =
+"""
+Возвращает идентификатор уже существующего приватного чата с указанным пользователем, если такой есть.
+""")
+async def get_private_chat_with_user(
+    other_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_path_user_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.routers.chats.service.get_private_chat_with_user(other_user, current_user, db)
 
 
 @chats_router.post("/chats/group", response_class = fastapi.responses.JSONResponse,

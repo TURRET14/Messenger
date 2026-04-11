@@ -27,10 +27,27 @@ async def get_chat_messages(
 
     await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
 
+    sender_read_exists = sqlalchemy.exists(
+        sqlalchemy.select(True).select_from(MessageReceipt).where(
+            sqlalchemy.and_(
+                MessageReceipt.message_id == Message.id,
+                MessageReceipt.receiver_user_id != selected_user.id,
+            ),
+        ),
+    )
+    receiver_read_exists = sqlalchemy.exists(
+        sqlalchemy.select(True).select_from(MessageReceipt).where(
+            sqlalchemy.and_(
+                MessageReceipt.message_id == Message.id,
+                MessageReceipt.receiver_user_id == selected_user.id,
+            ),
+        ),
+    )
+
     messages_list_raw: Sequence[tuple[Message, bool]] = ((await db.execute(sqlalchemy.select(Message,
     sqlalchemy.case(
-    (Message.sender_user_id == selected_user.id, sqlalchemy.exists(sqlalchemy.select(True).select_from(MessageReceipt).where(sqlalchemy.and_(MessageReceipt.message_id == Message.id, MessageReceipt.receiver_user_id != selected_user.id)))),
-    else_= None).label("is_read"))
+    (Message.sender_user_id == selected_user.id, sender_read_exists),
+    else_= receiver_read_exists).label("is_read"))
     .select_from(Message)
     .where(sqlalchemy.and_(Message.chat_id == selected_chat.id, Message.parent_message_id.is_(None)))
     .order_by(Message.date_and_time_sent.desc())
@@ -303,11 +320,28 @@ async def search_messages_in_chat(
 
     await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
 
+    search_sender_read_exists = sqlalchemy.exists(
+        sqlalchemy.select(True).select_from(MessageReceipt).where(
+            sqlalchemy.and_(
+                MessageReceipt.message_id == Message.id,
+                MessageReceipt.receiver_user_id != selected_user.id,
+            ),
+        ),
+    )
+    search_receiver_read_exists = sqlalchemy.exists(
+        sqlalchemy.select(True).select_from(MessageReceipt).where(
+            sqlalchemy.and_(
+                MessageReceipt.message_id == Message.id,
+                MessageReceipt.receiver_user_id == selected_user.id,
+            ),
+        ),
+    )
+
     messages_list_raw: Sequence[tuple[Message, bool]] = ((await db.execute(
     sqlalchemy.select(Message,
     sqlalchemy.case(
-    (Message.sender_user_id == selected_user.id, sqlalchemy.exists(sqlalchemy.select(True).select_from(MessageReceipt).where(sqlalchemy.and_(MessageReceipt.message_id == Message.id, MessageReceipt.receiver_user_id != selected_user.id)))),
-    else_= True).label("is_read"))
+    (Message.sender_user_id == selected_user.id, search_sender_read_exists),
+    else_= search_receiver_read_exists).label("is_read"))
     .select_from(Message)
     .where(sqlalchemy.and_(Message.chat_id == selected_chat.id,
     Message.parent_message_id.is_(None),

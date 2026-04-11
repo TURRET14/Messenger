@@ -15,7 +15,7 @@ export interface AttachmentMeta {
 
 export function MessageBubble({
   m,
-  chatId,
+  chatId: _chatId,
   currentUserId,
   displaySender,
   replySnippet,
@@ -28,8 +28,10 @@ export function MessageBubble({
   showReadReceipt,
   readLabel,
   interactive,
+  avatarEpoch = 0,
 }: {
   m: Message;
+  /** @deprecated Используется m.chat_id для API */
   chatId: number;
   currentUserId: number;
   displaySender: string;
@@ -43,8 +45,10 @@ export function MessageBubble({
   showReadReceipt?: boolean;
   readLabel?: string;
   interactive?: boolean;
+  avatarEpoch?: number;
 }) {
   const { alert } = useDialogs();
+  const cid = m.chat_id;
   const [atts, setAtts] = useState<AttachmentMeta[] | null>(null);
   const [blobMap, setBlobMap] = useState<Record<number, string>>({});
 
@@ -53,7 +57,7 @@ export function MessageBubble({
     (async () => {
       try {
         const list = await apiJson<AttachmentMeta[]>(
-          `/chats/id/${chatId}/messages/id/${m.id}/attachments`,
+          `/chats/id/${cid}/messages/id/${m.id}/attachments`,
         );
         if (!cancelled) setAtts(list);
       } catch {
@@ -63,7 +67,7 @@ export function MessageBubble({
     return () => {
       cancelled = true;
     };
-  }, [chatId, m.id]);
+  }, [cid, m.id]);
 
   useEffect(() => {
     return () => {
@@ -74,7 +78,7 @@ export function MessageBubble({
   const openBlob = async (att: AttachmentMeta) => {
     try {
       const res = await apiFetch(
-        `/chats/id/${chatId}/messages/id/${m.id}/attachments/id/${att.id}`,
+        `/chats/id/${cid}/messages/id/${m.id}/attachments/id/${att.id}`,
       );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -88,7 +92,7 @@ export function MessageBubble({
   const ensureBlob = async (att: AttachmentMeta) => {
     if (blobMap[att.id]) return blobMap[att.id];
     const res = await apiFetch(
-      `/chats/id/${chatId}/messages/id/${m.id}/attachments/id/${att.id}`,
+      `/chats/id/${cid}/messages/id/${m.id}/attachments/id/${att.id}`,
     );
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -146,7 +150,7 @@ export function MessageBubble({
       >
         {m.sender_user_id != null ? (
           <Avatar
-            src={userAvatarUrl(m.sender_user_id)}
+            src={userAvatarUrl(m.sender_user_id, avatarEpoch)}
             label={displaySender}
             size={28}
             alt=""
@@ -331,7 +335,7 @@ export function PickedFilesStrip({
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
       {files.map((f, i) => (
         <div
-          key={`${f.name}-${i}`}
+          key={`${f.name}-${f.size}-${i}-${f.lastModified}`}
           style={{
             display: "inline-flex",
             alignItems: "center",

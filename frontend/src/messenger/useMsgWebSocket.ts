@@ -1,20 +1,31 @@
 import { useEffect, useRef } from "react";
 import { getWebSocketRoot } from "../api/client";
 
+export type MessageWebSocketSuffix =
+  | "/messages/post"
+  | "/messages/put"
+  | "/messages/delete"
+  | "/messages/read";
+
 export function useMsgWebSocket(
   chatId: number | null,
   parentMessageId: number | null,
-  suffix: "/messages/post" | "/messages/put" | "/messages/delete",
+  suffix: MessageWebSocketSuffix,
   onMessage: (ev: MessageEvent) => void,
+  enabled = true,
 ) {
   const q =
-    parentMessageId != null ? `?parent_message_id=${parentMessageId}` : "";
+    suffix === "/messages/read"
+      ? ""
+      : parentMessageId != null
+        ? `?parent_message_id=${parentMessageId}`
+        : "";
   const path = chatId ? `/chats/${chatId}${suffix}${q}` : "";
   const cbRef = useRef(onMessage);
   cbRef.current = onMessage;
 
   useEffect(() => {
-    if (!chatId) return;
+    if (!chatId || !enabled) return;
     const root = getWebSocketRoot().replace(/\/$/, "");
     const url = `${root}${path}`;
     let ws: WebSocket | null = null;
@@ -63,5 +74,5 @@ export function useMsgWebSocket(
       cleanupTimer();
       ws?.close();
     };
-  }, [chatId, path]);
+  }, [chatId, path, enabled]);
 }

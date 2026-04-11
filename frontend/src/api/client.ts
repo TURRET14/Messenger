@@ -19,6 +19,9 @@ export function getWebSocketRoot(): string {
 }
 
 function buildUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
   const p = path.startsWith("/") ? path : `/${path}`;
   return `${API_BASE_URL}${p}`;
 }

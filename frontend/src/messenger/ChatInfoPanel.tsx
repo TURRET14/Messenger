@@ -3,7 +3,7 @@ import { ApiError, apiFetch, apiJson } from "../api/client";
 import type { Chat, ChatRole, UserInList } from "../api/types";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
 import { useDialogs } from "../context/DialogsContext";
-import { userListLabel } from "./userFormat";
+import { avatarLetterFromUser, userListLabel } from "./userFormat";
 
 const PAGE = 50;
 
@@ -21,12 +21,16 @@ export function ChatInfoPanel({
   onClose,
   onRefreshChats,
   onOpenProfile,
+  variant = "sidebar",
+  assetEpoch = 0,
 }: {
   chat: Chat;
   currentUserId: number;
   onClose: () => void;
   onRefreshChats: () => Promise<void>;
   onOpenProfile: (userId: number) => void;
+  variant?: "sidebar" | "sheet";
+  assetEpoch?: number;
 }) {
   const { alert, confirm } = useDialogs();
   const [members, setMembers] = useState<MembershipRow[]>([]);
@@ -241,22 +245,38 @@ export function ChatInfoPanel({
 
   const chatTitle = chat.name || "Чат";
 
+  const shell =
+    variant === "sheet"
+      ? {
+          width: "100%" as const,
+          minWidth: 0,
+          borderLeft: "none",
+          flex: 1,
+          minHeight: 0,
+          maxHeight: "100%",
+        }
+      : {
+          width: 300,
+          minWidth: 260,
+          borderLeft: "1px solid var(--border)",
+          flex: undefined as undefined,
+          minHeight: undefined as undefined,
+          maxHeight: "100%" as const,
+        };
+
   return (
     <div
       style={{
-        width: 300,
-        minWidth: 260,
-        borderLeft: "1px solid var(--border)",
+        ...shell,
         display: "flex",
         flexDirection: "column",
         background: "var(--bg-muted)",
-        maxHeight: "100%",
       }}
     >
       <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
           <Avatar
-            src={chat.has_avatar ? chatAvatarUrl(chat.id) : null}
+            src={chat.has_avatar ? chatAvatarUrl(chat.id, assetEpoch) : null}
             label={chatTitle}
             size={72}
           />
@@ -318,8 +338,8 @@ export function ChatInfoPanel({
                   }}
                 >
                   <Avatar
-                    src={userAvatarUrl(f.id)}
-                    label={f.username}
+                    src={userAvatarUrl(f.id, assetEpoch)}
+                    label={avatarLetterFromUser(f)}
                     size={32}
                   />
                   <div style={{ flex: 1, minWidth: 0, fontSize: "0.85rem" }}>
@@ -374,6 +394,10 @@ export function ChatInfoPanel({
                 alignItems: "center",
                 gap: 8,
                 marginBottom: 10,
+                padding: 8,
+                borderRadius: 10,
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
               }}
             >
               <button
@@ -394,8 +418,8 @@ export function ChatInfoPanel({
                 }}
               >
                 <Avatar
-                  src={userAvatarUrl(m.chat_user_id)}
-                  label={u?.username ?? `#${m.chat_user_id}`}
+                  src={userAvatarUrl(m.chat_user_id, assetEpoch)}
+                  label={u ? avatarLetterFromUser(u) : `#${m.chat_user_id}`}
                   size={36}
                 />
                 <div>

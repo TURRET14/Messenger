@@ -209,6 +209,25 @@ export function IconPaperclip({ size = 20, title, className }: IconProps) {
   );
 }
 
+export function IconCheck({ size = 20, title, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      style={base}
+      className={className}
+      aria-hidden={title ? undefined : true}
+    >
+      {title ? <title>{title}</title> : null}
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
 export function IconTrash({ size = 20, title, className }: IconProps) {
   return (
     <svg

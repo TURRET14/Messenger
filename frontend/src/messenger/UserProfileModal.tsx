@@ -1,23 +1,51 @@
 import { useEffect, useState } from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
 import type { Chat, CurrentUser, FriendUser, UserBlockRow, UserPublic } from "../api/types";
+import { IconUser } from "../components/Icons";
 import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
 import { ModalChrome } from "../components/ui/ModalChrome";
 import { useDialogs } from "../context/DialogsContext";
-import { formatUserFullName } from "./userFormat";
+import {
+  avatarLetterFromUser,
+  formatUserFullName,
+  userListLabel,
+} from "./userFormat";
 
 const PAGE = 50;
+
+async function openOrCreatePrivateChat(userId: number): Promise<number> {
+  try {
+    const res = await apiJson<{ id: number }>(`/chats/private`, {
+      method: "POST",
+      body: JSON.stringify({ id: userId }),
+    });
+    return res.id;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 400) {
+      const body = e.body as { error_code?: string } | undefined;
+      if (body?.error_code === "PRIVATE_CHAT_ALREADY_EXISTS_ERROR") {
+        const ex = await apiJson<{ id: number }>(
+          `/chats/private/with-user/${userId}`,
+        );
+        return ex.id;
+      }
+    }
+    throw e;
+  }
+}
 
 export function UserProfileModal({
   userId,
   currentUser,
   onClose,
   onOpenChat,
+  assetEpoch = 0,
 }: {
   userId: number;
   currentUser: CurrentUser;
   onClose: () => void;
   onOpenChat: (chatId: number) => void;
+  assetEpoch?: number;
 }) {
   const { alert, confirm } = useDialogs();
   const isSelf = userId === currentUser.id;
@@ -91,22 +119,11 @@ export function UserProfileModal({
 
   const openPrivate = async () => {
     try {
-      const res = await apiJson<{ id: number }>("/chats/private", {
-        method: "POST",
-        body: JSON.stringify({ id: userId }),
-      });
-      onOpenChat(res.id);
+      const id = await openOrCreatePrivateChat(userId);
+      onOpenChat(id);
       onClose();
     } catch (e) {
-      const err = e instanceof ApiError ? e : null;
-      if (err?.body && typeof err.body === "object") {
-        const c = (err.body as { error_code?: string }).error_code;
-        if (c === "PRIVATE_CHAT_ALREADY_EXISTS_ERROR") {
-          void alert("Откройте чат из списка — личный диалог уже есть");
-          return;
-        }
-      }
-      void alert(err?.message ?? "Не удалось открыть чат");
+      void alert(e instanceof ApiError ? e.message : "Не удалось открыть чат");
     }
   };
 
@@ -154,60 +171,102 @@ export function UserProfileModal({
     );
   }
 
+  const genderLabel =
+    u.gender === "MALE" ? "Мужской" : u.gender === "FEMALE" ? "Женский" : "—";
+
+  const readOnlyRows: { label: string; value: string }[] = [
+    { label: "Имя пользователя", value: `@${u.username}` },
+    { label: "ФИО", value: formatUserFullName(u) || "—" },
+    {
+      label: "Дата рождения",
+      value: u.date_of_birth?.slice(0, 10) ?? "—",
+    },
+    { label: "Пол", value: genderLabel },
+    { label: "Телефон", value: u.phone_number ?? "—" },
+    { label: "О себе", value: u.about?.trim() ? u.about : "—" },
+    {
+      label: "Дата регистрации",
+      value: new Date(u.date_and_time_registered).toLocaleString(),
+    },
+  ];
+
   return (
     <ModalChrome title={isSelf ? "Мой профиль" : "Профиль"} onClose={onClose} narrow>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
         <Avatar
-          src={userAvatarUrl(u.id)}
-          label={u.username}
+          src={userAvatarUrl(u.id, assetEpoch)}
+          label={avatarLetterFromUser(u)}
           size={88}
         />
-        <div style={{ fontWeight: 700 }}>@{u.username}</div>
-        <div style={{ color: "var(--text-muted)", textAlign: "center" }}>
-          {formatUserFullName(u)}
-        </div>
+        <div style={{ fontWeight: 700 }}>{userListLabel(u)}</div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 16,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          fontSize: "0.9rem",
+        }}
+      >
+        {readOnlyRows.map((row) => (
+          <div key={row.label}>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+              {row.label}
+            </div>
+            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {row.value}
+            </div>
+          </div>
+        ))}
         {"email_address" in u ? (
-          <div style={{ fontSize: "0.9rem" }}>{u.email_address}</div>
-        ) : null}
-        {u.about ? (
-          <p style={{ width: "100%", fontSize: "0.9rem" }}>{u.about}</p>
+          <div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+              Электронная почта
+            </div>
+            <div>{u.email_address}</div>
+          </div>
         ) : null}
       </div>
 
-      {!isSelf ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-          <button type="button" className="ui-btn ui-btn--primary" onClick={() => void openProfileChat()}>
-            Лента профиля
-          </button>
-          {friendship ? (
-            <>
-              <button type="button" className="ui-btn ui-btn--primary" onClick={() => void openPrivate()}>
-                Личный чат
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+        <button type="button" className="ui-btn ui-btn--primary" onClick={() => void openProfileChat()}>
+          <IconUser size={18} /> Лента профиля
+        </button>
+
+        {!isSelf ? (
+          <>
+            {friendship ? (
+              <>
+                <button type="button" className="ui-btn ui-btn--primary" onClick={() => void openPrivate()}>
+                  Личный чат
+                </button>
+                <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void removeFriend()}>
+                  Удалить из друзей
+                </button>
+              </>
+            ) : (
+              <button type="button" className="ui-btn ui-btn--primary" onClick={() => void sendFriendRequest()}>
+                Запрос в друзья
               </button>
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void removeFriend()}>
-                Удалить из друзей
+            )}
+            {blockRow ? (
+              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void unblockUser()}>
+                Разблокировать
               </button>
-            </>
-          ) : (
-            <button type="button" className="ui-btn ui-btn--primary" onClick={() => void sendFriendRequest()}>
-              Запрос в друзья
-            </button>
-          )}
-          {blockRow ? (
-            <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void unblockUser()}>
-              Разблокировать
-            </button>
-          ) : (
-            <button type="button" className="ui-btn ui-btn--danger" onClick={() => void blockUser()}>
-              Заблокировать
-            </button>
-          )}
-        </div>
-      ) : (
-        <p style={{ marginTop: 16, fontSize: "0.9rem", color: "var(--text-muted)" }}>
-          Редактирование данных — в меню «Профиль».
-        </p>
-      )}
+            ) : (
+              <button type="button" className="ui-btn ui-btn--danger" onClick={() => void blockUser()}>
+                Заблокировать
+              </button>
+            )}
+          </>
+        ) : (
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-muted)" }}>
+            Редактирование данных и смена фото — в меню «Профиль».
+          </p>
+        )}
+      </div>
     </ModalChrome>
   );
 }

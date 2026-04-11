@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
 import type {
+  Chat,
   CurrentUser,
   FriendRequest,
   FriendUser,
   UserBlockRow,
   UserInList,
 } from "../api/types";
+import { IconCheck, IconTrash, IconUser, IconX } from "../components/Icons";
 import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
 import { ModalChrome } from "../components/ui/ModalChrome";
 import { useDialogs } from "../context/DialogsContext";
-import { userListLabel } from "./userFormat";
+import { avatarLetterFromUser, userListLabel } from "./userFormat";
 
 const PAGE = 50;
 
@@ -27,11 +29,17 @@ export function MainAppMenu({
   onClose,
   onOpenProfile,
   onRefreshUser,
+  onMediaInvalidate,
+  assetEpoch = 0,
+  onOpenChat,
 }: {
   currentUser: CurrentUser;
   onClose: () => void;
   onOpenProfile: (userId: number) => void;
   onRefreshUser: () => Promise<void>;
+  onMediaInvalidate?: () => void;
+  assetEpoch?: number;
+  onOpenChat?: (chatId: number) => void;
 }) {
   const { alert } = useDialogs();
   const [tab, setTab] = useState<Tab>("profile");
@@ -60,6 +68,8 @@ export function MainAppMenu({
   const [bDone, setBDone] = useState(false);
   const bPageRef = useRef(0);
   const [blockUsers, setBlockUsers] = useState<Record<number, UserInList>>({});
+  const [incomingUsers, setIncomingUsers] = useState<Record<number, UserInList>>({});
+  const [outgoingUsers, setOutgoingUsers] = useState<Record<number, UserInList>>({});
 
   const loadingRef = useRef(false);
   const uPageRef = useRef(0);
@@ -123,6 +133,7 @@ export function MainAppMenu({
     try {
       await apiFetch("/users/me/avatar", { method: "PUT", body: fd });
       await onRefreshUser();
+      onMediaInvalidate?.();
       void alert("Фото обновлено");
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Не загружено");
@@ -148,14 +159,23 @@ export function MainAppMenu({
             );
           }
         } else {
-          const p = new URLSearchParams();
-          p.set("offset_multiplier", String(mult));
-          if (uSearch.n.trim()) p.set("name", uSearch.n.trim());
-          if (uSearch.s.trim()) p.set("surname", uSearch.s.trim());
-          if (uSearch.o.trim()) p.set("second_name", uSearch.o.trim());
-          batch = await apiJson<UserInList[]>(
-            `/users/search/by-names?${p.toString()}`,
-          );
+          const n = uSearch.n.trim();
+          const s = uSearch.s.trim();
+          const o = uSearch.o.trim();
+          if (!n && !s && !o) {
+            batch = await apiJson<UserInList[]>(
+              `/users?offset_multiplier=${mult}`,
+            );
+          } else {
+            const p = new URLSearchParams();
+            p.set("offset_multiplier", String(mult));
+            if (n) p.set("name", n);
+            if (s) p.set("surname", s);
+            if (o) p.set("second_name", o);
+            batch = await apiJson<UserInList[]>(
+              `/users/search/by-names?${p.toString()}`,
+            );
+          }
         }
         if (reset) {
           uPageRef.current = 0;
@@ -197,14 +217,23 @@ export function MainAppMenu({
             );
           }
         } else {
-          const p = new URLSearchParams();
-          p.set("offset_multiplier", String(mult));
-          if (fSearch.n.trim()) p.set("name", fSearch.n.trim());
-          if (fSearch.s.trim()) p.set("surname", fSearch.s.trim());
-          if (fSearch.o.trim()) p.set("second_name", fSearch.o.trim());
-          batch = await apiJson<FriendUser[]>(
-            `/users/me/friends/search/by-names?${p.toString()}`,
-          );
+          const n = fSearch.n.trim();
+          const s = fSearch.s.trim();
+          const o = fSearch.o.trim();
+          if (!n && !s && !o) {
+            batch = await apiJson<FriendUser[]>(
+              `/users/me/friends?offset_multiplier=${mult}`,
+            );
+          } else {
+            const p = new URLSearchParams();
+            p.set("offset_multiplier", String(mult));
+            if (n) p.set("name", n);
+            if (s) p.set("surname", s);
+            if (o) p.set("second_name", o);
+            batch = await apiJson<FriendUser[]>(
+              `/users/me/friends/search/by-names?${p.toString()}`,
+            );
+          }
         }
         if (reset) {
           fPageRef.current = 0;
@@ -236,6 +265,7 @@ export function MainAppMenu({
       if (reset) {
         iPageRef.current = 0;
         setIncoming(batch);
+        setIncomingUsers({});
         setIDone(batch.length < PAGE);
       } else {
         iPageRef.current = mult;
@@ -244,6 +274,14 @@ export function MainAppMenu({
           return [...prev, ...batch.filter((x) => !ids.has(x.id))];
         });
         if (batch.length < PAGE) setIDone(true);
+      }
+      for (const r of batch) {
+        const sid = r.sender_user_id;
+        void apiJson<UserInList>(`/users/id/${sid}`)
+          .then((usr) =>
+            setIncomingUsers((p) => (p[sid] ? p : { ...p, [sid]: usr })),
+          )
+          .catch(() => {});
       }
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
@@ -259,6 +297,7 @@ export function MainAppMenu({
       if (reset) {
         oPageRef.current = 0;
         setOutgoing(batch);
+        setOutgoingUsers({});
         setODone(batch.length < PAGE);
       } else {
         oPageRef.current = mult;
@@ -267,6 +306,14 @@ export function MainAppMenu({
           return [...prev, ...batch.filter((x) => !ids.has(x.id))];
         });
         if (batch.length < PAGE) setODone(true);
+      }
+      for (const r of batch) {
+        const rid = r.receiver_user_id;
+        void apiJson<UserInList>(`/users/id/${rid}`)
+          .then((usr) =>
+            setOutgoingUsers((p) => (p[rid] ? p : { ...p, [rid]: usr })),
+          )
+          .catch(() => {});
       }
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
@@ -306,11 +353,19 @@ export function MainAppMenu({
   };
 
   useEffect(() => {
-    if (tab === "users") void loadUsers(true);
+    if (tab !== "users") return;
+    setUSearch({ mode: "username", q: "", n: "", s: "", o: "" });
+    setUsers([]);
+    setUDone(true);
+    uPageRef.current = 0;
   }, [tab]);
 
   useEffect(() => {
-    if (tab === "friends") void loadFriends(true);
+    if (tab !== "friends") return;
+    setFSearch({ mode: "username", q: "", n: "", s: "", o: "" });
+    setFriends([]);
+    setFDone(true);
+    fPageRef.current = 0;
   }, [tab]);
 
   useEffect(() => {
@@ -409,87 +464,133 @@ export function MainAppMenu({
 
       {tab === "profile" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <Avatar src={userAvatarUrl(u.id)} label={u.username} size={88} />
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <Avatar
+              src={userAvatarUrl(u.id, assetEpoch)}
+              label={avatarLetterFromUser(u)}
+              size={88}
+            />
+            <label
+              className="ui-btn ui-btn--ghost"
+              style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}
+            >
+              <IconUser size={18} />
+              Выбрать фото
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void uploadAvatar(f);
+                }}
+              />
+            </label>
           </div>
-          <label className="sr-only" htmlFor="av">Аватар</label>
-          <input
-            id="av"
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) void uploadAvatar(f);
-            }}
-          />
+          {onOpenChat ? (
+            <button
+              type="button"
+              className="ui-btn ui-btn--primary"
+              onClick={() =>
+                void (async () => {
+                  try {
+                    const chat = await apiJson<Chat>(
+                      `/users/id/${u.id}/profile`,
+                    );
+                    onOpenChat(chat.id);
+                    onClose();
+                  } catch (e) {
+                    void alert(
+                      e instanceof ApiError ? e.message : "Не удалось открыть",
+                    );
+                  }
+                })()
+              }
+            >
+              <IconUser size={18} /> Моя лента профиля
+            </button>
+          ) : null}
           {(
             [
               ["username", "Имя пользователя"],
               ["name", "Имя"],
               ["surname", "Фамилия"],
               ["second_name", "Отчество"],
-              ["phone_number", "Телефон +…"],
+              ["phone_number", "Телефон"],
               ["about", "О себе"],
             ] as const
-          ).map(([key, ph]) => (
-            <input
-              key={key}
-              className="ui-input"
-              placeholder={ph}
-              value={(u[key] as string) ?? ""}
-              onChange={(e) => setU({ ...u, [key]: e.target.value || null })}
-            />
+          ).map(([key, lab]) => (
+            <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{lab}</span>
+              <input
+                className="ui-input"
+                value={(u[key] as string) ?? ""}
+                onChange={(e) => setU({ ...u, [key]: e.target.value || null })}
+              />
+            </label>
           ))}
-          <input
-            className="ui-input"
-            type="date"
-            value={u.date_of_birth?.slice(0, 10) ?? ""}
-            onChange={(e) =>
-              setU({ ...u, date_of_birth: e.target.value || null })
-            }
-          />
-          <select
-            className="ui-input"
-            value={u.gender ?? ""}
-            onChange={(e) =>
-              setU({
-                ...u,
-                gender: (e.target.value || null) as CurrentUser["gender"],
-              })
-            }
-          >
-            <option value="">Пол не указан</option>
-            <option value="MALE">Мужской</option>
-            <option value="FEMALE">Женский</option>
-          </select>
-          <input
-            className="ui-input"
-            type="email"
-            value={u.email_address}
-            onChange={(e) => setU({ ...u, email_address: e.target.value })}
-            placeholder="Текущая почта в профиле"
-          />
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Дата рождения</span>
+            <input
+              className="ui-input"
+              type="date"
+              value={u.date_of_birth?.slice(0, 10) ?? ""}
+              onChange={(e) =>
+                setU({ ...u, date_of_birth: e.target.value || null })
+              }
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Пол</span>
+            <select
+              className="ui-input"
+              value={u.gender ?? ""}
+              onChange={(e) =>
+                setU({
+                  ...u,
+                  gender: (e.target.value || null) as CurrentUser["gender"],
+                })
+              }
+            >
+              <option value="">Не указан</option>
+              <option value="MALE">Мужской</option>
+              <option value="FEMALE">Женский</option>
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Электронная почта</span>
+            <input
+              className="ui-input"
+              type="email"
+              value={u.email_address}
+              onChange={(e) => setU({ ...u, email_address: e.target.value })}
+            />
+          </label>
           <button type="button" className="ui-btn ui-btn--primary" onClick={() => void saveProfile()}>
             Сохранить профиль
           </button>
           <hr style={{ borderColor: "var(--border)" }} />
           <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена почты</h3>
-          <input
-            className="ui-input"
-            placeholder="Новая электронная почта"
-            value={emailNew}
-            onChange={(e) => setEmailNew(e.target.value)}
-          />
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Новая почта</span>
+            <input
+              className="ui-input"
+              value={emailNew}
+              onChange={(e) => setEmailNew(e.target.value)}
+            />
+          </label>
           <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void requestEmailChange()}>
             Отправить код на новую почту
           </button>
-          <input
-            className="ui-input"
-            placeholder="Код из письма"
-            value={emailCode}
-            onChange={(e) => setEmailCode(e.target.value)}
-          />
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Код из письма</span>
+            <input
+              className="ui-input"
+              value={emailCode}
+              onChange={(e) => setEmailCode(e.target.value)}
+            />
+          </label>
           <button type="button" className="ui-btn ui-btn--primary" onClick={() => void confirmEmail()}>
             Подтвердить почту
           </button>
@@ -515,22 +616,38 @@ export function MainAppMenu({
             </button>
           </div>
           {uSearch.mode === "username" ? (
-            <input
-              className="ui-input"
-              placeholder="Username"
-              value={uSearch.q}
-              onChange={(e) => setUSearch((s) => ({ ...s, q: e.target.value }))}
-              style={{ marginBottom: 8 }}
-            />
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Username</span>
+              <input
+                className="ui-input"
+                value={uSearch.q}
+                onChange={(e) => setUSearch((s) => ({ ...s, q: e.target.value }))}
+              />
+            </label>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-              <input className="ui-input" placeholder="Имя" value={uSearch.n} onChange={(e) => setUSearch((s) => ({ ...s, n: e.target.value }))} />
-              <input className="ui-input" placeholder="Фамилия" value={uSearch.s} onChange={(e) => setUSearch((s) => ({ ...s, s: e.target.value }))} />
-              <input className="ui-input" placeholder="Отчество" value={uSearch.o} onChange={(e) => setUSearch((s) => ({ ...s, o: e.target.value }))} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+              {(
+                [
+                  ["n", "Имя"],
+                  ["s", "Фамилия"],
+                  ["o", "Отчество"],
+                ] as const
+              ).map(([k, lab]) => (
+                <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{lab}</span>
+                  <input
+                    className="ui-input"
+                    value={uSearch[k]}
+                    onChange={(e) =>
+                      setUSearch((s) => ({ ...s, [k]: e.target.value }))
+                    }
+                  />
+                </label>
+              ))}
             </div>
           )}
           <button type="button" className="ui-btn ui-btn--primary" style={{ width: "100%", marginBottom: 12 }} onClick={() => void loadUsers(true)}>
-            Искать / обновить
+            <IconUser size={18} /> Показать пользователей
           </button>
           <div style={{ maxHeight: 360, overflowY: "auto" }}>
             {users.map((row) => (
@@ -553,7 +670,11 @@ export function MainAppMenu({
                   color: "inherit",
                 }}
               >
-                <Avatar src={userAvatarUrl(row.id)} label={row.username} size={40} />
+                <Avatar
+                  src={userAvatarUrl(row.id, assetEpoch)}
+                  label={avatarLetterFromUser(row)}
+                  size={40}
+                />
                 <span style={{ fontSize: "0.9rem" }}>{userListLabel(row)}</span>
               </button>
             ))}
@@ -577,16 +698,38 @@ export function MainAppMenu({
             </button>
           </div>
           {fSearch.mode === "username" ? (
-            <input className="ui-input" value={fSearch.q} onChange={(e) => setFSearch((s) => ({ ...s, q: e.target.value }))} style={{ marginBottom: 8 }} />
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Username</span>
+              <input
+                className="ui-input"
+                value={fSearch.q}
+                onChange={(e) => setFSearch((s) => ({ ...s, q: e.target.value }))}
+              />
+            </label>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-              <input className="ui-input" placeholder="Имя" value={fSearch.n} onChange={(e) => setFSearch((s) => ({ ...s, n: e.target.value }))} />
-              <input className="ui-input" placeholder="Фамилия" value={fSearch.s} onChange={(e) => setFSearch((s) => ({ ...s, s: e.target.value }))} />
-              <input className="ui-input" placeholder="Отчество" value={fSearch.o} onChange={(e) => setFSearch((s) => ({ ...s, o: e.target.value }))} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+              {(
+                [
+                  ["n", "Имя"],
+                  ["s", "Фамилия"],
+                  ["o", "Отчество"],
+                ] as const
+              ).map(([k, lab]) => (
+                <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{lab}</span>
+                  <input
+                    className="ui-input"
+                    value={fSearch[k]}
+                    onChange={(e) =>
+                      setFSearch((s) => ({ ...s, [k]: e.target.value }))
+                    }
+                  />
+                </label>
+              ))}
             </div>
           )}
           <button type="button" className="ui-btn ui-btn--primary" style={{ width: "100%", marginBottom: 12 }} onClick={() => void loadFriends(true)}>
-            Обновить
+            <IconUser size={18} /> Показать друзей
           </button>
           <div style={{ maxHeight: 360, overflowY: "auto" }}>
             {friends.map((row) => (
@@ -597,6 +740,10 @@ export function MainAppMenu({
                   alignItems: "center",
                   gap: 10,
                   marginBottom: 8,
+                  padding: 8,
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
                 }}
               >
                 <button
@@ -607,20 +754,28 @@ export function MainAppMenu({
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
-                    border: "1px solid var(--border)",
-                    borderRadius: 10,
-                    padding: 8,
-                    background: "var(--bg)",
+                    border: "none",
+                    background: "none",
+                    padding: 0,
                     cursor: "pointer",
                     textAlign: "left",
                     color: "inherit",
+                    minWidth: 0,
                   }}
                 >
-                  <Avatar src={userAvatarUrl(row.id)} label={row.username} size={40} />
+                  <Avatar
+                    src={userAvatarUrl(row.id, assetEpoch)}
+                    label={avatarLetterFromUser(row)}
+                    size={40}
+                  />
                   <span style={{ fontSize: "0.9rem" }}>{userListLabel(row)}</span>
                 </button>
-                <button type="button" className="ui-btn ui-btn--danger" onClick={() => void removeFriend(row.friendship_id)}>
-                  Удалить
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--danger"
+                  onClick={() => void removeFriend(row.friendship_id)}
+                >
+                  <IconTrash size={18} />
                 </button>
               </div>
             ))}
@@ -635,19 +790,58 @@ export function MainAppMenu({
 
       {tab === "in" ? (
         <div style={{ maxHeight: 400, overflowY: "auto" }}>
-          {incoming.map((r) => (
-            <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => onOpenProfile(r.sender_user_id)}>
-                От пользователя #{r.sender_user_id}
-              </button>
-              <button type="button" className="ui-btn ui-btn--primary" onClick={() => void acceptReq(r.id)}>
-                Принять
-              </button>
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void declineReq(r.id)}>
-                Отклонить
-              </button>
-            </div>
-          ))}
+          {incoming.map((r) => {
+            const iu = incomingUsers[r.sender_user_id];
+            return (
+              <div
+                key={r.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 10,
+                  padding: 8,
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpenProfile(r.sender_user_id)}
+                  style={{
+                    flex: 1,
+                    minWidth: 160,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    border: "none",
+                    background: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: "inherit",
+                  }}
+                >
+                  <Avatar
+                    src={userAvatarUrl(r.sender_user_id, assetEpoch)}
+                    label={iu ? avatarLetterFromUser(iu) : "?"}
+                    size={40}
+                  />
+                  <span style={{ fontSize: "0.9rem" }}>
+                    {iu ? userListLabel(iu) : `Пользователь #${r.sender_user_id}`}
+                  </span>
+                </button>
+                <button type="button" className="ui-btn ui-btn--primary" onClick={() => void acceptReq(r.id)}>
+                  <IconCheck size={18} /> Принять
+                </button>
+                <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void declineReq(r.id)}>
+                  <IconX size={18} /> Отклонить
+                </button>
+              </div>
+            );
+          })}
           {!iDone ? (
             <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void loadIncoming(false)}>
               Ещё
@@ -658,14 +852,54 @@ export function MainAppMenu({
 
       {tab === "out" ? (
         <div style={{ maxHeight: 400, overflowY: "auto" }}>
-          {outgoing.map((r) => (
-            <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-              <span>→ #{r.receiver_user_id}</span>
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void cancelSent(r.id)}>
-                Отозвать
-              </button>
-            </div>
-          ))}
+          {outgoing.map((r) => {
+            const ou = outgoingUsers[r.receiver_user_id];
+            return (
+              <div
+                key={r.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 10,
+                  padding: 8,
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpenProfile(r.receiver_user_id)}
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    border: "none",
+                    background: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: "inherit",
+                    minWidth: 0,
+                  }}
+                >
+                  <Avatar
+                    src={userAvatarUrl(r.receiver_user_id, assetEpoch)}
+                    label={ou ? avatarLetterFromUser(ou) : "?"}
+                    size={40}
+                  />
+                  <span style={{ fontSize: "0.9rem" }}>
+                    {ou ? userListLabel(ou) : `Пользователь #${r.receiver_user_id}`}
+                  </span>
+                </button>
+                <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void cancelSent(r.id)}>
+                  <IconTrash size={18} /> Отозвать
+                </button>
+              </div>
+            );
+          })}
           {!oDone ? (
             <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void loadOutgoing(false)}>
               Ещё
@@ -697,14 +931,14 @@ export function MainAppMenu({
                   }}
                 >
                   <Avatar
-                    src={userAvatarUrl(b.blocked_user_id)}
-                    label={bu?.username ?? `#${b.blocked_user_id}`}
+                    src={userAvatarUrl(b.blocked_user_id, assetEpoch)}
+                    label={bu ? avatarLetterFromUser(bu) : `#${b.blocked_user_id}`}
                     size={40}
                   />
                   <span>{bu ? userListLabel(bu) : `Пользователь ${b.blocked_user_id}`}</span>
                 </button>
                 <button type="button" className="ui-btn ui-btn--primary" onClick={() => void unblock(b.id)}>
-                  Разблокировать
+                  <IconCheck size={18} /> Разблокировать
                 </button>
               </div>
             );

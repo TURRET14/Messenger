@@ -143,12 +143,12 @@ async def get_user_block_by_path_id(
 
 
 async def get_post_message_data_from_form(
-    message_text: str = fastapi.Form(),
+    message_text: str = fastapi.Form(default = ""),
     reply_message_id: int | None = fastapi.Form(default = None),
     parent_message_id: int | None = fastapi.Form(default = None)) -> MessagePostRequestModel:
 
     return MessagePostRequestModel(
-    message_text = message_text,
+    message_text = message_text or None,
     reply_message_id = reply_message_id,
     parent_message_id = parent_message_id)
 
