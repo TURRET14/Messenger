@@ -41,7 +41,7 @@ async def validate_post_message(
     if not message_data.message_text and not len(attachments):
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.empty_message_error.error_status_code, detail = ErrorRegistry.empty_message_error)
 
-    await checks.check_is_user_allowed_to_post(selected_chat, selected_user, db)
+    await checks.check_is_user_allowed_to_post(message_data.parent_message_id, selected_chat, selected_user, db)
 
     if message_data.parent_message_id:
         await checks.check_does_chat_have_comments(selected_chat)
@@ -71,7 +71,7 @@ async def validate_update_delete_message(
         if not message_data.message_text and not await utils.does_message_have_attachments(selected_message, db):
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.empty_message_error.error_status_code, detail = ErrorRegistry.empty_message_error)
 
-    await checks.check_is_user_allowed_to_post(selected_chat, selected_user, db)
+    await checks.check_is_user_allowed_to_post(selected_message.parent_message_id, selected_chat, selected_user, db)
 
     await common_checks.check_does_message_belong_to_chat(selected_chat, selected_message)
 

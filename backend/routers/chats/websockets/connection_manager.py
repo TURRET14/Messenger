@@ -60,7 +60,9 @@ class WebsocketConnectionManager:
                 chat_kind = chat_data.chat_kind,
                 name = chat_data.name,
                 owner_user_id = chat_data.owner_user_id,
-                date_and_time_created = chat_data.date_and_time_created)
+                date_and_time_created = chat_data.date_and_time_created,
+                has_avatar = False,
+                last_message = None)
 
                 await websocket.send_json(fastapi.encoders.jsonable_encoder(chat_response_model))
 
@@ -78,7 +80,9 @@ class WebsocketConnectionManager:
                     chat_kind=chat_data.chat_kind,
                     name=chat_data.name,
                     owner_user_id=chat_data.owner_user_id,
-                    date_and_time_created=chat_data.date_and_time_created)
+                    date_and_time_created=chat_data.date_and_time_created,
+                    has_avatar=False,
+                    last_message=None)
 
                 await websocket.send_json(fastapi.encoders.jsonable_encoder(chat_response_model))
 

@@ -1,3 +1,5 @@
+import pathlib
+
 import fastapi
 import fastapi.encoders
 import minio.datatypes
@@ -32,7 +34,8 @@ async def get_message_attachments_list(
         attachments_list.append(MessageAttachmentResponseModel(
         id = attachment.id,
         chat_id = selected_chat.id,
-        message_id = selected_message.id))
+        message_id = selected_message.id,
+        file_extension = pathlib.Path(attachment.attachment_file_path).suffix.lower()))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(attachments_list), status_code = fastapi.status.HTTP_200_OK)
 

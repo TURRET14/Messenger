@@ -460,10 +460,11 @@ async def unblock_user(
 @users_router.get("/users/me/blocks", response_class = fastapi.responses.JSONResponse,
 description =
 """
-Маршрут получения блокировок пользователей.
+Маршрут получения блокировок пользователей (По указанному в параметрах сервера количеству записей за раз (50)).
 """)
 async def get_blocks(
+    offset_multiplier: int = fastapi.Query(default = 0, ge = 0),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
-    return await service.get_blocks(current_user, db)
+    return await service.get_blocks(offset_multiplier, current_user, db)

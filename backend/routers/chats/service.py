@@ -10,7 +10,11 @@ from backend.routers.chats.websockets.models import ChatPubsubModel, ChatMembers
 from backend.routers.common_models import IDModel
 from backend.storage import *
 from backend.routers.chats.request_models import (ChatNameRequestModel)
-from backend.routers.chats.response_models import (ChatResponseModel, ChatMembershipResponseModel)
+from backend.routers.chats.response_models import (
+    ChatResponseModel,
+    ChatMembershipResponseModel,
+    ChatLastMessagePreviewModel,
+)
 import backend.routers.errors
 import backend.routers.dependencies
 import backend.routers.parameters
@@ -33,14 +37,46 @@ async def get_all_chats(
     .group_by(Message.chat_id)
     .subquery())
 
-    chats_list_raw: Sequence[tuple[Chat, str]] = ((await db.execute(
+    last_root_row = sqlalchemy.func.row_number().over(
+        partition_by=Message.chat_id,
+        order_by=Message.date_and_time_sent.desc(),
+    ).label("last_root_rn")
+
+    last_root_partitioned = (
+        sqlalchemy.select(
+            Message.chat_id,
+            Message.message_text,
+            Message.sender_user_id,
+            Message.date_and_time_sent,
+            last_root_row,
+        )
+        .where(Message.parent_message_id.is_(None))
+        .subquery()
+    )
+
+    last_root_messages = (
+        sqlalchemy.select(
+            last_root_partitioned.c.chat_id,
+            last_root_partitioned.c.message_text,
+            last_root_partitioned.c.sender_user_id,
+            last_root_partitioned.c.date_and_time_sent,
+        )
+        .where(last_root_partitioned.c.last_root_rn == 1)
+        .subquery()
+    )
+
+    chats_list_raw: Sequence[tuple] = ((await db.execute(
     sqlalchemy.select(
     Chat,
-    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name)).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id).limit(1).scalar_subquery()).label("chat_name"))
+    sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.name, User.surname, User.second_name)).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id).limit(1).scalar_subquery()).label("chat_name"),
+    last_root_messages.c.message_text,
+    last_root_messages.c.sender_user_id,
+    last_root_messages.c.date_and_time_sent)
     .select_from(ChatMembership)
     .where(sqlalchemy.and_(ChatMembership.chat_user_id == selected_user.id))
     .join(Chat, Chat.id == ChatMembership.chat_id)
     .outerjoin(subquery_chat_last_message_datetime, subquery_chat_last_message_datetime.c.chat_id == Chat.id)
+    .outerjoin(last_root_messages, last_root_messages.c.chat_id == Chat.id)
     .order_by(subquery_chat_last_message_datetime.c.date_and_time_sent.desc().nullslast(), Chat.id.desc())
     .offset(offset_multiplier * backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(backend.routers.parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
@@ -48,13 +84,27 @@ async def get_all_chats(
 
     chats_list: list[ChatResponseModel] = list()
 
-    for chat, chat_name in chats_list_raw:
+    for row in chats_list_raw:
+        chat: Chat = row[0]
+        chat_name: str = row[1]
+        last_text: str | None = row[2]
+        last_sender: int | None = row[3]
+        last_sent: datetime.datetime | None = row[4]
+        last_preview: ChatLastMessagePreviewModel | None = None
+        if last_sent is not None or last_text is not None or last_sender is not None:
+            last_preview = ChatLastMessagePreviewModel(
+                message_text = last_text,
+                sender_user_id = last_sender,
+                date_and_time_sent = last_sent,
+            )
         chats_list.append(ChatResponseModel(
         id = chat.id,
         chat_kind = chat.chat_kind,
         name = chat_name,
         owner_user_id = chat.owner_user_id,
-        date_and_time_created = chat.date_and_time_created))
+        date_and_time_created = chat.date_and_time_created,
+        has_avatar = chat.avatar_photo_path is not None,
+        last_message = last_preview))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chats_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -66,14 +116,16 @@ async def get_chat(
 
     chat_name: str = await validators.validate_get_chat(selected_chat, selected_user, db)
 
-    selected_chat: ChatResponseModel = ChatResponseModel(
+    chat_response = ChatResponseModel(
         id = selected_chat.id,
         chat_kind = selected_chat.chat_kind,
         name = chat_name,
         owner_user_id = selected_chat.owner_user_id,
-        date_and_time_created = selected_chat.date_and_time_created)
+        date_and_time_created = selected_chat.date_and_time_created,
+        has_avatar = selected_chat.avatar_photo_path is not None,
+        last_message = None)
 
-    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(selected_chat), status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chat_response), status_code = fastapi.status.HTTP_200_OK)
 
 
 
@@ -551,7 +603,9 @@ async def get_user_profile(
     chat_kind = user_profile_raw.chat_kind,
     name = chat_name,
     owner_user_id = user_profile_raw.owner_user_id,
-    date_and_time_created = user_profile_raw.date_and_time_created)
+    date_and_time_created = user_profile_raw.date_and_time_created,
+    has_avatar = user_profile_raw.avatar_photo_path is not None,
+    last_message = None)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_profile), status_code = fastapi.status.HTTP_200_OK)
 

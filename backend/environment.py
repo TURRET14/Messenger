@@ -27,12 +27,19 @@ MINIO_CHATS_AVATARS_BUCKET = os.getenv("MINIO_CHATS_AVATARS_BUCKET", "chatsavata
 MINIO_MESSAGES_ATTACHMENTS_BUCKET = os.getenv("MINIO_MESSAGES_ATTACHMENTS_BUCKET", "messagesattachments")
 
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
-BACKEND_PORT = os.getenv("BACKEND_PORT", "3000")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8080")
+
+_cors_origins = os.getenv("FRONTEND_ORIGINS")
+if _cors_origins:
+    FRONTEND_ORIGINS = [origin.strip() for origin in _cors_origins.split(",") if origin.strip()]
+else:
+    FRONTEND_ORIGINS = [FRONTEND_URL]
+
+BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
 
 SMTP_HOSTNAME = os.getenv("SMTP_HOSTNAME", "smtp.yandex.ru")
-SMTP_USERNAME = os.getenv("SMTP_USERNAME", "Messenger")
-SMTP_FROM = os.getenv("SMTP_FROM", "Messenger")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "SMTP")
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "EmelyanenkoSemyon2006@ya.ru")
+SMTP_FROM = os.getenv("SMTP_FROM", "EmelyanenkoSemyon2006@ya.ru")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "txfuzygooolnpqjv")
 
 SERVICE_PUBLIC_NAME = os.getenv("SERVICE_PUBLIC_NAME", "Мессенджер")

@@ -13,6 +13,7 @@ class UserInListResponseModel(pydantic.BaseModel):
 
 
 class FriendUserInListResponseModel(UserInListResponseModel):
+    friendship_id: int = pydantic.Field()
     date_and_time_added: datetime.datetime = pydantic.Field()
 
 

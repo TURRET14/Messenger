@@ -52,7 +52,7 @@ class RedisClient:
         self.client = redis.asyncio.Redis(host = host, port = port, password = password, db = db, decode_responses = True)
 
     async def create_register_session(self, register_data: RegisterRequestModel) -> str:
-        session_id = secrets.token_urlsafe(64)
+        session_id = ''.join(str(secrets.randbelow(10)) for _ in range(6))
         creation_datetime: int = int(datetime.datetime.now().timestamp())
         expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds=parameters.REDIS_REGISTER_SESSION_EXPIRATION_TIME_SECONDS).total_seconds())
 
@@ -60,10 +60,12 @@ class RedisClient:
         mapping = {"email_address": register_data.email_address,
                 "username": register_data.username,
                 "name": register_data.name,
-                "surname": register_data.surname,
-                "second_name": register_data.second_name,
                 "login": register_data.login,
                 "password": register_data.password})
+        if register_data.surname:
+            self.client.hset(f"register:session_id:{session_id}", "surname", register_data.surname)
+        if register_data.second_name:
+            self.client.hset(f"register:session_id:{session_id}", "second_name", register_data.second_name)
 
         await self.client.expireat(f"register:session_id:{session_id}", expiration_datetime)
         return session_id

@@ -8,8 +8,8 @@ from backend.storage.database import Gender as DatabaseGender
 class RegisterRequestModel(pydantic.BaseModel):
     username: str = pydantic.Field(max_length = 100)
     name: str = pydantic.Field(max_length = 100)
-    surname: str | None = pydantic.Field(max_length=100)
-    second_name: str | None = pydantic.Field(max_length=100)
+    surname: str | None = pydantic.Field(max_length=100, default = None)
+    second_name: str | None = pydantic.Field(max_length=100, default = None)
     email_address: str = pydantic.EmailStr()
     login: str = pydantic.Field(max_length = 100)
     password: str = pydantic.Field(min_length = 5, max_length = 100)

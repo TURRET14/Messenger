@@ -10,3 +10,5 @@ argon2-cffi
 python-dotenv
 urllib3
 python-multipart
+aiosmtplib
+websockets

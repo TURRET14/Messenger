@@ -1,14 +1,16 @@
 import aiosmtplib
+import email.message
 import email.mime.text
 from backend import environment
 
 class EmailService:
     @staticmethod
     async def send_email(receiver_email: str, message_text: str, subject_data: str):
-        message = email.mime.text.MIMEText(message_text, "html")
+        message = email.message.EmailMessage()
         message["From"] = environment.SMTP_FROM
         message["To"] = receiver_email
         message["Subject"] = subject_data
+        message.set_content(message_text, subtype = "html")
 
         await aiosmtplib.send(
         message,

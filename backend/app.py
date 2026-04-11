@@ -22,7 +22,7 @@ async def on_startup(app):
 app = fastapi.FastAPI(lifespan = on_startup)
 
 app.add_middleware(fastapi.middleware.cors.CORSMiddleware,
-                allow_origins = [environment.FRONTEND_URL],
+                allow_origins = environment.FRONTEND_ORIGINS,
                 allow_credentials = True,
                 allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"],
                 allow_headers = ["*"])
@@ -43,7 +43,9 @@ app.include_router(backend.routers.message_attachments.router.message_attachment
 
 @app.exception_handler(fastapi.exceptions.HTTPException)
 async def http_exception_handler(request: fastapi.requests.Request, exception: fastapi.exceptions.HTTPException):
-    return fastapi.responses.JSONResponse(exception.detail, status_code = exception.status_code)
+    return fastapi.responses.JSONResponse(
+        fastapi.encoders.jsonable_encoder(exception.detail),
+        status_code = exception.status_code)
 
 
 if __name__ == "__main__":

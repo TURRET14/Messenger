@@ -4,6 +4,7 @@ import sqlalchemy.ext.asyncio
 
 import backend.routers.messages.utils
 import backend.routers.common_validators.checks as common_checks
+from backend.routers.messages.request_models import MessagePostRequestModel
 from backend.storage import *
 from backend.routers.errors import (ErrorRegistry)
 
@@ -64,16 +65,19 @@ async def check_is_message_not_marked_as_received_by_user(
 
 
 async def check_is_user_allowed_to_post(
+    parent_message_id: int | None,
     selected_chat: Chat,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession):
 
     if selected_chat.chat_kind == ChatKind.PROFILE:
-        if selected_chat.owner_user_id != selected_user.id:
+        if selected_chat.owner_user_id != selected_user.id and parent_message_id is None:
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.not_enough_permissions_to_post_error.error_status_code, detail = ErrorRegistry.not_enough_permissions_to_post_error)
     else:
         chat_membership: ChatMembership | None = await common_checks.check_chat_user_membership(selected_chat, selected_user, db)
+        if not chat_membership:
+            raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_membership_not_found_error.error_status_code, detail = ErrorRegistry.chat_membership_not_found_error)
 
         if selected_chat.chat_kind == ChatKind.CHANNEL:
-            if chat_membership and chat_membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER]:
+            if chat_membership.chat_role not in [ChatRole.ADMIN, ChatRole.OWNER] and parent_message_id is None:
                 raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.not_enough_permissions_to_post_error.error_status_code, detail=ErrorRegistry.not_enough_permissions_to_post_error)

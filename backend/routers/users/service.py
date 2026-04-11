@@ -461,16 +461,20 @@ async def get_friends(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    friends_subquery = (
-    sqlalchemy.select(Friendship.friend_user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
-    .where(Friendship.user_id == selected_user.id)
-    .union(
-    sqlalchemy.select(Friendship.user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
-    .where(Friendship.friend_user_id == selected_user.id))
-    .subquery())
+    friends_side_a = sqlalchemy.select(
+        Friendship.id.label("friendship_id"),
+        Friendship.friend_user_id.label("friend_id"),
+        Friendship.date_and_time_added.label("date_and_time_added"),
+    ).where(Friendship.user_id == selected_user.id)
+    friends_side_b = sqlalchemy.select(
+        Friendship.id.label("friendship_id"),
+        Friendship.user_id.label("friend_id"),
+        Friendship.date_and_time_added.label("date_and_time_added"),
+    ).where(Friendship.friend_user_id == selected_user.id)
+    friends_subquery = sqlalchemy.union_all(friends_side_a, friends_side_b).subquery()
 
-    friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
-    sqlalchemy.select(User, friends_subquery.c.date_and_time_added)
+    friends_list_raw: Sequence[tuple[User, int, datetime.datetime]] = ((await db.execute(
+    sqlalchemy.select(User, friends_subquery.c.friendship_id, friends_subquery.c.date_and_time_added)
     .select_from(friends_subquery)
     .join(User, User.id == friends_subquery.c.friend_id)
     .order_by(User.id)
@@ -480,13 +484,14 @@ async def get_friends(
 
     friends_list: list[FriendUserInListResponseModel] = list()
 
-    for friend_user, date_and_time_added in friends_list_raw:
+    for friend_user, friendship_id, date_and_time_added in friends_list_raw:
         friends_list.append(FriendUserInListResponseModel(
         id = friend_user.id,
         username = friend_user.username,
         name = friend_user.name,
         surname = friend_user.surname,
         second_name = friend_user.second_name,
+        friendship_id = friendship_id,
         date_and_time_added = date_and_time_added))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
@@ -498,16 +503,20 @@ async def search_friends_by_username(
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    friends_subquery = (
-    sqlalchemy.select(Friendship.friend_user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
-    .where(Friendship.user_id == selected_user.id)
-    .union(
-    sqlalchemy.select(Friendship.user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
-    .where(Friendship.friend_user_id == selected_user.id))
-    .subquery())
+    friends_side_a = sqlalchemy.select(
+        Friendship.id.label("friendship_id"),
+        Friendship.friend_user_id.label("friend_id"),
+        Friendship.date_and_time_added.label("date_and_time_added"),
+    ).where(Friendship.user_id == selected_user.id)
+    friends_side_b = sqlalchemy.select(
+        Friendship.id.label("friendship_id"),
+        Friendship.user_id.label("friend_id"),
+        Friendship.date_and_time_added.label("date_and_time_added"),
+    ).where(Friendship.friend_user_id == selected_user.id)
+    friends_subquery = sqlalchemy.union_all(friends_side_a, friends_side_b).subquery()
 
-    friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
-    sqlalchemy.select(User, friends_subquery.c.date_and_time_added)
+    friends_list_raw: Sequence[tuple[User, int, datetime.datetime]] = ((await db.execute(
+    sqlalchemy.select(User, friends_subquery.c.friendship_id, friends_subquery.c.date_and_time_added)
     .select_from(friends_subquery)
     .join(User, User.id == friends_subquery.c.friend_id)
     .where(User.username.ilike(f"{username}%"))
@@ -518,13 +527,14 @@ async def search_friends_by_username(
 
     friends_list: list[FriendUserInListResponseModel] = list()
 
-    for friend_user, date_and_time_added in friends_list_raw:
+    for friend_user, friendship_id, date_and_time_added in friends_list_raw:
         friends_list.append(FriendUserInListResponseModel(
         id = friend_user.id,
         username = friend_user.username,
         name = friend_user.name,
         surname = friend_user.surname,
         second_name = friend_user.second_name,
+        friendship_id = friendship_id,
         date_and_time_added = date_and_time_added))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
@@ -540,16 +550,20 @@ async def search_friends_by_names(
 
     await validators.validate_user_search_parameters(search_name, search_surname, search_second_name)
 
-    friends_subquery = (
-    sqlalchemy.select(Friendship.friend_user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
-    .where(Friendship.user_id == selected_user.id)
-    .union(
-    sqlalchemy.select(Friendship.user_id.label("friend_id"), Friendship.date_and_time_added.label("date_and_time_added"))
-    .where(Friendship.friend_user_id == selected_user.id))
-    .subquery())
+    friends_side_a = sqlalchemy.select(
+        Friendship.id.label("friendship_id"),
+        Friendship.friend_user_id.label("friend_id"),
+        Friendship.date_and_time_added.label("date_and_time_added"),
+    ).where(Friendship.user_id == selected_user.id)
+    friends_side_b = sqlalchemy.select(
+        Friendship.id.label("friendship_id"),
+        Friendship.user_id.label("friend_id"),
+        Friendship.date_and_time_added.label("date_and_time_added"),
+    ).where(Friendship.friend_user_id == selected_user.id)
+    friends_subquery = sqlalchemy.union_all(friends_side_a, friends_side_b).subquery()
 
     select_request = (
-    sqlalchemy.select(User, friends_subquery.c.date_and_time_added)
+    sqlalchemy.select(User, friends_subquery.c.friendship_id, friends_subquery.c.date_and_time_added)
     .select_from(friends_subquery)
     .join(User, User.id == friends_subquery.c.friend_id))
 
@@ -560,7 +574,7 @@ async def search_friends_by_names(
     if search_second_name:
         select_request = select_request.where(User.second_name.ilike(f"{search_second_name}%"))
 
-    friends_list_raw: Sequence[tuple[User, datetime.datetime]] = ((await db.execute(
+    friends_list_raw: Sequence[tuple[User, int, datetime.datetime]] = ((await db.execute(
     select_request.order_by(User.id)
     .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
     .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
@@ -568,13 +582,14 @@ async def search_friends_by_names(
 
     friends_list: list[FriendUserInListResponseModel] = list()
 
-    for friend_user, date_and_time_added in friends_list_raw:
+    for friend_user, friendship_id, date_and_time_added in friends_list_raw:
         friends_list.append(FriendUserInListResponseModel(
         id = friend_user.id,
         username = friend_user.username,
         name = friend_user.name,
         surname = friend_user.surname,
         second_name = friend_user.second_name,
+        friendship_id = friendship_id,
         date_and_time_added = date_and_time_added))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friends_list), status_code = fastapi.status.HTTP_200_OK)
@@ -775,10 +790,17 @@ async def unblock_user(
 
 
 async def get_blocks(
+    offset_multiplier: int,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
 
-    blocks_list_raw: Sequence[UserBlock] = (await db.execute(sqlalchemy.select(UserBlock).where(UserBlock.user_id == selected_user.id))).scalars().all()
+    blocks_list_raw: Sequence[UserBlock] = ((await db.execute(
+    sqlalchemy.select(UserBlock)
+    .where(UserBlock.user_id == selected_user.id)
+    .order_by(UserBlock.date_and_time_blocked.desc())
+    .offset(offset_multiplier * parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)
+    .limit(parameters.NUMBER_OF_DATABASE_TABLE_ROWS_IN_SELECTION)))
+    .scalars().all())
 
     blocks_list: list[UserBlockResponseModel] = list()
 

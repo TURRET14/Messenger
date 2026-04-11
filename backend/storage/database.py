@@ -168,7 +168,7 @@ database_url: sqlalchemy.engine.URL = sqlalchemy.engine.URL.create(
     database = environment.POSTGRES_DB)
 
 db_engine: sqlalchemy.ext.asyncio.AsyncEngine = sqlalchemy.ext.asyncio.create_async_engine(database_url)
-async_session_maker: sqlalchemy.ext.asyncio.async_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=db_engine)
+async_session_maker: sqlalchemy.ext.asyncio.async_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind = db_engine, expire_on_commit = False)
 
 async def init_db():
     async with db_engine.connect() as conn:
