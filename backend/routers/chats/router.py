@@ -111,6 +111,22 @@ async def update_chat_avatar(
     return await backend.routers.chats.service.update_chat_avatar(selected_chat, file, current_user, minio_client, redis_client, db)
 
 
+@chats_router.delete("/chats/id/{chat_id}/avatar", response_class = fastapi.responses.Response,
+description =
+"""
+Маршрут сброса аватара указанного чата.
+Только для групповых чатов и каналов.
+""")
+async def delete_chat_avatar(
+    selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await backend.routers.chats.service.delete_chat_avatar(selected_chat, current_user, minio_client, redis_client, db)
+
+
 @chats_router.patch("/chats/id/{chat_id}/name", response_class = fastapi.responses.Response,
 description =
 """

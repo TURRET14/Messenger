@@ -3,6 +3,7 @@ pydantic
 sqlalchemy
 asyncpg
 uvicorn
+websockets
 email-validator
 redis
 minio
@@ -10,3 +11,4 @@ argon2-cffi
 python-dotenv
 urllib3
 python-multipart
+aiosmtplib

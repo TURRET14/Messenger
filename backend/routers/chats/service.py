@@ -243,6 +243,34 @@ async def update_chat_avatar(
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
+async def delete_chat_avatar(
+    selected_chat: Chat,
+    selected_user: User,
+    minio_client: MinioClient,
+    redis_client: RedisClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
+
+    await validators.validate_update_avatar_or_name(selected_chat, selected_user, db)
+
+    old_avatar_path: str = await validators.validate_get_chat_avatar(selected_chat, selected_user, db)
+
+    selected_chat.avatar_photo_path = None
+    await db.commit()
+
+    await minio_client.delete_file(MinioBucket.chats_avatars, old_avatar_path)
+
+    await redis_client.pubsub_publish_put_chat(ChatPubsubModel(
+        id = selected_chat.id,
+        chat_kind = selected_chat.chat_kind,
+        name = await backend.routers.chats.utils.get_chat_name(selected_chat, selected_user, db),
+        owner_user_id = selected_chat.owner_user_id,
+        date_and_time_created = selected_chat.date_and_time_created,
+        is_avatar_changed = True,
+        receivers = await backend.routers.chats.utils.get_chat_member_ids(selected_chat, db)))
+
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
+
+
 async def update_chat_name(
     selected_chat: Chat,
     data: ChatNameRequestModel,

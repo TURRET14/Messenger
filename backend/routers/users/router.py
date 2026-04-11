@@ -243,6 +243,19 @@ async def update_user_avatar(
     return await service.update_user_avatar(current_user, file, minio_client, db)
 
 
+@users_router.delete("/users/me/avatar", response_class = fastapi.responses.Response,
+description =
+"""
+Маршрут сброса фотографии профиля текущего пользователя.
+""")
+async def delete_user_avatar(
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await service.delete_user_avatar(current_user, minio_client, db)
+
+
 @users_router.delete("/users/me", response_class = fastapi.responses.Response,
 description =
 """

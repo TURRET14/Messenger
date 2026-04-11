@@ -3,6 +3,7 @@ import fastapi.encoders
 import minio.datatypes
 import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
+import pathlib
 from typing import Sequence
 import urllib3
 
@@ -10,6 +11,17 @@ from backend.storage import *
 from backend.routers.message_attachments.response_models import (MessageAttachmentResponseModel)
 from backend.routers.message_attachments.validation import validators
 import backend.routers.common_validators.validators as common_validators
+
+
+def get_attachment_kind(file_name: str) -> str:
+    extension = pathlib.Path(file_name).suffix.lower()
+    if extension in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        return "image"
+    if extension in {".mp4", ".webm", ".mov", ".m4v"}:
+        return "video"
+    if extension in {".mp3", ".wav", ".ogg", ".webm", ".m4a"}:
+        return "audio"
+    return "file"
 
 
 async def get_message_attachments_list(
@@ -32,7 +44,9 @@ async def get_message_attachments_list(
         attachments_list.append(MessageAttachmentResponseModel(
         id = attachment.id,
         chat_id = selected_chat.id,
-        message_id = selected_message.id))
+        message_id = selected_message.id,
+        file_name = attachment.attachment_file_path,
+        kind = get_attachment_kind(attachment.attachment_file_path)))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(attachments_list), status_code = fastapi.status.HTTP_200_OK)
 

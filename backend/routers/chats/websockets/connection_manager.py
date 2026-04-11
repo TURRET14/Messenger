@@ -264,7 +264,6 @@ class WebsocketConnectionManager:
             if len(websockets_list[selected_user_id]) == 0:
                 websockets_list.pop(selected_user_id)
 
-        await websocket.close()
 
 
 websocket_connection_manager_instance: WebsocketConnectionManager = WebsocketConnectionManager()

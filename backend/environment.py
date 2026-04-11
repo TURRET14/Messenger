@@ -11,11 +11,9 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "messenger_db")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
-
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minio")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minio_minio")
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-
 
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "redis")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -25,7 +23,6 @@ REDIS_DB = os.getenv("REDIS_DB", "0")
 MINIO_USERS_AVATARS_BUCKET = os.getenv("MINIO_USERS_AVATARS_BUCKET", "usersavatars")
 MINIO_CHATS_AVATARS_BUCKET = os.getenv("MINIO_CHATS_AVATARS_BUCKET", "chatsavatars")
 MINIO_MESSAGES_ATTACHMENTS_BUCKET = os.getenv("MINIO_MESSAGES_ATTACHMENTS_BUCKET", "messagesattachments")
-
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 BACKEND_PORT = os.getenv("BACKEND_PORT", "3000")

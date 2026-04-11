@@ -4,3 +4,5 @@ class MessageAttachmentResponseModel(pydantic.BaseModel):
     id: int = pydantic.Field()
     message_id: int = pydantic.Field()
     chat_id: int = pydantic.Field()
+    file_name: str = pydantic.Field()
+    kind: str = pydantic.Field()
