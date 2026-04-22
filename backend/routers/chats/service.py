@@ -26,6 +26,28 @@ import backend.routers.common_validators.validators as common_validators
 import backend.routers.users.service
 
 
+async def _chat_has_avatar_for_user(
+    selected_chat: Chat,
+    selected_user: User | None,
+    db: sqlalchemy.ext.asyncio.AsyncSession,
+) -> bool:
+
+    if selected_chat.chat_kind in [ChatKind.GROUP, ChatKind.CHANNEL]:
+        return selected_chat.avatar_photo_path is not None
+
+    if selected_chat.chat_kind == ChatKind.PROFILE:
+        profile_owner: User | None = ((await db.execute(
+            sqlalchemy.select(User).where(User.id == selected_chat.owner_user_id)
+        )).scalars().first())
+        return bool(profile_owner and profile_owner.avatar_photo_path)
+
+    if selected_chat.chat_kind == ChatKind.PRIVATE and selected_user is not None:
+        other_user: User | None = await backend.routers.chats.utils.get_other_chat_user(selected_chat, selected_user, db)
+        return bool(other_user and other_user.avatar_photo_path)
+
+    return False
+
+
 async def _last_root_message_preview(
     chat_id: int,
     db: sqlalchemy.ext.asyncio.AsyncSession,
@@ -133,13 +155,14 @@ async def get_all_chats(
                 sender_user_id = last_sender,
                 date_and_time_sent = last_sent,
             )
+        has_avatar: bool = await _chat_has_avatar_for_user(chat, selected_user, db)
         chats_list.append(ChatResponseModel(
         id = chat.id,
         chat_kind = chat.chat_kind,
         name = chat_name,
         owner_user_id = chat.owner_user_id,
         date_and_time_created = chat.date_and_time_created,
-        has_avatar = chat.avatar_photo_path is not None,
+        has_avatar = has_avatar,
         last_message = last_preview))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chats_list), status_code = fastapi.status.HTTP_200_OK)
@@ -154,13 +177,15 @@ async def get_chat(
 
     last_preview: ChatLastMessagePreviewModel | None = await _last_root_message_preview(selected_chat.id, db)
 
+    has_avatar: bool = await _chat_has_avatar_for_user(selected_chat, selected_user, db)
+
     chat_response = ChatResponseModel(
         id = selected_chat.id,
         chat_kind = selected_chat.chat_kind,
         name = chat_name,
         owner_user_id = selected_chat.owner_user_id,
         date_and_time_created = selected_chat.date_and_time_created,
-        has_avatar = selected_chat.avatar_photo_path is not None,
+        has_avatar = has_avatar,
         last_message = last_preview)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chat_response), status_code = fastapi.status.HTTP_200_OK)
@@ -651,7 +676,7 @@ async def get_user_profile(
     name = chat_name,
     owner_user_id = user_profile_raw.owner_user_id,
     date_and_time_created = user_profile_raw.date_and_time_created,
-    has_avatar = user_profile_raw.avatar_photo_path is not None,
+    has_avatar = await _chat_has_avatar_for_user(user_profile_raw, None, db),
     last_message = last_preview)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_profile), status_code = fastapi.status.HTTP_200_OK)

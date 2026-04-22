@@ -170,11 +170,11 @@ export function MessageBubble({
         ) : null}
       </div>
 
-      <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        {m.message_text ?? (
-          <em style={{ color: "var(--text-muted)" }}>без текста</em>
-        )}
-      </div>
+      {m.message_text ? (
+        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {m.message_text}
+        </div>
+      ) : null}
 
       {atts && atts.length > 0 ? (
         <div

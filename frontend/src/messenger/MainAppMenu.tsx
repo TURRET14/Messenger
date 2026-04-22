@@ -39,7 +39,7 @@ export function MainAppMenu({
   onRefreshUser: () => Promise<void>;
   onMediaInvalidate?: () => void;
   assetEpoch?: number;
-  onOpenChat?: (chatId: number) => void;
+  onOpenChat?: (chatId: number, options?: { ephemeral?: boolean }) => void;
 }) {
   const { alert } = useDialogs();
   const [tab, setTab] = useState<Tab>("profile");
@@ -50,11 +50,11 @@ export function MainAppMenu({
 
   const [users, setUsers] = useState<UserInList[]>([]);
   const [uDone, setUDone] = useState(false);
-  const [uSearch, setUSearch] = useState({ mode: "username" as "username" | "names", q: "", n: "", s: "", o: "" });
+  const [uSearch, setUSearch] = useState({ mode: "all" as "all" | "username" | "names", q: "", n: "", s: "", o: "" });
 
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [fDone, setFDone] = useState(false);
-  const [fSearch, setFSearch] = useState({ mode: "username" as "username" | "names", q: "", n: "", s: "", o: "" });
+  const [fSearch, setFSearch] = useState({ mode: "all" as "all" | "username" | "names", q: "", n: "", s: "", o: "" });
 
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
   const [iDone, setIDone] = useState(false);
@@ -147,7 +147,11 @@ export function MainAppMenu({
       try {
         const mult = reset ? 0 : uPageRef.current + 1;
         let batch: UserInList[] = [];
-        if (uSearch.mode === "username") {
+        if (uSearch.mode === "all") {
+          batch = await apiJson<UserInList[]>(
+            `/users?offset_multiplier=${mult}`,
+          );
+        } else if (uSearch.mode === "username") {
           const q = uSearch.q.trim();
           if (!q) {
             batch = await apiJson<UserInList[]>(
@@ -205,7 +209,11 @@ export function MainAppMenu({
       try {
         const mult = reset ? 0 : fPageRef.current + 1;
         let batch: FriendUser[] = [];
-        if (fSearch.mode === "username") {
+        if (fSearch.mode === "all") {
+          batch = await apiJson<FriendUser[]>(
+            `/users/me/friends?offset_multiplier=${mult}`,
+          );
+        } else if (fSearch.mode === "username") {
           const q = fSearch.q.trim();
           if (!q) {
             batch = await apiJson<FriendUser[]>(
@@ -354,18 +362,20 @@ export function MainAppMenu({
 
   useEffect(() => {
     if (tab !== "users") return;
-    setUSearch({ mode: "username", q: "", n: "", s: "", o: "" });
+    setUSearch({ mode: "all", q: "", n: "", s: "", o: "" });
     setUsers([]);
-    setUDone(true);
+    setUDone(false);
     uPageRef.current = 0;
+    void loadUsers(true);
   }, [tab]);
 
   useEffect(() => {
     if (tab !== "friends") return;
-    setFSearch({ mode: "username", q: "", n: "", s: "", o: "" });
+    setFSearch({ mode: "all", q: "", n: "", s: "", o: "" });
     setFriends([]);
-    setFDone(true);
+    setFDone(false);
     fPageRef.current = 0;
+    void loadFriends(true);
   }, [tab]);
 
   useEffect(() => {
@@ -498,7 +508,7 @@ export function MainAppMenu({
                     const chat = await apiJson<Chat>(
                       `/users/id/${u.id}/profile`,
                     );
-                    onOpenChat(chat.id);
+                    onOpenChat(chat.id, { ephemeral: true });
                     onClose();
                   } catch (e) {
                     void alert(
@@ -602,6 +612,13 @@ export function MainAppMenu({
           <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
             <button
               type="button"
+              className={uSearch.mode === "all" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
+              onClick={() => setUSearch((s) => ({ ...s, mode: "all" }))}
+            >
+              Все
+            </button>
+            <button
+              type="button"
               className={uSearch.mode === "username" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
               onClick={() => setUSearch((s) => ({ ...s, mode: "username" }))}
             >
@@ -615,7 +632,7 @@ export function MainAppMenu({
               По ФИО
             </button>
           </div>
-          {uSearch.mode === "username" ? (
+          {uSearch.mode === "all" ? null : uSearch.mode === "username" ? (
             <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
               <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Username</span>
               <input
@@ -690,6 +707,9 @@ export function MainAppMenu({
       {tab === "friends" ? (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+            <button type="button" className={fSearch.mode === "all" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => setFSearch((s) => ({ ...s, mode: "all" }))}>
+              Все
+            </button>
             <button type="button" className={fSearch.mode === "username" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => setFSearch((s) => ({ ...s, mode: "username" }))}>
               По username
             </button>
@@ -697,7 +717,7 @@ export function MainAppMenu({
               По ФИО
             </button>
           </div>
-          {fSearch.mode === "username" ? (
+          {fSearch.mode === "all" ? null : fSearch.mode === "username" ? (
             <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
               <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Username</span>
               <input

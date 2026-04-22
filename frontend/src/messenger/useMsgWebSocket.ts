@@ -65,14 +65,16 @@ export function useMsgWebSocket(
         ws = null;
         if (!stopped) scheduleReconnect();
       };
-      ws.onerror = () => ws?.close();
+      ws.onerror = () => {
+        /* onclose handles reconnect; avoid forced close during CONNECTING */
+      };
     }
 
     connect();
     return () => {
       stopped = true;
       cleanupTimer();
-      ws?.close();
+      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
     };
   }, [chatId, path, enabled]);
 }

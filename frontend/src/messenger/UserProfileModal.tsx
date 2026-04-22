@@ -44,7 +44,7 @@ export function UserProfileModal({
   userId: number;
   currentUser: CurrentUser;
   onClose: () => void;
-  onOpenChat: (chatId: number) => void;
+  onOpenChat: (chatId: number, options?: { ephemeral?: boolean }) => void;
   assetEpoch?: number;
 }) {
   const { alert, confirm } = useDialogs();
@@ -130,7 +130,7 @@ export function UserProfileModal({
   const openProfileChat = async () => {
     try {
       const chat = await apiJson<Chat>(`/users/id/${userId}/profile`);
-      onOpenChat(chat.id);
+      onOpenChat(chat.id, { ephemeral: true });
       onClose();
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Не удалось открыть профиль");

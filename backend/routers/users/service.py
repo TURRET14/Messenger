@@ -170,23 +170,33 @@ async def get_user(
     selected_user: User,
     is_current_user: bool) -> fastapi.responses.JSONResponse:
 
-    selected_user: CurrentUserResponseModel = CurrentUserResponseModel(
-        id =  selected_user.id,
-        username = selected_user.username,
-        name = selected_user.name,
-        surname = selected_user.surname,
-        second_name = selected_user.second_name,
-        date_of_birth = selected_user.date_of_birth,
-        gender = selected_user.gender,
-        email_address = selected_user.email_address,
-        phone_number = selected_user.phone_number,
-        about = selected_user.about,
-        date_and_time_registered = selected_user.date_and_time_registered)
+    if is_current_user:
+        user_data: CurrentUserResponseModel | UserResponseModel = CurrentUserResponseModel(
+            id = selected_user.id,
+            username = selected_user.username,
+            name = selected_user.name,
+            surname = selected_user.surname,
+            second_name = selected_user.second_name,
+            date_of_birth = selected_user.date_of_birth,
+            gender = selected_user.gender,
+            email_address = selected_user.email_address,
+            phone_number = selected_user.phone_number,
+            about = selected_user.about,
+            date_and_time_registered = selected_user.date_and_time_registered)
+    else:
+        user_data = UserResponseModel(
+            id = selected_user.id,
+            username = selected_user.username,
+            name = selected_user.name,
+            surname = selected_user.surname,
+            second_name = selected_user.second_name,
+            date_of_birth = selected_user.date_of_birth,
+            gender = selected_user.gender,
+            phone_number = selected_user.phone_number,
+            about = selected_user.about,
+            date_and_time_registered = selected_user.date_and_time_registered)
 
-    if not is_current_user:
-        selected_user: UserResponseModel = UserResponseModel.model_validate(selected_user)
-
-    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(selected_user), status_code = fastapi.status.HTTP_200_OK)
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_data), status_code = fastapi.status.HTTP_200_OK)
 
 
 async def get_user_login(

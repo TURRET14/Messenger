@@ -109,6 +109,7 @@ export function MessengerShell({
   const chatLoadRef = useRef(false);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedChatData, setSelectedChatData] = useState<Chat | null>(null);
   const [myRole, setMyRole] = useState<ChatRole | null>(null);
 
   const [commentRoot, setCommentRoot] = useState<Message | null>(null);
@@ -153,6 +154,7 @@ export function MessengerShell({
   const [assetEpoch, setAssetEpoch] = useState(0);
   const bumpAssets = useCallback(() => setAssetEpoch((x) => x + 1), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [privatePeerByChat, setPrivatePeerByChat] = useState<Record<number, number>>({});
 
   const readMarkedRef = useRef(new Set<number>());
 
@@ -218,27 +220,31 @@ export function MessengerShell({
     void refreshChats();
   }, []);
 
-  const selectedChat = useMemo(
-    () => chats.find((c) => c.id === selectedId) ?? null,
-    [chats, selectedId],
-  );
+  const selectedChat = useMemo(() => {
+    const fromList = chats.find((c) => c.id === selectedId) ?? null;
+    if (fromList) return fromList;
+    return selectedChatData && selectedChatData.id === selectedId ? selectedChatData : null;
+  }, [chats, selectedId, selectedChatData]);
 
   const sortedChats = useMemo(() => {
     const ts = (c: Chat) =>
       c.last_message?.date_and_time_sent
         ? new Date(c.last_message.date_and_time_sent).getTime()
         : new Date(c.date_and_time_created).getTime();
-    return [...chats].sort((a, b) => ts(a) - ts(b));
+    return [...chats].sort((a, b) => ts(b) - ts(a));
   }, [chats]);
 
   const openChatById = useCallback(
-    async (chatId: number) => {
+    async (chatId: number, options?: { ephemeral?: boolean }) => {
       try {
         const fresh = await apiJson<Chat>(`/chats/id/${chatId}`);
-        setChats((prev) => {
-          const rest = prev.filter((c) => c.id !== chatId);
-          return [...rest, fresh];
-        });
+        if (!options?.ephemeral) {
+          setChats((prev) => {
+            const rest = prev.filter((c) => c.id !== chatId);
+            return [...rest, fresh];
+          });
+        }
+        setSelectedChatData(fresh);
         setSelectedId(chatId);
         setCommentRoot(null);
         setProfileUserId(null);
@@ -249,12 +255,38 @@ export function MessengerShell({
     [alert],
   );
 
+  const ensurePrivatePeer = useCallback(
+    async (chatId: number) => {
+      if (privatePeerByChat[chatId]) return privatePeerByChat[chatId];
+      const mem = await apiJson<MembershipRow[]>(
+        `/chats/id/${chatId}/memberships?offset_multiplier=0`,
+      );
+      const peer = mem.find((m) => m.chat_user_id !== currentUser.id)?.chat_user_id;
+      if (peer) {
+        setPrivatePeerByChat((p) => ({ ...p, [chatId]: peer }));
+        return peer;
+      }
+      return null;
+    },
+    [privatePeerByChat, currentUser.id],
+  );
+
   useEffect(() => {
     setSearchMode(false);
     setSearchHitsChat([]);
     searchChatPageRef.current = 0;
     setSearchChatDone(false);
   }, [selectedId, commentRoot?.id]);
+
+  useEffect(() => {
+    if (!selectedId) setSelectedChatData(null);
+  }, [selectedId]);
+
+  useEffect(() => {
+    for (const c of chats) {
+      if (c.chat_kind === "PRIVATE") void ensurePrivatePeer(c.id);
+    }
+  }, [chats, ensurePrivatePeer]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -264,6 +296,7 @@ export function MessengerShell({
     void (async () => {
       try {
         const fresh = await apiJson<Chat>(`/chats/id/${selectedId}`);
+        setSelectedChatData((prev) => (prev?.id === fresh.id ? { ...prev, ...fresh } : prev));
         setChats((prev) =>
           prev.map((c) =>
             c.id === selectedId
@@ -410,10 +443,22 @@ export function MessengerShell({
     (selectedChat.chat_kind === "PRIVATE" ||
       selectedChat.chat_kind === "GROUP");
 
-  useMsgWebSocket(selectedId, parentKey, "/messages/post", onWsMsg, !searchMode);
-  useMsgWebSocket(selectedId, parentKey, "/messages/put", onWsMsg, !searchMode);
-  useMsgWebSocket(selectedId, parentKey, "/messages/delete", onWsDel, !searchMode);
+  useMsgWebSocket(selectedId, parentKey, "/messages/post", onWsMsg, true);
+  useMsgWebSocket(selectedId, parentKey, "/messages/put", onWsMsg, true);
+  useMsgWebSocket(selectedId, parentKey, "/messages/delete", onWsDel, true);
   useMsgWebSocket(selectedId, null, "/messages/read", onWsRead, readWsEnabled);
+
+  const chatAvatarSrc = (c: Chat): string | null => {
+    if (!c.has_avatar) return null;
+    if (c.chat_kind === "PROFILE" && c.owner_user_id != null) {
+      return userAvatarUrl(c.owner_user_id, assetEpoch);
+    }
+    if (c.chat_kind === "PRIVATE") {
+      const peer = privatePeerByChat[c.id];
+      return peer ? userAvatarUrl(peer, assetEpoch) : null;
+    }
+    return chatAvatarUrl(c.id, assetEpoch);
+  };
 
   const isOwner = selectedChat?.owner_user_id === currentUser.id;
   const isAdmin = myRole === "ADMIN" || isOwner;
@@ -720,7 +765,10 @@ export function MessengerShell({
             type="button"
             className="ui-btn ui-btn--ghost"
             aria-label="Назад к списку"
-            onClick={() => setSelectedId(null)}
+            onClick={() => {
+              setSelectedId(null);
+              setSelectedChatData(null);
+            }}
           >
             <IconChevronLeft />
           </button>
@@ -784,6 +832,7 @@ export function MessengerShell({
                 type="button"
                 onClick={() => {
                   setSelectedId(c.id);
+                  setSelectedChatData(c);
                   setCommentRoot(null);
                   setEditing(null);
                   setReplyTo(null);
@@ -813,11 +862,7 @@ export function MessengerShell({
                   alignItems: "center",
                 }}
               >
-                <Avatar
-                  src={c.has_avatar ? chatAvatarUrl(c.id, assetEpoch) : null}
-                  label={chatLabel(c)}
-                  size={48}
-                />
+                <Avatar src={chatAvatarSrc(c)} label={chatLabel(c)} size={48} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 700 }}>{chatLabel(c)}</div>
                   <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
@@ -901,15 +946,7 @@ export function MessengerShell({
                     Инфо
                   </button>
                 ) : null}
-                <Avatar
-                  src={
-                    selectedChat.has_avatar
-                      ? chatAvatarUrl(selectedChat.id, assetEpoch)
-                      : null
-                  }
-                  label={chatLabel(selectedChat)}
-                  size={44}
-                />
+                <Avatar src={chatAvatarSrc(selectedChat)} label={chatLabel(selectedChat)} size={44} />
                 <div
                   style={{
                     flex: "0 1 auto",
@@ -1170,9 +1207,10 @@ export function MessengerShell({
                     ) : null}
                     <PickedFilesStrip
                       files={files}
-                      onRemove={(i) =>
-                        setFiles((prev) => prev.filter((_, j) => j !== i))
-                      }
+                      onRemove={(i) => {
+                        setFiles((prev) => prev.filter((_, j) => j !== i));
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
                     />
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                       {!editing ? (
@@ -1195,6 +1233,9 @@ export function MessengerShell({
                             type="file"
                             multiple
                             className="sr-only"
+                            onClick={(e) => {
+                              (e.currentTarget as HTMLInputElement).value = "";
+                            }}
                             onChange={(e) => {
                               const fl = e.target.files;
                               if (fl?.length)
@@ -1342,9 +1383,9 @@ export function MessengerShell({
           assetEpoch={assetEpoch}
           onClose={() => setMenuOpen(false)}
           onOpenProfile={(id) => setProfileUserId(id)}
-          onOpenChat={(id) => {
+          onOpenChat={(id, options) => {
             setMenuOpen(false);
-            void openChatById(id);
+            void openChatById(id, options);
           }}
           onRefreshUser={async () => {
             try {
@@ -1365,8 +1406,8 @@ export function MessengerShell({
           currentUser={currentUser}
           assetEpoch={assetEpoch}
           onClose={() => setProfileUserId(null)}
-          onOpenChat={(id) => {
-            void openChatById(id);
+          onOpenChat={(id, options) => {
+            void openChatById(id, options);
           }}
         />
       ) : null}

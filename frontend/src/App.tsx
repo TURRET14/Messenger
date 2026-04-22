@@ -320,17 +320,17 @@ function AuthShell({
               />
               <input
                 style={input}
-                value={regName}
-                onChange={(e) => setRegName(e.target.value)}
-                placeholder="Имя"
-                required
+                value={regSurname}
+                onChange={(e) => setRegSurname(e.target.value)}
+                placeholder="Фамилия (необязательно)"
                 maxLength={100}
               />
               <input
                 style={input}
-                value={regSurname}
-                onChange={(e) => setRegSurname(e.target.value)}
-                placeholder="Фамилия (необязательно)"
+                value={regName}
+                onChange={(e) => setRegName(e.target.value)}
+                placeholder="Имя"
+                required
                 maxLength={100}
               />
               <input

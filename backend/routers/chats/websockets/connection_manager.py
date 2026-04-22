@@ -37,7 +37,8 @@ class WebsocketConnectionManager:
     chat_memberships_put_websockets: dict[int, dict[int, set[fastapi.WebSocket]]] = {}
     chat_memberships_delete_websockets: dict[int, dict[int, set[fastapi.WebSocket]]] = {}
 
-    chat_last_message_update_websockets: dict[int, dict[int, set[fastapi.WebSocket]]] = {}
+    # dict[User.id, set[fastapi.WebSocket]]
+    chat_last_message_update_websockets: dict[int, set[fastapi.WebSocket]] = {}
 
     async def chats_post_update(
         self,
@@ -153,7 +154,7 @@ class WebsocketConnectionManager:
                     if selected_message and receiver_user:
                         chat_message_data.message.is_read = await backend.routers.messages.utils.is_message_read(selected_message, receiver_user, db)
 
-            for websocket in self.chat_last_message_update_websockets.get(receiver_id, dict()).get(chat_message_data.chat_id, set()):
+            for websocket in self.chat_last_message_update_websockets.get(receiver_id, set()):
                 last_message_model: LastMessageResponseModel = LastMessageResponseModel(message = None)
                 if chat_message_data.message:
                     last_message_model.message = MessageResponseModel(
@@ -215,12 +216,14 @@ class WebsocketConnectionManager:
 
             websockets_list[selected_user_id].add(websocket)
 
-        elif websocket_type in [WebsocketType.CHAT_MEMBERSHIP_POST, WebsocketType.CHAT_MEMBERSHIP_PUT, WebsocketType.CHAT_MEMBERSHIP_DELETE, WebsocketType.CHAT_LAST_MESSAGE_UPDATE] and selected_chat_id is not None:
+        elif websocket_type == WebsocketType.CHAT_LAST_MESSAGE_UPDATE:
+            if not self.chat_last_message_update_websockets.get(selected_user_id, None):
+                self.chat_last_message_update_websockets[selected_user_id] = set()
+            self.chat_last_message_update_websockets[selected_user_id].add(websocket)
+
+        elif websocket_type in [WebsocketType.CHAT_MEMBERSHIP_POST, WebsocketType.CHAT_MEMBERSHIP_PUT, WebsocketType.CHAT_MEMBERSHIP_DELETE] and selected_chat_id is not None:
             websockets_list: dict[int, dict[int, set[fastapi.WebSocket]]]
-            if websocket_type == WebsocketType.CHAT_LAST_MESSAGE_UPDATE:
-                websockets_list = self.chat_last_message_update_websockets
-            else:
-                websockets_list = await self.get_memberships_websocket_dict(websocket_type)
+            websockets_list = await self.get_memberships_websocket_dict(websocket_type)
 
             if not websockets_list.get(selected_user_id, None):
                 websockets_list[selected_user_id] = dict()
@@ -249,12 +252,16 @@ class WebsocketConnectionManager:
             if len(websockets_list[selected_user_id]) == 0:
                 websockets_list.pop(selected_user_id)
 
-        elif websocket_type in [WebsocketType.CHAT_MEMBERSHIP_POST, WebsocketType.CHAT_MEMBERSHIP_PUT, WebsocketType.CHAT_MEMBERSHIP_DELETE, WebsocketType.CHAT_LAST_MESSAGE_UPDATE] and selected_chat_id is not None:
+        elif websocket_type == WebsocketType.CHAT_LAST_MESSAGE_UPDATE:
+            if selected_user_id not in self.chat_last_message_update_websockets:
+                return
+            self.chat_last_message_update_websockets[selected_user_id].discard(websocket)
+            if len(self.chat_last_message_update_websockets[selected_user_id]) == 0:
+                self.chat_last_message_update_websockets.pop(selected_user_id)
+
+        elif websocket_type in [WebsocketType.CHAT_MEMBERSHIP_POST, WebsocketType.CHAT_MEMBERSHIP_PUT, WebsocketType.CHAT_MEMBERSHIP_DELETE] and selected_chat_id is not None:
             websockets_list: dict[int, dict[int, set[fastapi.WebSocket]]]
-            if websocket_type == WebsocketType.CHAT_LAST_MESSAGE_UPDATE:
-                websockets_list = self.chat_last_message_update_websockets
-            else:
-                websockets_list = await self.get_memberships_websocket_dict(websocket_type)
+            websockets_list = await self.get_memberships_websocket_dict(websocket_type)
 
             if selected_user_id not in websockets_list:
                 return
@@ -268,7 +275,6 @@ class WebsocketConnectionManager:
             if len(websockets_list[selected_user_id]) == 0:
                 websockets_list.pop(selected_user_id)
 
-        await websocket.close()
 
 
 websocket_connection_manager_instance: WebsocketConnectionManager = WebsocketConnectionManager()

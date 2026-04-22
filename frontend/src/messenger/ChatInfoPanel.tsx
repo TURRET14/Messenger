@@ -3,6 +3,7 @@ import { ApiError, apiFetch, apiJson } from "../api/client";
 import type { Chat, ChatRole, UserInList } from "../api/types";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
 import { useDialogs } from "../context/DialogsContext";
+import { useBackendSocket } from "../hooks/useBackendSocket";
 import { avatarLetterFromUser, userListLabel } from "./userFormat";
 
 const PAGE = 50;
@@ -45,6 +46,7 @@ export function ChatInfoPanel({
   const [friends, setFriends] = useState<UserInList[]>([]);
   const [fOff, setFOff] = useState(0);
   const [fDone, setFDone] = useState(false);
+  const [privatePeerId, setPrivatePeerId] = useState<number | null>(null);
 
   const myMembership = members.find((m) => m.chat_user_id === currentUserId);
   const role = myMembership?.chat_role;
@@ -129,8 +131,26 @@ export function ChatInfoPanel({
   );
 
   useEffect(() => {
-    if (isGroupOrChannel && isAdmin) void loadFriends(true);
-  }, [isGroupOrChannel, isAdmin, chat.id]);
+    if (isGroupOrChannel) void loadFriends(true);
+  }, [isGroupOrChannel, chat.id]);
+
+  useEffect(() => {
+    if (chat.chat_kind !== "PRIVATE") {
+      setPrivatePeerId(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const mem = await apiJson<MembershipRow[]>(
+          `/chats/id/${chat.id}/memberships?offset_multiplier=0`,
+        );
+        const peer = mem.find((m) => m.chat_user_id !== currentUserId)?.chat_user_id ?? null;
+        setPrivatePeerId(peer);
+      } catch {
+        setPrivatePeerId(null);
+      }
+    })();
+  }, [chat.id, chat.chat_kind, currentUserId]);
 
   const canRemoveMember = (target: MembershipRow) => {
     if (!isGroupOrChannel || !isAdmin) return false;
@@ -139,6 +159,18 @@ export function ChatInfoPanel({
     if (isOwner) return true;
     if (role === "ADMIN") return target.chat_role === "USER";
     return false;
+  };
+
+  const canPromoteToAdmin = (target: MembershipRow) => {
+    if (!isGroupOrChannel || !isOwner) return false;
+    if (target.chat_user_id === currentUserId) return false;
+    return target.chat_role === "USER";
+  };
+
+  const canDemoteAdmin = (target: MembershipRow) => {
+    if (!isGroupOrChannel || !isOwner) return false;
+    if (target.chat_user_id === currentUserId) return false;
+    return target.chat_role === "ADMIN";
   };
 
   const handleLeave = async () => {
@@ -243,7 +275,50 @@ export function ChatInfoPanel({
     }
   };
 
+  const makeAdmin = async (userId: number) => {
+    try {
+      await apiFetch(`/chats/id/${chat.id}/admins`, {
+        method: "POST",
+        body: JSON.stringify({ id: userId }),
+      });
+      await loadMembers(true);
+      await onRefreshChats();
+    } catch (e) {
+      void alert(e instanceof ApiError ? e.message : "Не удалось назначить");
+    }
+  };
+
+  const dropAdmin = async (userId: number) => {
+    try {
+      await apiFetch(`/chats/id/${chat.id}/admins/id/${userId}`, {
+        method: "DELETE",
+      });
+      await loadMembers(true);
+      await onRefreshChats();
+    } catch (e) {
+      void alert(e instanceof ApiError ? e.message : "Не удалось снять роль");
+    }
+  };
+
+  useBackendSocket(`/chats/${chat.id}/memberships/post`, true, () => {
+    void loadMembers(true);
+  });
+  useBackendSocket(`/chats/${chat.id}/memberships/put`, true, () => {
+    void loadMembers(true);
+  });
+  useBackendSocket(`/chats/${chat.id}/memberships/delete`, true, () => {
+    void loadMembers(true);
+  });
+
   const chatTitle = chat.name || "Чат";
+  const chatAvatarSrc =
+    chat.chat_kind === "PROFILE" && chat.owner_user_id != null
+      ? userAvatarUrl(chat.owner_user_id, assetEpoch)
+      : chat.chat_kind === "PRIVATE" && privatePeerId != null
+        ? userAvatarUrl(privatePeerId, assetEpoch)
+        : chat.has_avatar
+          ? chatAvatarUrl(chat.id, assetEpoch)
+          : null;
 
   const shell =
     variant === "sheet"
@@ -275,11 +350,7 @@ export function ChatInfoPanel({
     >
       <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-          <Avatar
-            src={chat.has_avatar ? chatAvatarUrl(chat.id, assetEpoch) : null}
-            label={chatTitle}
-            size={72}
-          />
+          <Avatar src={chatAvatarSrc} label={chatTitle} size={72} />
           <div style={{ textAlign: "center", fontWeight: 700 }}>{chatTitle}</div>
           <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
             {chat.chat_kind}
@@ -287,7 +358,7 @@ export function ChatInfoPanel({
         </div>
       </div>
 
-      {isGroupOrChannel && isAdmin ? (
+      {isGroupOrChannel ? (
         <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
           <label className="sr-only" htmlFor="cn">Название</label>
           <input
@@ -391,7 +462,8 @@ export function ChatInfoPanel({
               key={m.id}
               style={{
                 display: "flex",
-                alignItems: "center",
+                flexDirection: "column",
+                alignItems: "stretch",
                 gap: 8,
                 marginBottom: 10,
                 padding: 8,
@@ -429,14 +501,36 @@ export function ChatInfoPanel({
                   </div>
                 </div>
               </button>
-              {canRemoveMember(m) ? (
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--ghost"
-                  onClick={() => void removeMember(m)}
-                >
-                  Удалить
-                </button>
+              {canRemoveMember(m) || canPromoteToAdmin(m) || canDemoteAdmin(m) ? (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {canPromoteToAdmin(m) ? (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--ghost"
+                      onClick={() => void makeAdmin(m.chat_user_id)}
+                    >
+                      + Админ
+                    </button>
+                  ) : null}
+                  {canDemoteAdmin(m) ? (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--ghost"
+                      onClick={() => void dropAdmin(m.chat_user_id)}
+                    >
+                      Снять админа
+                    </button>
+                  ) : null}
+                  {canRemoveMember(m) ? (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--ghost"
+                      onClick={() => void removeMember(m)}
+                    >
+                      Удалить
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           );
