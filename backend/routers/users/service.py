@@ -241,7 +241,11 @@ async def update_user_email(
     await checks.check_is_email_address_not_taken(email_data.email_address, db)
 
     code: str = await redis_client.create_change_email_request(selected_user.id, email_data)
-    await EmailService.send_email_confirmation(email_data.email_address, code)
+    try:
+        await EmailService.send_email_confirmation(email_data.email_address, code)
+    except fastapi.exceptions.HTTPException:
+        await redis_client.delete_change_email_request(code)
+        raise
 
     return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
@@ -292,8 +296,6 @@ async def update_user_password(
     user_password_data: UserUpdatePasswordRequestModel,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
-
-    await validators.validate_update_user_password(selected_user.password, user_password_data.old_password)
 
     selected_user.password = await backend.routers.security.hash_password(user_password_data.new_password)
 

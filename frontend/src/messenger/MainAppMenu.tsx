@@ -17,7 +17,9 @@ import {
   validateCode,
   validateEmailAddress,
   validateImageFile,
+  validateLogin,
   validateNamesSearch,
+  validatePassword,
   validateProfileForm,
   validateUsernameSearch,
 } from "../validation";
@@ -61,6 +63,15 @@ export function MainAppMenu({
   const [emailConfirmOpen, setEmailConfirmOpen] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [currentLogin, setCurrentLogin] = useState("");
+  const [loginNew, setLoginNew] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginSaving, setLoginSaving] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordRepeat, setNewPasswordRepeat] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSaving, setPasswordSaving] = useState(false);
 
   const [users, setUsers] = useState<UserInList[]>([]);
   const [uDone, setUDone] = useState(false);
@@ -94,6 +105,27 @@ export function MainAppMenu({
   useEffect(() => {
     setU(currentUser);
   }, [currentUser]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await apiJson<{ login: string }>("/users/me/login");
+        if (!cancelled) {
+          setCurrentLogin(data.login);
+          setLoginNew(data.login);
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentLogin("");
+          setLoginNew("");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id]);
 
   const saveProfile = async () => {
     const profilePayload = {
@@ -146,8 +178,13 @@ export function MainAppMenu({
       setEmailError(validationError);
       return;
     }
+    if (emailNew.trim() === u.email_address) {
+      setEmailError("Новая почта совпадает с текущей.");
+      return;
+    }
 
     setEmailError(null);
+    setEmailSending(true);
     try {
       await apiFetch("/users/me/email", {
         method: "PATCH",
@@ -158,6 +195,71 @@ export function MainAppMenu({
       void alert("Код отправлен на новую почту");
     } catch (e) {
       setEmailError(e instanceof ApiError ? e.message : "Не удалось отправить код");
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
+  const updateLogin = async () => {
+    const validationError = validateLogin(loginNew, "Новый логин");
+    if (validationError) {
+      setLoginError(validationError);
+      return;
+    }
+    if (loginNew.trim() === currentLogin) {
+      setLoginError("Новый логин совпадает с текущим.");
+      return;
+    }
+
+    setLoginError(null);
+    setLoginSaving(true);
+    try {
+      await apiFetch("/users/me/login", {
+        method: "PUT",
+        body: JSON.stringify({ login: loginNew.trim() }),
+      });
+      setCurrentLogin(loginNew.trim());
+      void alert("Логин обновлён");
+    } catch (e) {
+      setLoginError(e instanceof ApiError ? e.message : "Не удалось обновить логин");
+    } finally {
+      setLoginSaving(false);
+    }
+  };
+
+  const updatePassword = async () => {
+    const newPasswordError = validatePassword(newPassword, "Новый пароль");
+    const repeatPasswordError = validatePassword(
+      newPasswordRepeat,
+      "Повтор нового пароля",
+    );
+    const validationError =
+      newPasswordError ?? repeatPasswordError;
+    if (validationError) {
+      setPasswordError(validationError);
+      return;
+    }
+    if (newPassword !== newPasswordRepeat) {
+      setPasswordError("Новый пароль и повтор пароля не совпадают.");
+      return;
+    }
+
+    setPasswordError(null);
+    setPasswordSaving(true);
+    try {
+      await apiFetch("/users/me/password", {
+        method: "PUT",
+        body: JSON.stringify({
+          new_password: newPassword,
+        }),
+      });
+      setNewPassword("");
+      setNewPasswordRepeat("");
+      void alert("Пароль обновлён");
+    } catch (e) {
+      setPasswordError(e instanceof ApiError ? e.message : "Не удалось обновить пароль");
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
@@ -690,9 +792,101 @@ export function MainAppMenu({
               <option value="FEMALE">Женский</option>
             </select>
           </label>
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--bg-muted)",
+              wordBreak: "break-word",
+            }}
+          >
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 4 }}>
+              Дата регистрации
+            </div>
+            <div>{new Date(u.date_and_time_registered).toLocaleString()}</div>
+          </div>
           <ValidationError message={profileError} />
           <button type="button" className="ui-btn ui-btn--primary" onClick={() => void saveProfile()}>
             Сохранить профиль
+          </button>
+          <hr style={{ borderColor: "var(--border)" }} />
+          <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена логина</h3>
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--bg-muted)",
+              wordBreak: "break-word",
+            }}
+          >
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 4 }}>
+              Текущий логин
+            </div>
+            <div>{currentLogin || "Загрузка..."}</div>
+          </div>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Новый логин</span>
+            <input
+              className="ui-input"
+              value={loginNew}
+              onChange={(e) => {
+                setLoginNew(e.target.value);
+                setLoginError(null);
+              }}
+              maxLength={100}
+            />
+          </label>
+          <ValidationError message={loginError} />
+          <button
+            type="button"
+            className="ui-btn ui-btn--primary"
+            disabled={loginSaving}
+            onClick={() => void updateLogin()}
+          >
+            {loginSaving ? "Сохранение..." : "Сменить логин"}
+          </button>
+          <hr style={{ borderColor: "var(--border)" }} />
+          <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена пароля</h3>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Новый пароль</span>
+            <input
+              className="ui-input"
+              type="password"
+              name={`profile-new-password-${u.id}`}
+              value={newPassword}
+              onChange={(e) => {
+                setNewPassword(e.target.value);
+                setPasswordError(null);
+              }}
+              maxLength={100}
+              autoComplete="new-password"
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Повтор нового пароля</span>
+            <input
+              className="ui-input"
+              type="password"
+              name={`profile-repeat-password-${u.id}`}
+              value={newPasswordRepeat}
+              onChange={(e) => {
+                setNewPasswordRepeat(e.target.value);
+                setPasswordError(null);
+              }}
+              maxLength={100}
+              autoComplete="new-password"
+            />
+          </label>
+          <ValidationError message={passwordError} />
+          <button
+            type="button"
+            className="ui-btn ui-btn--primary"
+            disabled={passwordSaving}
+            onClick={() => void updatePassword()}
+          >
+            {passwordSaving ? "Сохранение..." : "Сменить пароль"}
           </button>
           <hr style={{ borderColor: "var(--border)" }} />
           <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена почты</h3>
@@ -722,8 +916,13 @@ export function MainAppMenu({
               maxLength={254}
             />
           </label>
-          <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void requestEmailChange()}>
-            Отправить код на новую почту
+          <button
+            type="button"
+            className="ui-btn ui-btn--primary"
+            disabled={emailSending}
+            onClick={() => void requestEmailChange()}
+          >
+            {emailSending ? "Отправка..." : "Отправить код на новую почту"}
           </button>
           <ValidationError message={emailError} />
           <hr style={{ borderColor: "var(--border)" }} />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
 import type { Chat, ChatRole, UserInList } from "../api/types";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
+import { ActionMenu, type ActionMenuItem } from "../components/ui/ActionMenu";
 import { ModalChrome } from "../components/ui/ModalChrome";
 import { ValidationError } from "../components/ui/ValidationError";
 import { useDialogs } from "../context/DialogsContext";
@@ -492,82 +493,90 @@ export function ChatInfoPanel({
           const label = u
             ? userListLabel(u)
             : `Пользователь #${m.chat_user_id}`;
+          const memberActions: ActionMenuItem[] = [
+            {
+              label: "Открыть профиль",
+              onSelect: () => onOpenProfile(m.chat_user_id),
+            },
+            ...(canPromoteToAdmin(m)
+              ? [
+                  {
+                    label: "Назначить администратором",
+                    onSelect: () => void makeAdmin(m.chat_user_id),
+                  },
+                ]
+              : []),
+            ...(canDemoteAdmin(m)
+              ? [
+                  {
+                    label: "Снять администратора",
+                    onSelect: () => void dropAdmin(m.chat_user_id),
+                  },
+                ]
+              : []),
+            ...(canRemoveMember(m)
+              ? [
+                  {
+                    label: "Удалить из чата",
+                    onSelect: () => void removeMember(m),
+                    danger: true,
+                  },
+                ]
+              : []),
+          ];
           return (
-            <div
+            <ActionMenu
               key={m.id}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "stretch",
-                gap: 8,
-                marginBottom: 10,
-                padding: 8,
-                borderRadius: 10,
-                border: "1px solid var(--border)",
-                background: "var(--bg)",
-              }}
+              items={memberActions}
+              label="Действия с участником"
             >
-              <button
-                type="button"
-                onClick={() => onOpenProfile(m.chat_user_id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  flex: 1,
-                  minWidth: 0,
-                  border: "none",
-                  background: "none",
-                  padding: 0,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  color: "inherit",
-                }}
-              >
-                <Avatar
-                  src={userAvatarUrl(m.chat_user_id, assetEpoch)}
-                  label={u ? avatarLetterFromUser(u) : `#${m.chat_user_id}`}
-                  size={36}
-                />
-                <div>
-                  <div style={{ fontSize: "0.9rem" }}>{label}</div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                    {chatRoleLabel(m.chat_role)}
-                  </div>
+              {({ button, onContextMenu }) => (
+                <div
+                  onContextMenu={onContextMenu}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 10,
+                    padding: 8,
+                    borderRadius: 10,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onOpenProfile(m.chat_user_id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flex: 1,
+                      minWidth: 0,
+                      border: "none",
+                      background: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      color: "inherit",
+                    }}
+                  >
+                    <Avatar
+                      src={userAvatarUrl(m.chat_user_id, assetEpoch)}
+                      label={u ? avatarLetterFromUser(u) : `#${m.chat_user_id}`}
+                      size={36}
+                    />
+                    <div>
+                      <div style={{ fontSize: "0.9rem" }}>{label}</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        {chatRoleLabel(m.chat_role)}
+                      </div>
+                    </div>
+                  </button>
+                  {button}
                 </div>
-              </button>
-              {canRemoveMember(m) || canPromoteToAdmin(m) || canDemoteAdmin(m) ? (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  {canPromoteToAdmin(m) ? (
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn--ghost"
-                      onClick={() => void makeAdmin(m.chat_user_id)}
-                    >
-                      Назначить администратором
-                    </button>
-                  ) : null}
-                  {canDemoteAdmin(m) ? (
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn--ghost"
-                      onClick={() => void dropAdmin(m.chat_user_id)}
-                    >
-                      Снять администратора
-                    </button>
-                  ) : null}
-                  {canRemoveMember(m) ? (
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn--ghost"
-                      onClick={() => void removeMember(m)}
-                    >
-                      Удалить
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+              )}
+            </ActionMenu>
           );
         })}
       </div>

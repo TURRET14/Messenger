@@ -289,6 +289,29 @@ export function IconMenu({ size = 20, title, className }: IconProps) {
   );
 }
 
+export function IconMoreVertical({ size = 20, title, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={base}
+      className={className}
+      aria-hidden={title ? undefined : true}
+    >
+      {title ? <title>{title}</title> : null}
+      <circle cx="12" cy="5" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="12" cy="19" r="1" />
+    </svg>
+  );
+}
+
 export function IconChevronLeft({ size = 20, title, className }: IconProps) {
   return (
     <svg
@@ -304,6 +327,27 @@ export function IconChevronLeft({ size = 20, title, className }: IconProps) {
     >
       {title ? <title>{title}</title> : null}
       <polyline points="15 18 9 12 15 6" />
+    </svg>
+  );
+}
+
+export function IconChevronDown({ size = 20, title, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={base}
+      className={className}
+      aria-hidden={title ? undefined : true}
+    >
+      {title ? <title>{title}</title> : null}
+      <polyline points="6 9 12 15 18 9" />
     </svg>
   );
 }

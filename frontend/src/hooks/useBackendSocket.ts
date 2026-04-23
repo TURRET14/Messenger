@@ -32,14 +32,22 @@ export function useBackendSocket(
 
     const scheduleReconnect = () => {
       if (stopped) return;
+      if (attempt >= 6) return;
       cleanupTimer();
-      const delay = Math.min(8000, 400 + attempt * 500);
+      const delay = Math.min(30000, 800 * 2 ** attempt);
       attempt += 1;
       timer = setTimeout(connect, delay);
     };
 
     function connect() {
       if (stopped) return;
+      if (
+        ws &&
+        (ws.readyState === WebSocket.CONNECTING ||
+          ws.readyState === WebSocket.OPEN)
+      ) {
+        return;
+      }
       cleanupTimer();
       try {
         ws = new WebSocket(url);
@@ -66,7 +74,9 @@ export function useBackendSocket(
       };
 
       ws.onerror = () => {
-        /* onclose handles reconnect; avoid closing a CONNECTING socket manually. */
+        if (!stopped && ws && ws.readyState !== WebSocket.CLOSED) {
+          ws.close();
+        }
       };
     }
 
@@ -75,7 +85,13 @@ export function useBackendSocket(
     return () => {
       stopped = true;
       cleanupTimer();
-      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      if (
+        ws &&
+        (ws.readyState === WebSocket.CONNECTING ||
+          ws.readyState === WebSocket.OPEN)
+      ) {
+        ws.close();
+      }
     };
   }, [path, enabled]);
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
 import type { Message } from "../api/types";
 import { IconPaperclip, IconX } from "../components/Icons";
+import { ActionMenu, type ActionMenuItem } from "../components/ui/ActionMenu";
 import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
 import { useDialogs } from "../context/DialogsContext";
 import { previewKind } from "./attachmentUtils";
@@ -109,19 +110,35 @@ export function MessageBubble({
   const edited =
     m.date_and_time_edited &&
     m.date_and_time_edited !== m.date_and_time_sent;
+  const actionItems: ActionMenuItem[] =
+    interactive === false
+      ? []
+      : [
+          ...(onReply ? [{ label: "Ответить", onSelect: onReply }] : []),
+          ...(onEdit ? [{ label: "Изменить", onSelect: onEdit }] : []),
+          ...(canOpenComments && onOpenComments
+            ? [{ label: "Комментарии", onSelect: onOpenComments }]
+            : []),
+          ...(onDelete
+            ? [{ label: "Удалить", onSelect: onDelete, danger: true }]
+            : []),
+        ];
 
   return (
-    <article
-      style={{
-        alignSelf: mine ? "flex-end" : "flex-start",
-        maxWidth: "min(560px, 94%)",
-        padding: "10px 14px",
-        borderRadius: 14,
-        background: "var(--bg-elevated)",
-        border: "1px solid var(--border)",
-        boxShadow: "0 1px 2px var(--shadow)",
-      }}
-    >
+    <ActionMenu items={actionItems} label="Действия с сообщением">
+      {({ button, onContextMenu }) => (
+        <article
+          onContextMenu={onContextMenu}
+          style={{
+            alignSelf: mine ? "flex-end" : "flex-start",
+            maxWidth: "min(560px, 94%)",
+            padding: "10px 14px",
+            borderRadius: 14,
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border)",
+            boxShadow: "0 1px 2px var(--shadow)",
+          }}
+        >
       {m.reply_message_id && (replySnippet != null || replySenderLabel) ? (
         <div
           style={{
@@ -173,6 +190,7 @@ export function MessageBubble({
         {mine && showReadReceipt && readLabel ? (
           <span style={{ marginLeft: "auto", fontWeight: 600 }}>{readLabel}</span>
         ) : null}
+        {actionItems.length > 0 ? button : null}
       </div>
 
       {m.message_text ? (
@@ -201,42 +219,9 @@ export function MessageBubble({
         </div>
       ) : null}
 
-      {interactive !== false ? (
-        <div
-          style={{
-            marginTop: 8,
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 6,
-          }}
-        >
-          {onReply ? (
-            <button type="button" className="ui-btn ui-btn--ghost" onClick={onReply}>
-              Ответить
-            </button>
-          ) : null}
-          {onEdit ? (
-            <button type="button" className="ui-btn ui-btn--ghost" onClick={onEdit}>
-              Изменить
-            </button>
-          ) : null}
-          {onDelete ? (
-            <button type="button" className="ui-btn ui-btn--ghost" onClick={onDelete}>
-              Удалить
-            </button>
-          ) : null}
-          {canOpenComments && onOpenComments ? (
-            <button
-              type="button"
-              className="ui-btn ui-btn--ghost"
-              onClick={onOpenComments}
-            >
-              Комментарии
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </article>
+        </article>
+      )}
+    </ActionMenu>
   );
 }
 

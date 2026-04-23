@@ -56,7 +56,6 @@ class UserUpdateLoginRequestModel(pydantic.BaseModel):
 
 
 class UserUpdatePasswordRequestModel(pydantic.BaseModel):
-    old_password: str = pydantic.Field(max_length = 100)
     new_password: str = pydantic.Field(min_length = 5, max_length = 100)
 
 

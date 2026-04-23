@@ -42,14 +42,22 @@ export function useMsgWebSocket(
 
     const scheduleReconnect = () => {
       if (stopped) return;
+      if (attempt >= 6) return;
       cleanupTimer();
-      const delay = Math.min(8000, 400 + attempt * 500);
+      const delay = Math.min(30000, 800 * 2 ** attempt);
       attempt += 1;
       timer = setTimeout(connect, delay);
     };
 
     function connect() {
       if (stopped) return;
+      if (
+        ws &&
+        (ws.readyState === WebSocket.CONNECTING ||
+          ws.readyState === WebSocket.OPEN)
+      ) {
+        return;
+      }
       cleanupTimer();
       try {
         ws = new WebSocket(url);
@@ -58,6 +66,10 @@ export function useMsgWebSocket(
         return;
       }
       ws.onopen = () => {
+        if (stopped) {
+          ws?.close();
+          return;
+        }
         attempt = 0;
       };
       ws.onmessage = (ev) => cbRef.current(ev);
@@ -66,7 +78,9 @@ export function useMsgWebSocket(
         if (!stopped) scheduleReconnect();
       };
       ws.onerror = () => {
-        /* onclose handles reconnect; avoid forced close during CONNECTING */
+        if (!stopped && ws && ws.readyState !== WebSocket.CLOSED) {
+          ws.close();
+        }
       };
     }
 
@@ -74,7 +88,13 @@ export function useMsgWebSocket(
     return () => {
       stopped = true;
       cleanupTimer();
-      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      if (
+        ws &&
+        (ws.readyState === WebSocket.CONNECTING ||
+          ws.readyState === WebSocket.OPEN)
+      ) {
+        ws.close();
+      }
     };
   }, [chatId, path, enabled]);
 }

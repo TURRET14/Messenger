@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -18,6 +19,7 @@ import type {
 import { SERVICE_DISPLAY_NAME } from "../config";
 import {
   IconChat,
+  IconChevronDown,
   IconChevronLeft,
   IconLogout,
   IconMenu,
@@ -160,6 +162,9 @@ export function MessengerShell({
   const [assetEpoch, setAssetEpoch] = useState(0);
   const bumpAssets = useCallback(() => setAssetEpoch((x) => x + 1), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const messagesBottomRef = useRef<HTMLDivElement>(null);
+  const shouldScrollToBottomRef = useRef(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const nextPickedFileIdRef = useRef(1);
   const [privatePeerByChat, setPrivatePeerByChat] = useState<Record<number, number>>({});
@@ -192,6 +197,25 @@ export function MessengerShell({
     setPickedFiles([]);
     resetAttachmentInput();
   }, [resetAttachmentInput]);
+
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+    messagesBottomRef.current?.scrollIntoView({ block: "end", behavior });
+  }, []);
+
+  const forceScrollMessagesToBottom = useCallback(() => {
+    const run = () => scrollMessagesToBottom("auto");
+    run();
+    window.requestAnimationFrame(() => {
+      run();
+      window.requestAnimationFrame(run);
+    });
+    window.setTimeout(run, 80);
+    window.setTimeout(run, 180);
+    window.setTimeout(run, 360);
+  }, [scrollMessagesToBottom]);
 
   const appendPickedFiles = useCallback(
     (picked: FileList | null) => {
@@ -405,6 +429,7 @@ export function MessengerShell({
         }
         const reversed = [...batch].reverse();
         if (reset) {
+          shouldScrollToBottomRef.current = true;
           msgPageRef.current = 0;
           setMessages(reversed);
           setMsgDone(batch.length < PAGE);
@@ -446,12 +471,22 @@ export function MessengerShell({
     }
     msgPageRef.current = 0;
     setMsgDone(false);
+    shouldScrollToBottomRef.current = true;
     void loadMessages(true);
   }, [selectedId, commentRoot?.id, loadMessages]);
 
   const reloadMsgs = () => {
-    if (selectedId) void loadMessages(true);
+    if (selectedId) {
+      shouldScrollToBottomRef.current = true;
+      void loadMessages(true);
+    }
   };
+
+  useLayoutEffect(() => {
+    if (!shouldScrollToBottomRef.current) return;
+    shouldScrollToBottomRef.current = false;
+    forceScrollMessagesToBottom();
+  }, [messages.length, selectedId, commentRoot?.id, forceScrollMessagesToBottom]);
 
   useBackendSocket("/chats/post", true, refreshChats);
   useBackendSocket("/chats/put", true, refreshChats);
@@ -466,13 +501,16 @@ export function MessengerShell({
         const data = JSON.parse(ev.data as string) as Message;
         const p = data.parent_message_id ?? null;
         if (data.chat_id !== selectedId || p !== parentKey) return;
+        if (data.sender_user_id === currentUser.id) {
+          shouldScrollToBottomRef.current = true;
+        }
         setMessages((prev) => mergeByIdAsc(prev, data));
         if (data.sender_user_id) void ensureName(data.sender_user_id);
       } catch {
         reloadMsgs();
       }
     },
-    [selectedId, parentKey, ensureName],
+    [selectedId, parentKey, currentUser.id, ensureName],
   );
 
   const onWsDel = useCallback(
@@ -614,6 +652,7 @@ export function MessengerShell({
       setDraft("");
       clearPickedFiles();
       setReplyTo(null);
+      shouldScrollToBottomRef.current = true;
       reloadMsgs();
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Не отправлено");
@@ -1174,6 +1213,7 @@ export function MessengerShell({
               ) : null}
 
               <div
+                ref={messagesScrollRef}
                 style={{
                   flex: 1,
                   overflowY: "auto",
@@ -1257,6 +1297,27 @@ export function MessengerShell({
                     />
                   );
                 })}
+                <div ref={messagesBottomRef} style={{ height: 1, flexShrink: 0 }} />
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--primary"
+                  aria-label="Прокрутить вниз"
+                  title="Прокрутить вниз"
+                  onClick={() => scrollMessagesToBottom()}
+                  style={{
+                    position: "sticky",
+                    bottom: 8,
+                    alignSelf: "center",
+                    width: 42,
+                    height: 42,
+                    padding: 0,
+                    borderRadius: 999,
+                    boxShadow: "0 4px 16px var(--shadow)",
+                    zIndex: 2,
+                  }}
+                >
+                  <IconChevronDown size={24} />
+                </button>
               </div>
 
               <div
