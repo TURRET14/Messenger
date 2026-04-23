@@ -1,7 +1,12 @@
 import aiosmtplib
+import aiosmtplib.errors
+import asyncio
 import email.message
 import email.mime.text
+import fastapi
+import socket
 from backend import environment
+from backend.routers.errors import ErrorRegistry
 
 class EmailService:
     @staticmethod
@@ -12,13 +17,24 @@ class EmailService:
         message["Subject"] = subject_data
         message.set_content(message_text, subtype = "html")
 
-        await aiosmtplib.send(
-        message,
-        hostname = environment.SMTP_HOSTNAME,
-        port = 465,
-        username = environment.SMTP_USERNAME,
-        password = environment.SMTP_PASSWORD,
-        use_tls = True)
+        try:
+            await aiosmtplib.send(
+            message,
+            hostname = environment.SMTP_HOSTNAME,
+            port = 465,
+            username = environment.SMTP_USERNAME,
+            password = environment.SMTP_PASSWORD,
+            use_tls = True)
+        except (
+            aiosmtplib.errors.SMTPException,
+            asyncio.TimeoutError,
+            OSError,
+            socket.gaierror,
+        ):
+            raise fastapi.exceptions.HTTPException(
+                status_code = ErrorRegistry.email_delivery_error.error_status_code,
+                detail = ErrorRegistry.email_delivery_error,
+            )
 
 
     @staticmethod

@@ -11,7 +11,16 @@ import type {
 import { IconCheck, IconTrash, IconUser, IconX } from "../components/Icons";
 import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
 import { ModalChrome } from "../components/ui/ModalChrome";
+import { ValidationError } from "../components/ui/ValidationError";
 import { useDialogs } from "../context/DialogsContext";
+import {
+  validateCode,
+  validateEmailAddress,
+  validateImageFile,
+  validateNamesSearch,
+  validateProfileForm,
+  validateUsernameSearch,
+} from "../validation";
 import { avatarLetterFromUser, userListLabel } from "./userFormat";
 
 const PAGE = 50;
@@ -30,6 +39,7 @@ export function MainAppMenu({
   onOpenProfile,
   onRefreshUser,
   onMediaInvalidate,
+  onUserDeleted,
   assetEpoch = 0,
   onOpenChat,
 }: {
@@ -38,23 +48,29 @@ export function MainAppMenu({
   onOpenProfile: (userId: number) => void;
   onRefreshUser: () => Promise<void>;
   onMediaInvalidate?: () => void;
+  onUserDeleted?: () => void;
   assetEpoch?: number;
   onOpenChat?: (chatId: number, options?: { ephemeral?: boolean }) => void;
 }) {
-  const { alert } = useDialogs();
+  const { alert, confirm } = useDialogs();
   const [tab, setTab] = useState<Tab>("profile");
 
   const [u, setU] = useState<CurrentUser>(currentUser);
   const [emailNew, setEmailNew] = useState("");
   const [emailCode, setEmailCode] = useState("");
+  const [emailConfirmOpen, setEmailConfirmOpen] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   const [users, setUsers] = useState<UserInList[]>([]);
   const [uDone, setUDone] = useState(false);
   const [uSearch, setUSearch] = useState({ mode: "all" as "all" | "username" | "names", q: "", n: "", s: "", o: "" });
+  const [usersSearchError, setUsersSearchError] = useState<string | null>(null);
 
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [fDone, setFDone] = useState(false);
   const [fSearch, setFSearch] = useState({ mode: "all" as "all" | "username" | "names", q: "", n: "", s: "", o: "" });
+  const [friendsSearchError, setFriendsSearchError] = useState<string | null>(null);
 
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
   const [iDone, setIDone] = useState(false);
@@ -80,54 +96,103 @@ export function MainAppMenu({
   }, [currentUser]);
 
   const saveProfile = async () => {
+    const profilePayload = {
+      ...u,
+      username: (u.username ?? "").trim(),
+      name: (u.name ?? "").trim(),
+      surname: u.surname?.trim() || null,
+      second_name: u.second_name?.trim() || null,
+      email_address: (u.email_address ?? "").trim(),
+      phone_number: u.phone_number?.trim() || null,
+      about: u.about || null,
+    };
+
+    const validationError = validateProfileForm(profilePayload);
+    if (validationError) {
+      setProfileError(validationError);
+      void alert(validationError, "Ошибка валидации");
+      return;
+    }
+
+    setProfileError(null);
     try {
       await apiFetch("/users/me", {
         method: "PATCH",
         body: JSON.stringify({
-          username: u.username,
-          name: u.name,
-          surname: u.surname || null,
-          second_name: u.second_name || null,
-          date_of_birth: u.date_of_birth || null,
-          gender: u.gender,
-          email_address: u.email_address,
-          phone_number: u.phone_number || null,
-          about: u.about || null,
+          username: profilePayload.username,
+          name: profilePayload.name,
+          surname: profilePayload.surname,
+          second_name: profilePayload.second_name,
+          date_of_birth: profilePayload.date_of_birth || null,
+          gender: profilePayload.gender,
+          email_address: profilePayload.email_address,
+          phone_number: profilePayload.phone_number,
+          about: profilePayload.about,
         }),
       });
       await onRefreshUser();
       void alert("Профиль сохранён");
     } catch (e) {
-      void alert(e instanceof ApiError ? e.message : "Не сохранено");
+      const message =
+        e instanceof ApiError ? e.message : "Не удалось сохранить профиль";
+      setProfileError(message);
+      void alert(message, "Ошибка сохранения");
     }
   };
 
   const requestEmailChange = async () => {
+    const validationError = validateEmailAddress(emailNew, "Новая почта");
+    if (validationError) {
+      setEmailError(validationError);
+      return;
+    }
+
+    setEmailError(null);
     try {
       await apiFetch("/users/me/email", {
         method: "PATCH",
-        body: JSON.stringify({ email_address: emailNew }),
+        body: JSON.stringify({ email_address: emailNew.trim() }),
       });
+      setEmailCode("");
+      setEmailConfirmOpen(true);
       void alert("Код отправлен на новую почту");
     } catch (e) {
-      void alert(e instanceof ApiError ? e.message : "Ошибка");
+      setEmailError(e instanceof ApiError ? e.message : "Не удалось отправить код");
     }
   };
 
   const confirmEmail = async () => {
+    const validationError = validateCode(emailCode, "Код");
+    if (validationError) {
+      setEmailError(validationError);
+      return;
+    }
+
+    setEmailError(null);
     try {
       await apiFetch("/users/me/email/confirm", {
         method: "PATCH",
-        body: JSON.stringify({ code: emailCode }),
+        body: JSON.stringify({ code: emailCode.trim() }),
       });
       await onRefreshUser();
+      setEmailConfirmOpen(false);
+      setEmailNew("");
+      setEmailCode("");
       void alert("Почта обновлена");
     } catch (e) {
-      void alert(e instanceof ApiError ? e.message : "Неверный код");
+      setEmailError(e instanceof ApiError ? e.message : "Неверный код");
     }
   };
 
   const uploadAvatar = async (file: File) => {
+    const validationError = validateImageFile(file, "Фото профиля");
+    if (validationError) {
+      setProfileError(validationError);
+      void alert(validationError, "Ошибка валидации");
+      return;
+    }
+
+    setProfileError(null);
     const fd = new FormData();
     fd.append("file", file);
     try {
@@ -136,13 +201,49 @@ export function MainAppMenu({
       onMediaInvalidate?.();
       void alert("Фото обновлено");
     } catch (e) {
-      void alert(e instanceof ApiError ? e.message : "Не загружено");
+      const message =
+        e instanceof ApiError ? e.message : "Не удалось загрузить фото";
+      setProfileError(message);
+      void alert(message, "Ошибка загрузки");
+    }
+  };
+
+  const deleteCurrentUser = async () => {
+    if (
+      !(await confirm({
+        message: "Удалить текущего пользователя? Это действие необратимо.",
+        danger: true,
+        confirmLabel: "Удалить пользователя",
+      }))
+    ) {
+      return;
+    }
+    try {
+      await apiFetch("/users/me", { method: "DELETE" });
+      onUserDeleted?.();
+    } catch (e) {
+      void alert(e instanceof ApiError ? e.message : "Не удалось удалить пользователя");
     }
   };
 
   const loadUsers = useCallback(
     async (reset: boolean) => {
       if (loadingRef.current && !reset) return;
+      const searchError =
+        uSearch.mode === "username"
+          ? validateUsernameSearch(uSearch.q)
+          : uSearch.mode === "names"
+            ? validateNamesSearch({
+                name: uSearch.n,
+                surname: uSearch.s,
+                secondName: uSearch.o,
+              })
+            : null;
+      if (reset && searchError) {
+        setUsersSearchError(searchError);
+        return;
+      }
+      setUsersSearchError(null);
       loadingRef.current = true;
       try {
         const mult = reset ? 0 : uPageRef.current + 1;
@@ -153,33 +254,21 @@ export function MainAppMenu({
           );
         } else if (uSearch.mode === "username") {
           const q = uSearch.q.trim();
-          if (!q) {
-            batch = await apiJson<UserInList[]>(
-              `/users?offset_multiplier=${mult}`,
-            );
-          } else {
-            batch = await apiJson<UserInList[]>(
-              `/users/search/by-username?username=${encodeURIComponent(q)}&offset_multiplier=${mult}`,
-            );
-          }
+          batch = await apiJson<UserInList[]>(
+            `/users/search/by-username?username=${encodeURIComponent(q)}&offset_multiplier=${mult}`,
+          );
         } else {
           const n = uSearch.n.trim();
           const s = uSearch.s.trim();
           const o = uSearch.o.trim();
-          if (!n && !s && !o) {
-            batch = await apiJson<UserInList[]>(
-              `/users?offset_multiplier=${mult}`,
-            );
-          } else {
-            const p = new URLSearchParams();
-            p.set("offset_multiplier", String(mult));
-            if (n) p.set("name", n);
-            if (s) p.set("surname", s);
-            if (o) p.set("second_name", o);
-            batch = await apiJson<UserInList[]>(
-              `/users/search/by-names?${p.toString()}`,
-            );
-          }
+          const p = new URLSearchParams();
+          p.set("offset_multiplier", String(mult));
+          if (n) p.set("name", n);
+          if (s) p.set("surname", s);
+          if (o) p.set("second_name", o);
+          batch = await apiJson<UserInList[]>(
+            `/users/search/by-names?${p.toString()}`,
+          );
         }
         if (reset) {
           uPageRef.current = 0;
@@ -205,6 +294,21 @@ export function MainAppMenu({
   const loadFriends = useCallback(
     async (reset: boolean) => {
       if (loadingRef.current && !reset) return;
+      const searchError =
+        fSearch.mode === "username"
+          ? validateUsernameSearch(fSearch.q)
+          : fSearch.mode === "names"
+            ? validateNamesSearch({
+                name: fSearch.n,
+                surname: fSearch.s,
+                secondName: fSearch.o,
+              })
+            : null;
+      if (reset && searchError) {
+        setFriendsSearchError(searchError);
+        return;
+      }
+      setFriendsSearchError(null);
       loadingRef.current = true;
       try {
         const mult = reset ? 0 : fPageRef.current + 1;
@@ -215,33 +319,21 @@ export function MainAppMenu({
           );
         } else if (fSearch.mode === "username") {
           const q = fSearch.q.trim();
-          if (!q) {
-            batch = await apiJson<FriendUser[]>(
-              `/users/me/friends?offset_multiplier=${mult}`,
-            );
-          } else {
-            batch = await apiJson<FriendUser[]>(
-              `/users/me/friends/search/by-username?username=${encodeURIComponent(q)}&offset_multiplier=${mult}`,
-            );
-          }
+          batch = await apiJson<FriendUser[]>(
+            `/users/me/friends/search/by-username?username=${encodeURIComponent(q)}&offset_multiplier=${mult}`,
+          );
         } else {
           const n = fSearch.n.trim();
           const s = fSearch.s.trim();
           const o = fSearch.o.trim();
-          if (!n && !s && !o) {
-            batch = await apiJson<FriendUser[]>(
-              `/users/me/friends?offset_multiplier=${mult}`,
-            );
-          } else {
-            const p = new URLSearchParams();
-            p.set("offset_multiplier", String(mult));
-            if (n) p.set("name", n);
-            if (s) p.set("surname", s);
-            if (o) p.set("second_name", o);
-            batch = await apiJson<FriendUser[]>(
-              `/users/me/friends/search/by-names?${p.toString()}`,
-            );
-          }
+          const p = new URLSearchParams();
+          p.set("offset_multiplier", String(mult));
+          if (n) p.set("name", n);
+          if (s) p.set("surname", s);
+          if (o) p.set("second_name", o);
+          batch = await apiJson<FriendUser[]>(
+            `/users/me/friends/search/by-names?${p.toString()}`,
+          );
         }
         if (reset) {
           fPageRef.current = 0;
@@ -443,7 +535,7 @@ export function MainAppMenu({
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "profile", label: "Профиль" },
-    { id: "users", label: "Люди" },
+    { id: "users", label: "Пользователи" },
     { id: "friends", label: "Друзья" },
     { id: "in", label: "Заявки" },
     { id: "out", label: "Исходящие" },
@@ -451,6 +543,7 @@ export function MainAppMenu({
   ];
 
   return (
+    <>
     <ModalChrome title="Меню" onClose={onClose}>
       <div
         style={{
@@ -530,25 +623,51 @@ export function MainAppMenu({
               ["phone_number", "Телефон"],
               ["about", "О себе"],
             ] as const
-          ).map(([key, lab]) => (
-            <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{lab}</span>
-              <input
-                className="ui-input"
-                value={(u[key] as string) ?? ""}
-                onChange={(e) => setU({ ...u, [key]: e.target.value || null })}
-              />
-            </label>
-          ))}
+          ).map(([key, lab]) => {
+            const isRequiredProfileField = key === "username" || key === "name";
+            return (
+              <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{lab}</span>
+                {key === "about" ? (
+                  <textarea
+                    className="ui-textarea"
+                    value={(u[key] as string) ?? ""}
+                    onChange={(e) => {
+                      setU({ ...u, [key]: e.target.value || null });
+                      setProfileError(null);
+                    }}
+                    rows={4}
+                    maxLength={5000}
+                  />
+                ) : (
+                  <input
+                    className="ui-input"
+                    value={(u[key] as string) ?? ""}
+                    onChange={(e) => {
+                      setU({
+                        ...u,
+                        [key]: isRequiredProfileField
+                          ? e.target.value
+                          : e.target.value || null,
+                      });
+                      setProfileError(null);
+                    }}
+                    maxLength={100}
+                  />
+                )}
+              </label>
+            );
+          })}
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Дата рождения</span>
             <input
               className="ui-input"
               type="date"
               value={u.date_of_birth?.slice(0, 10) ?? ""}
-              onChange={(e) =>
-                setU({ ...u, date_of_birth: e.target.value || null })
-              }
+              onChange={(e) => {
+                setU({ ...u, date_of_birth: e.target.value || null });
+                setProfileError(null);
+              }}
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -557,10 +676,13 @@ export function MainAppMenu({
               className="ui-input"
               value={u.gender ?? ""}
               onChange={(e) =>
-                setU({
+                {
+                  setU({
                   ...u,
                   gender: (e.target.value || null) as CurrentUser["gender"],
-                })
+                  });
+                  setProfileError(null);
+                }
               }
             >
               <option value="">Не указан</option>
@@ -568,41 +690,49 @@ export function MainAppMenu({
               <option value="FEMALE">Женский</option>
             </select>
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Электронная почта</span>
-            <input
-              className="ui-input"
-              type="email"
-              value={u.email_address}
-              onChange={(e) => setU({ ...u, email_address: e.target.value })}
-            />
-          </label>
+          <ValidationError message={profileError} />
           <button type="button" className="ui-btn ui-btn--primary" onClick={() => void saveProfile()}>
             Сохранить профиль
           </button>
           <hr style={{ borderColor: "var(--border)" }} />
           <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена почты</h3>
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--bg-muted)",
+              wordBreak: "break-word",
+            }}
+          >
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 4 }}>
+              Текущая электронная почта
+            </div>
+            <div>{u.email_address}</div>
+          </div>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Новая почта</span>
             <input
               className="ui-input"
               value={emailNew}
-              onChange={(e) => setEmailNew(e.target.value)}
+              onChange={(e) => {
+                setEmailNew(e.target.value);
+                setEmailError(null);
+              }}
+              maxLength={254}
             />
           </label>
           <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void requestEmailChange()}>
             Отправить код на новую почту
           </button>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Код из письма</span>
-            <input
-              className="ui-input"
-              value={emailCode}
-              onChange={(e) => setEmailCode(e.target.value)}
-            />
-          </label>
-          <button type="button" className="ui-btn ui-btn--primary" onClick={() => void confirmEmail()}>
-            Подтвердить почту
+          <ValidationError message={emailError} />
+          <hr style={{ borderColor: "var(--border)" }} />
+          <button
+            type="button"
+            className="ui-btn ui-btn--danger"
+            onClick={() => void deleteCurrentUser()}
+          >
+            Удалить пользователя
           </button>
         </div>
       ) : null}
@@ -613,32 +743,45 @@ export function MainAppMenu({
             <button
               type="button"
               className={uSearch.mode === "all" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
-              onClick={() => setUSearch((s) => ({ ...s, mode: "all" }))}
+              onClick={() => {
+                setUSearch((s) => ({ ...s, mode: "all" }));
+                setUsersSearchError(null);
+              }}
             >
               Все
             </button>
             <button
               type="button"
               className={uSearch.mode === "username" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
-              onClick={() => setUSearch((s) => ({ ...s, mode: "username" }))}
+              onClick={() => {
+                setUSearch((s) => ({ ...s, mode: "username" }));
+                setUsersSearchError(null);
+              }}
             >
-              По username
+              По имени пользователя
             </button>
             <button
               type="button"
               className={uSearch.mode === "names" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
-              onClick={() => setUSearch((s) => ({ ...s, mode: "names" }))}
+              onClick={() => {
+                setUSearch((s) => ({ ...s, mode: "names" }));
+                setUsersSearchError(null);
+              }}
             >
               По ФИО
             </button>
           </div>
           {uSearch.mode === "all" ? null : uSearch.mode === "username" ? (
             <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Username</span>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Имя пользователя</span>
               <input
                 className="ui-input"
                 value={uSearch.q}
-                onChange={(e) => setUSearch((s) => ({ ...s, q: e.target.value }))}
+                onChange={(e) => {
+                  setUSearch((s) => ({ ...s, q: e.target.value }));
+                  setUsersSearchError(null);
+                }}
+                maxLength={100}
               />
             </label>
           ) : (
@@ -655,14 +798,17 @@ export function MainAppMenu({
                   <input
                     className="ui-input"
                     value={uSearch[k]}
-                    onChange={(e) =>
-                      setUSearch((s) => ({ ...s, [k]: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setUSearch((s) => ({ ...s, [k]: e.target.value }));
+                      setUsersSearchError(null);
+                    }}
+                    maxLength={100}
                   />
                 </label>
               ))}
             </div>
           )}
+          <ValidationError message={usersSearchError} />
           <button type="button" className="ui-btn ui-btn--primary" style={{ width: "100%", marginBottom: 12 }} onClick={() => void loadUsers(true)}>
             <IconUser size={18} /> Показать пользователей
           </button>
@@ -707,23 +853,36 @@ export function MainAppMenu({
       {tab === "friends" ? (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-            <button type="button" className={fSearch.mode === "all" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => setFSearch((s) => ({ ...s, mode: "all" }))}>
+            <button type="button" className={fSearch.mode === "all" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => {
+              setFSearch((s) => ({ ...s, mode: "all" }));
+              setFriendsSearchError(null);
+            }}>
               Все
             </button>
-            <button type="button" className={fSearch.mode === "username" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => setFSearch((s) => ({ ...s, mode: "username" }))}>
-              По username
+            <button type="button" className={fSearch.mode === "username" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => {
+              setFSearch((s) => ({ ...s, mode: "username" }));
+              setFriendsSearchError(null);
+            }}>
+              По имени пользователя
             </button>
-            <button type="button" className={fSearch.mode === "names" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => setFSearch((s) => ({ ...s, mode: "names" }))}>
+            <button type="button" className={fSearch.mode === "names" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => {
+              setFSearch((s) => ({ ...s, mode: "names" }));
+              setFriendsSearchError(null);
+            }}>
               По ФИО
             </button>
           </div>
           {fSearch.mode === "all" ? null : fSearch.mode === "username" ? (
             <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Username</span>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Имя пользователя</span>
               <input
                 className="ui-input"
                 value={fSearch.q}
-                onChange={(e) => setFSearch((s) => ({ ...s, q: e.target.value }))}
+                onChange={(e) => {
+                  setFSearch((s) => ({ ...s, q: e.target.value }));
+                  setFriendsSearchError(null);
+                }}
+                maxLength={100}
               />
             </label>
           ) : (
@@ -740,14 +899,17 @@ export function MainAppMenu({
                   <input
                     className="ui-input"
                     value={fSearch[k]}
-                    onChange={(e) =>
-                      setFSearch((s) => ({ ...s, [k]: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setFSearch((s) => ({ ...s, [k]: e.target.value }));
+                      setFriendsSearchError(null);
+                    }}
+                    maxLength={100}
                   />
                 </label>
               ))}
             </div>
           )}
+          <ValidationError message={friendsSearchError} />
           <button type="button" className="ui-btn ui-btn--primary" style={{ width: "100%", marginBottom: 12 }} onClick={() => void loadFriends(true)}>
             <IconUser size={18} /> Показать друзей
           </button>
@@ -971,5 +1133,52 @@ export function MainAppMenu({
         </div>
       ) : null}
     </ModalChrome>
+
+    {emailConfirmOpen ? (
+      <ModalChrome
+        title="Подтверждение почты"
+        onClose={() => {
+          setEmailConfirmOpen(false);
+          setEmailError(null);
+        }}
+        narrow
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.9rem" }}>
+            Введите код, который мы отправили на новую почту.
+          </p>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Код из письма</span>
+            <input
+              className="ui-input"
+              value={emailCode}
+              onChange={(e) => {
+                setEmailCode(e.target.value);
+                setEmailError(null);
+              }}
+              maxLength={100}
+              autoFocus
+            />
+          </label>
+          <ValidationError message={emailError} />
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="ui-btn ui-btn--ghost"
+              onClick={() => {
+                setEmailConfirmOpen(false);
+                setEmailError(null);
+              }}
+            >
+              Отмена
+            </button>
+            <button type="button" className="ui-btn ui-btn--primary" onClick={() => void confirmEmail()}>
+              Подтвердить почту
+            </button>
+          </div>
+        </div>
+      </ModalChrome>
+    ) : null}
+    </>
   );
 }

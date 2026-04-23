@@ -11,5 +11,5 @@ async def hash_password(password: str) -> str:
 async def verify_password(hashed_password: str, password: str) -> bool:
     try:
         return password_hasher.verify(hashed_password, password)
-    except argon2.exceptions.VerifyMismatchError | argon2.exceptions.VerificationError | argon2.exceptions.InvalidHashError:
+    except (argon2.exceptions.VerifyMismatchError, argon2.exceptions.VerificationError, argon2.exceptions.InvalidHashError):
         return False

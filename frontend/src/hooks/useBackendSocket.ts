@@ -49,6 +49,10 @@ export function useBackendSocket(
       }
 
       ws.onopen = () => {
+        if (stopped) {
+          ws?.close();
+          return;
+        }
         attempt = 0;
       };
 
@@ -62,7 +66,7 @@ export function useBackendSocket(
       };
 
       ws.onerror = () => {
-        ws?.close();
+        /* onclose handles reconnect; avoid closing a CONNECTING socket manually. */
       };
     }
 
@@ -71,7 +75,7 @@ export function useBackendSocket(
     return () => {
       stopped = true;
       cleanupTimer();
-      ws?.close();
+      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
     };
   }, [path, enabled]);
 }

@@ -7,9 +7,16 @@ import {
 } from "react";
 import { ApiError, apiFetch, apiJson } from "./api/client";
 import type { CurrentUser } from "./api/types";
-import { SERVICE_DISPLAY_NAME } from "./config";
 import { IconUser } from "./components/Icons";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
+import { ValidationError } from "./components/ui/ValidationError";
+import { SERVICE_DISPLAY_NAME } from "./config";
+import {
+  validateCode,
+  validateLogin,
+  validatePassword,
+  validateRegisterForm,
+} from "./validation";
 import { MessengerApp } from "./views/MessengerApp";
 
 type Screen =
@@ -67,7 +74,7 @@ export default function App() {
           color: "var(--text-muted)",
         }}
       >
-        Загрузка…
+        Загрузка...
       </div>
     );
   }
@@ -113,12 +120,25 @@ function AuthShell({
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
+
+    const loginError = validateLogin(login);
+    if (loginError) {
+      setError(loginError);
+      return;
+    }
+
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
+
     setError(null);
     setBusy(true);
     try {
       await apiFetch("/login", {
         method: "POST",
-        body: JSON.stringify({ login, password }),
+        body: JSON.stringify({ login: login.trim(), password }),
       });
       onLoggedIn();
     } catch (err) {
@@ -130,22 +150,37 @@ function AuthShell({
 
   const handleRegisterRequest = async (e: FormEvent) => {
     e.preventDefault();
+
+    const validationError = validateRegisterForm({
+      username: regUsername,
+      name: regName,
+      surname: regSurname,
+      secondName: regSecond,
+      email: regEmail,
+      login: regLogin,
+      password: regPassword,
+    });
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setError(null);
     setBusy(true);
     try {
       await apiFetch("/users/register", {
         method: "POST",
         body: JSON.stringify({
-          username: regUsername,
-          name: regName,
-          surname: regSurname || null,
-          second_name: regSecond || null,
-          email_address: regEmail,
-          login: regLogin,
+          username: regUsername.trim(),
+          name: regName.trim(),
+          surname: regSurname.trim() || null,
+          second_name: regSecond.trim() || null,
+          email_address: regEmail.trim(),
+          login: regLogin.trim(),
           password: regPassword,
         }),
       });
-      setScreen({ name: "register-code", email: regEmail });
+      setScreen({ name: "register-code", email: regEmail.trim() });
       setCode("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Ошибка регистрации");
@@ -157,20 +192,25 @@ function AuthShell({
   const handleRegisterComplete = async (e: FormEvent) => {
     e.preventDefault();
     if (screen.name !== "register-code") return;
+
+    const codeError = validateCode(code);
+    if (codeError) {
+      setError(codeError);
+      return;
+    }
+
     setError(null);
     setBusy(true);
     try {
       await apiFetch("/users", {
         method: "POST",
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: code.trim() }),
       });
       setScreen({ name: "login" });
-      setLogin(regLogin);
+      setLogin(regLogin.trim());
       setPassword(regPassword);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Неверный код или ошибка",
-      );
+      setError(err instanceof ApiError ? err.message : "Неверный код или ошибка");
     } finally {
       setBusy(false);
     }
@@ -246,7 +286,7 @@ function AuthShell({
         {screen.name === "login" ? (
           <>
             <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Вход</h2>
-            <form onSubmit={(e) => void handleLogin(e)}>
+            <form noValidate onSubmit={(e) => void handleLogin(e)}>
               <label className="sr-only" htmlFor="login">
                 Логин
               </label>
@@ -254,10 +294,14 @@ function AuthShell({
                 id="login"
                 style={input}
                 value={login}
-                onChange={(e) => setLogin(e.target.value)}
+                onChange={(e) => {
+                  setLogin(e.target.value);
+                  setError(null);
+                }}
                 autoComplete="username"
                 placeholder="Логин"
                 required
+                maxLength={100}
               />
               <label className="sr-only" htmlFor="password">
                 Пароль
@@ -267,17 +311,17 @@ function AuthShell({
                 type="password"
                 style={input}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
                 autoComplete="current-password"
                 placeholder="Пароль"
                 required
                 minLength={5}
+                maxLength={100}
               />
-              {error ? (
-                <p style={{ color: "var(--danger)", fontSize: "0.9rem" }}>
-                  {error}
-                </p>
-              ) : null}
+              <ValidationError message={error} />
               <button type="submit" disabled={busy} style={btn}>
                 Войти
               </button>
@@ -309,26 +353,35 @@ function AuthShell({
         {screen.name === "register" ? (
           <>
             <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Регистрация</h2>
-            <form onSubmit={(e) => void handleRegisterRequest(e)}>
+            <form noValidate onSubmit={(e) => void handleRegisterRequest(e)}>
               <input
                 style={input}
                 value={regUsername}
-                onChange={(e) => setRegUsername(e.target.value)}
-                placeholder="Имя пользователя (username)"
+                onChange={(e) => {
+                  setRegUsername(e.target.value);
+                  setError(null);
+                }}
+                placeholder="Имя пользователя"
                 required
                 maxLength={100}
               />
               <input
                 style={input}
                 value={regSurname}
-                onChange={(e) => setRegSurname(e.target.value)}
+                onChange={(e) => {
+                  setRegSurname(e.target.value);
+                  setError(null);
+                }}
                 placeholder="Фамилия (необязательно)"
                 maxLength={100}
               />
               <input
                 style={input}
                 value={regName}
-                onChange={(e) => setRegName(e.target.value)}
+                onChange={(e) => {
+                  setRegName(e.target.value);
+                  setError(null);
+                }}
                 placeholder="Имя"
                 required
                 maxLength={100}
@@ -336,7 +389,10 @@ function AuthShell({
               <input
                 style={input}
                 value={regSecond}
-                onChange={(e) => setRegSecond(e.target.value)}
+                onChange={(e) => {
+                  setRegSecond(e.target.value);
+                  setError(null);
+                }}
                 placeholder="Отчество (необязательно)"
                 maxLength={100}
               />
@@ -344,14 +400,21 @@ function AuthShell({
                 style={input}
                 type="email"
                 value={regEmail}
-                onChange={(e) => setRegEmail(e.target.value)}
+                onChange={(e) => {
+                  setRegEmail(e.target.value);
+                  setError(null);
+                }}
                 placeholder="Электронная почта"
                 required
+                maxLength={254}
               />
               <input
                 style={input}
                 value={regLogin}
-                onChange={(e) => setRegLogin(e.target.value)}
+                onChange={(e) => {
+                  setRegLogin(e.target.value);
+                  setError(null);
+                }}
                 placeholder="Логин для входа"
                 required
                 maxLength={100}
@@ -360,17 +423,16 @@ function AuthShell({
                 style={input}
                 type="password"
                 value={regPassword}
-                onChange={(e) => setRegPassword(e.target.value)}
+                onChange={(e) => {
+                  setRegPassword(e.target.value);
+                  setError(null);
+                }}
                 placeholder="Пароль (от 5 символов)"
                 required
                 minLength={5}
                 maxLength={100}
               />
-              {error ? (
-                <p style={{ color: "var(--danger)", fontSize: "0.9rem" }}>
-                  {error}
-                </p>
-              ) : null}
+              <ValidationError message={error} />
               <button type="submit" disabled={busy} style={btn}>
                 Отправить код на почту
               </button>
@@ -404,20 +466,19 @@ function AuthShell({
             <p style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
               Введите код из письма, отправленного на {screen.email}
             </p>
-            <form onSubmit={(e) => void handleRegisterComplete(e)}>
+            <form noValidate onSubmit={(e) => void handleRegisterComplete(e)}>
               <input
                 style={input}
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  setError(null);
+                }}
                 placeholder="Код"
                 required
                 maxLength={100}
               />
-              {error ? (
-                <p style={{ color: "var(--danger)", fontSize: "0.9rem" }}>
-                  {error}
-                </p>
-              ) : null}
+              <ValidationError message={error} />
               <button type="submit" disabled={busy} style={btn}>
                 Создать аккаунт
               </button>

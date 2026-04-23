@@ -30,13 +30,27 @@ import {
 } from "../components/Icons";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
 import { ModalChrome } from "../components/ui/ModalChrome";
+import { ValidationError } from "../components/ui/ValidationError";
 import { ThemeSwitcher } from "../components/ThemeSwitcher";
 import { useDialogs } from "../context/DialogsContext";
 import { useBackendSocket } from "../hooks/useBackendSocket";
+import {
+  validateAttachmentFiles,
+  validateChatName,
+  validateMessageForSend,
+  validateMessageSearch,
+  validateUsernameSearch,
+} from "../validation";
 import { ChatInfoPanel, type MembershipRow } from "./ChatInfoPanel";
 import { MainAppMenu } from "./MainAppMenu";
-import { MessageBubble, PickedFilesStrip } from "./MessageBubble";
+import {
+  type AttachmentMeta,
+  MessageBubble,
+  PickedFilesStrip,
+  type PickedFileItem,
+} from "./MessageBubble";
 import { useMsgWebSocket } from "./useMsgWebSocket";
+import { chatKindLabel } from "./labels";
 import { avatarLetterFromUser, userListLabel } from "./userFormat";
 import { UserProfileModal } from "./UserProfileModal";
 
@@ -46,16 +60,6 @@ function chatLabel(c: Chat): string {
   if (c.chat_kind === "PROFILE") return c.name || "Профиль";
   if (c.chat_kind === "PRIVATE") return c.name || "Личный чат";
   return c.name || "Чат";
-}
-
-function kindLabel(k: Chat["chat_kind"]): string {
-  const m: Record<string, string> = {
-    PRIVATE: "Личный",
-    GROUP: "Группа",
-    CHANNEL: "Канал",
-    PROFILE: "Профиль",
-  };
-  return m[k] ?? k;
 }
 
 function mergeByIdAsc(existing: Message[], incoming: Message): Message[] {
@@ -120,7 +124,7 @@ export function MessengerShell({
   const [loadingMsg, setLoadingMsg] = useState(false);
 
   const [draft, setDraft] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
+  const [pickedFiles, setPickedFiles] = useState<PickedFileItem[]>([]);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
 
@@ -139,9 +143,11 @@ export function MessengerShell({
   const [usernameQuery, setUsernameQuery] = useState("");
   const [searchHits, setSearchHits] = useState<UserInList[]>([]);
   const [groupName, setGroupName] = useState("");
+  const [newChatError, setNewChatError] = useState<string | null>(null);
 
   const [hdrSearch, setHdrSearch] = useState("");
   const [searchHitsChat, setSearchHitsChat] = useState<Message[]>([]);
+  const [chatSearchError, setChatSearchError] = useState<string | null>(null);
   const [searchMode, setSearchMode] = useState(false);
   const searchModeRef = useRef(false);
   useEffect(() => {
@@ -154,7 +160,10 @@ export function MessengerShell({
   const [assetEpoch, setAssetEpoch] = useState(0);
   const bumpAssets = useCallback(() => setAssetEpoch((x) => x + 1), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
+  const nextPickedFileIdRef = useRef(1);
   const [privatePeerByChat, setPrivatePeerByChat] = useState<Record<number, number>>({});
+  const [composeError, setComposeError] = useState<string | null>(null);
 
   const readMarkedRef = useRef(new Set<number>());
 
@@ -172,19 +181,75 @@ export function MessengerShell({
     }
   }, []);
 
+  const resetAttachmentInput = useCallback(() => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    setFileInputKey((prev) => prev + 1);
+  }, []);
+
+  const clearPickedFiles = useCallback(() => {
+    setPickedFiles([]);
+    resetAttachmentInput();
+  }, [resetAttachmentInput]);
+
+  const appendPickedFiles = useCallback(
+    (picked: FileList | null) => {
+      if (!picked?.length) {
+        resetAttachmentInput();
+        return;
+      }
+      const validationError = validateAttachmentFiles(picked);
+      if (validationError) {
+        setComposeError(validationError);
+        resetAttachmentInput();
+        return;
+      }
+      const nextItems = Array.from(picked, (file) => ({
+        id: nextPickedFileIdRef.current++,
+        file,
+      }));
+      setComposeError(null);
+      setPickedFiles((prev) => [...prev, ...nextItems]);
+      resetAttachmentInput();
+    },
+    [alert, resetAttachmentInput],
+  );
+
+  const openAttachmentPicker = useCallback(() => {
+    const input = fileInputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.click();
+  }, []);
+
   const refreshChats = useCallback(async () => {
     if (chatLoadRef.current) return;
     chatLoadRef.current = true;
     setLoadingChats(true);
     try {
-      const batch = await apiJson<Chat[]>(`/chats?offset_multiplier=0`);
-      chatPageRef.current = 0;
-      setChats(batch);
-      setChatsDone(batch.length < PAGE);
-      for (const c of batch) {
-        const lm = c.last_message;
-        if (lm?.sender_user_id != null) void ensureName(lm.sender_user_id);
+      const targetPages = chatPageRef.current + 1;
+      const merged: Chat[] = [];
+      let nextDone = false;
+      let lastLoadedPage = 0;
+
+      for (let mult = 0; mult < targetPages; mult += 1) {
+        const batch = await apiJson<Chat[]>(`/chats?offset_multiplier=${mult}`);
+        lastLoadedPage = mult;
+        const ids = new Set(merged.map((item) => item.id));
+        merged.push(...batch.filter((item) => !ids.has(item.id)));
+        for (const c of batch) {
+          const lm = c.last_message;
+          if (lm?.sender_user_id != null) void ensureName(lm.sender_user_id);
+        }
+        if (batch.length < PAGE) {
+          nextDone = true;
+          break;
+        }
       }
+      chatPageRef.current = lastLoadedPage;
+      setChats(merged);
+      setChatsDone(nextDone);
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Чаты не загружены");
     } finally {
@@ -287,6 +352,12 @@ export function MessengerShell({
       if (c.chat_kind === "PRIVATE") void ensurePrivatePeer(c.id);
     }
   }, [chats, ensurePrivatePeer]);
+
+  useEffect(() => {
+    if (selectedChatData?.chat_kind === "PRIVATE") {
+      void ensurePrivatePeer(selectedChatData.id);
+    }
+  }, [selectedChatData?.id, selectedChatData?.chat_kind, ensurePrivatePeer]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -522,22 +593,26 @@ export function MessengerShell({
   const handleSend = async () => {
     if (!selectedId) return;
     const text = draft.trim();
-    if (!text && files.length === 0) {
-      void alert("Введите текст или прикрепите файл");
+    const validationError = validateMessageForSend(text, pickedFiles.length > 0);
+    if (validationError) {
+      setComposeError(validationError);
       return;
     }
+    setComposeError(null);
     const fd = new FormData();
     fd.append("message_text", text);
     if (replyTo) fd.append("reply_message_id", String(replyTo.id));
     if (commentRoot) fd.append("parent_message_id", String(commentRoot.id));
-    for (const f of files) fd.append("file_attachments_list", f, f.name);
+    for (const item of pickedFiles) {
+      fd.append("file_attachments_list", item.file, item.file.name);
+    }
     try {
       await apiFetch(`/chats/id/${selectedId}/messages`, {
         method: "POST",
         body: fd,
       });
       setDraft("");
-      setFiles([]);
+      clearPickedFiles();
       setReplyTo(null);
       reloadMsgs();
     } catch (e) {
@@ -562,6 +637,28 @@ export function MessengerShell({
 
   const handleSaveEdit = async () => {
     if (!selectedId || !editing) return;
+    const nextText = draft.trim();
+    if (!nextText) {
+      try {
+        const attachments = await apiJson<AttachmentMeta[]>(
+          `/chats/id/${selectedId}/messages/id/${editing.id}/attachments`,
+        );
+        const validationError = validateMessageForSend(
+          nextText,
+          attachments.length > 0,
+        );
+        if (validationError) {
+          setComposeError(validationError);
+          return;
+        }
+      } catch (e) {
+        void alert(
+          e instanceof ApiError ? e.message : "Не удалось проверить вложения",
+        );
+        return;
+      }
+    }
+    setComposeError(null);
     try {
       await apiFetch(
         `/chats/id/${selectedId}/messages/id/${editing.id}`,
@@ -582,6 +679,7 @@ export function MessengerShell({
     if (!selectedId) return;
     const q = hdrSearch.trim();
     if (!q) {
+      setChatSearchError(null);
       setSearchMode(false);
       setSearchHitsChat([]);
       searchChatPageRef.current = 0;
@@ -589,6 +687,12 @@ export function MessengerShell({
       void loadMessages(true);
       return;
     }
+    const validationError = validateMessageSearch(q, "Поиск по чату");
+    if (validationError) {
+      setChatSearchError(validationError);
+      return;
+    }
+    setChatSearchError(null);
     setLoadingSearchChat(true);
     try {
       const enc = encodeURIComponent(q);
@@ -643,10 +747,12 @@ export function MessengerShell({
 
   const searchUsersCompose = async () => {
     const q = usernameQuery.trim();
-    if (!q) {
-      setSearchHits([]);
+    const validationError = validateUsernameSearch(q);
+    if (validationError) {
+      setNewChatError(validationError);
       return;
     }
+    setNewChatError(null);
     try {
       const hits = await apiJson<UserInList[]>(
         `/users/search/by-username?username=${encodeURIComponent(q)}&offset_multiplier=0`,
@@ -691,10 +797,12 @@ export function MessengerShell({
 
   const createGroupOrChannel = async (kind: "group" | "channel") => {
     const name = groupName.trim();
-    if (!name) {
-      void alert("Укажите название");
+    const validationError = validateChatName(name);
+    if (validationError) {
+      setNewChatError(validationError);
       return;
     }
+    setNewChatError(null);
     try {
       const path = kind === "group" ? "/chats/group" : "/chats/channels";
       const res = await apiJson<{ id: number }>(path, {
@@ -812,7 +920,7 @@ export function MessengerShell({
               style={{ flex: 1 }}
               onClick={() => setComposeOpen(true)}
             >
-              <IconPlus size={18} /> Новый
+              <IconPlus size={18} /> Новый чат
             </button>
           </div>
           <div
@@ -837,7 +945,7 @@ export function MessengerShell({
                   setEditing(null);
                   setReplyTo(null);
                   setDraft("");
-                  setFiles([]);
+                  clearPickedFiles();
                   setSearchMode(false);
                   setSearchHitsChat([]);
                   searchChatPageRef.current = 0;
@@ -866,7 +974,7 @@ export function MessengerShell({
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 700 }}>{chatLabel(c)}</div>
                   <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                    {kindLabel(c.chat_kind)}
+                    {chatKindLabel(c.chat_kind)}
                   </div>
                   {c.last_message ? (
                     <div
@@ -956,7 +1064,7 @@ export function MessengerShell({
                 >
                   <div style={{ fontWeight: 800 }}>{chatLabel(selectedChat)}</div>
                   <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                    {kindLabel(selectedChat.chat_kind)}
+                    {chatKindLabel(selectedChat.chat_kind)}
                   </div>
                 </div>
                 <div
@@ -972,7 +1080,10 @@ export function MessengerShell({
                     className="ui-input"
                     placeholder="Поиск в чате…"
                     value={hdrSearch}
-                    onChange={(e) => setHdrSearch(e.target.value)}
+                    onChange={(e) => {
+                      setHdrSearch(e.target.value);
+                      setChatSearchError(null);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void runHdrSearch();
                     }}
@@ -989,6 +1100,10 @@ export function MessengerShell({
                   </button>
                 </div>
               </div>
+              <ValidationError
+                message={chatSearchError}
+                style={{ margin: "8px 12px 0" }}
+              />
 
               {commentRoot ? (
                 <div
@@ -1110,7 +1225,7 @@ export function MessengerShell({
                               setEditing(m);
                               setDraft(m.message_text ?? "");
                               setReplyTo(null);
-                              setFiles([]);
+                              clearPickedFiles();
                             }
                           : undefined
                       }
@@ -1199,6 +1314,7 @@ export function MessengerShell({
                           onClick={() => {
                             setEditing(null);
                             setDraft("");
+                            setComposeError(null);
                           }}
                         >
                           Отмена
@@ -1206,49 +1322,51 @@ export function MessengerShell({
                       </div>
                     ) : null}
                     <PickedFilesStrip
-                      files={files}
-                      onRemove={(i) => {
-                        setFiles((prev) => prev.filter((_, j) => j !== i));
-                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      files={pickedFiles}
+                      onRemove={(id) => {
+                        setPickedFiles((prev) => prev.filter((item) => item.id !== id));
+                        resetAttachmentInput();
                       }}
                     />
+                    <ValidationError message={composeError} />
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                       {!editing ? (
-                        <label
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            width: 44,
-                            height: 44,
-                            borderRadius: "50%",
-                            border: "1px solid var(--border)",
-                            cursor: "pointer",
-                            background: "var(--bg)",
-                          }}
-                        >
-                          <IconPaperclip />
+                        <>
                           <input
+                            key={fileInputKey}
                             ref={fileInputRef}
                             type="file"
                             multiple
                             className="sr-only"
-                            onClick={(e) => {
-                              (e.currentTarget as HTMLInputElement).value = "";
-                            }}
-                            onChange={(e) => {
-                              const fl = e.target.files;
-                              if (fl?.length)
-                                setFiles((prev) => [...prev, ...Array.from(fl)]);
-                              e.target.value = "";
-                            }}
+                            onChange={(e) => appendPickedFiles(e.target.files)}
                           />
-                        </label>
+                          <button
+                            type="button"
+                            aria-label="РџСЂРёРєСЂРµРїРёС‚СЊ С„Р°Р№Р»С‹"
+                            onClick={openAttachmentPicker}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: 44,
+                              height: 44,
+                              borderRadius: "50%",
+                              border: "1px solid var(--border)",
+                              background: "var(--bg)",
+                              flexShrink: 0,
+                            }}
+                          >
+                            <IconPaperclip />
+                          </button>
+                        </>
                       ) : null}
                       <textarea
                         className="ui-textarea"
                         value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
+                        onChange={(e) => {
+                          setDraft(e.target.value);
+                          setComposeError(null);
+                        }}
                         placeholder="Сообщение…"
                         rows={2}
                         style={{ flex: 1, minHeight: 48 }}
@@ -1280,6 +1398,7 @@ export function MessengerShell({
             <ChatInfoPanel
               chat={selectedChat}
               currentUserId={currentUser.id}
+              privatePeerId={privatePeerByChat[selectedChat.id] ?? null}
               onClose={() => {}}
               onRefreshChats={async () => {
                 await refreshChats();
@@ -1297,7 +1416,7 @@ export function MessengerShell({
           <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
             {(
               [
-                ["private", "Личный"],
+                ["private", "Личный чат"],
                 ["group", "Группа"],
                 ["channel", "Канал"],
               ] as const
@@ -1306,7 +1425,10 @@ export function MessengerShell({
                 key={k}
                 type="button"
                 className={composeTab === k ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
-                onClick={() => setComposeTab(k)}
+                onClick={() => {
+                  setComposeTab(k);
+                  setNewChatError(null);
+                }}
               >
                 {lab}
               </button>
@@ -1316,11 +1438,15 @@ export function MessengerShell({
             <>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Username</span>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Имя пользователя</span>
                   <input
                     className="ui-input"
                     value={usernameQuery}
-                    onChange={(e) => setUsernameQuery(e.target.value)}
+                    onChange={(e) => {
+                      setUsernameQuery(e.target.value);
+                      setNewChatError(null);
+                    }}
+                    maxLength={100}
                   />
                 </label>
                 <button
@@ -1331,6 +1457,7 @@ export function MessengerShell({
                   <IconSearch />
                 </button>
               </div>
+              <ValidationError message={newChatError} />
               {searchHits.map((u) => (
                 <button
                   key={u.id}
@@ -1359,9 +1486,14 @@ export function MessengerShell({
                 <input
                   className="ui-input"
                   value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
+                  onChange={(e) => {
+                    setGroupName(e.target.value);
+                    setNewChatError(null);
+                  }}
+                  maxLength={100}
                 />
               </label>
+              <ValidationError message={newChatError} />
               <button
                 type="button"
                 className="ui-btn ui-btn--primary"
@@ -1382,7 +1514,10 @@ export function MessengerShell({
           currentUser={currentUser}
           assetEpoch={assetEpoch}
           onClose={() => setMenuOpen(false)}
-          onOpenProfile={(id) => setProfileUserId(id)}
+          onOpenProfile={(id) => {
+            setMenuOpen(false);
+            setProfileUserId(id);
+          }}
           onOpenChat={(id, options) => {
             setMenuOpen(false);
             void openChatById(id, options);
@@ -1397,6 +1532,7 @@ export function MessengerShell({
             }
           }}
           onMediaInvalidate={bumpAssets}
+          onUserDeleted={onLogout}
         />
       ) : null}
 
@@ -1407,6 +1543,8 @@ export function MessengerShell({
           assetEpoch={assetEpoch}
           onClose={() => setProfileUserId(null)}
           onOpenChat={(id, options) => {
+            setMenuOpen(false);
+            setProfileUserId(null);
             void openChatById(id, options);
           }}
         />
@@ -1440,6 +1578,7 @@ export function MessengerShell({
               variant="sheet"
               chat={selectedChat}
               currentUserId={currentUser.id}
+              privatePeerId={privatePeerByChat[selectedChat.id] ?? null}
               onClose={() => setInfoOpen(false)}
               onRefreshChats={async () => {
                 await refreshChats();

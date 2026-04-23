@@ -59,6 +59,7 @@ class Error(enum.Enum):
     user_is_already_blocked_error = "USER_IS_ALREADY_BLOCKED_ERROR"
     invalid_email_code_error = "INVALID_EMAIL_CODE_ERROR"
     empty_message_error = "EMPTY_MESSAGE_ERROR"
+    email_delivery_error = "EMAIL_DELIVERY_ERROR"
 
 
 class ErrorRegistry:
@@ -112,3 +113,4 @@ class ErrorRegistry:
     user_is_already_blocked_error = ErrorInfo(error_code = Error.user_is_already_blocked_error, error_message = "Указанный пользователь уже заблокирован вами!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     invalid_email_code_error = ErrorInfo(error_code = Error.invalid_email_code_error, error_message ="Введенный код подтверждения не является действительным!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     empty_message_error = ErrorInfo(error_code = Error.empty_message_error, error_message = "Сообщение не может быть пустым!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
+    email_delivery_error = ErrorInfo(error_code = Error.email_delivery_error, error_message = "Не удалось отправить письмо. Проверьте адрес электронной почты или попробуйте позже.", error_status_code = fastapi.status.HTTP_503_SERVICE_UNAVAILABLE)

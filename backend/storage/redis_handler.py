@@ -63,9 +63,9 @@ class RedisClient:
                 "login": register_data.login,
                 "password": register_data.password})
         if register_data.surname:
-            self.client.hset(f"register:session_id:{session_id}", "surname", register_data.surname)
+            await self.client.hset(f"register:session_id:{session_id}", "surname", register_data.surname)
         if register_data.second_name:
-            self.client.hset(f"register:session_id:{session_id}", "second_name", register_data.second_name)
+            await self.client.hset(f"register:session_id:{session_id}", "second_name", register_data.second_name)
 
         await self.client.expireat(f"register:session_id:{session_id}", expiration_datetime)
         return session_id

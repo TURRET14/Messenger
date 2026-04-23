@@ -13,6 +13,11 @@ export interface AttachmentMeta {
   file_extension: string;
 }
 
+export interface PickedFileItem {
+  id: number;
+  file: File;
+}
+
 export function MessageBubble({
   m,
   chatId: _chatId,
@@ -327,15 +332,15 @@ export function PickedFilesStrip({
   files,
   onRemove,
 }: {
-  files: File[];
-  onRemove: (index: number) => void;
+  files: PickedFileItem[];
+  onRemove: (id: number) => void;
 }) {
   if (files.length === 0) return null;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-      {files.map((f, i) => (
+      {files.map((item) => (
         <div
-          key={`${f.name}-${f.size}-${i}-${f.lastModified}`}
+          key={item.id}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -348,12 +353,12 @@ export function PickedFilesStrip({
           }}
         >
           <span className="sr-only">Файл</span>
-          {f.name}
+          {item.file.name}
           <button
             type="button"
             aria-label="Убрать вложение"
             title="Убрать"
-            onClick={() => onRemove(i)}
+            onClick={() => onRemove(item.id)}
             style={{
               border: "none",
               background: "none",
