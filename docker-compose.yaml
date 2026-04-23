@@ -58,8 +58,8 @@ services:
       SMTP_HOSTNAME: ${SMTP_HOSTNAME}
       SMTP_USERNAME: ${SMTP_USERNAME}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
-    ports:
-      - ${BACKEND_PORT}:${BACKEND_PORT}
+    expose:
+      - "${BACKEND_PORT}"
     depends_on:
       - db
       - redis
@@ -73,8 +73,8 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     container_name: frontend
-    ports:
-      - ${FRONTEND_PORT}:${FRONTEND_PORT}
+    expose:
+      - "${FRONTEND_PORT}"
     environment:
       FRONTEND_STATIC_PORT: ${FRONTEND_PORT}
       VITE_API_BASE_URL: ${VITE_API_BASE_URL}
@@ -82,6 +82,45 @@ services:
       - backend-service
     restart: always
 
+  nginx:
+    build:
+      context: .
+      dockerfile: DockerfileNginx
+    container_name: nginx
+    ports:
+      - ${NGINX_HTTP_PORT}:80
+      - ${NGINX_HTTPS_PORT}:443
+    environment:
+      SSL_SERVER_NAME: ${SSL_SERVER_NAME}
+      SSL_CERT_NAME: ${SSL_CERT_NAME}
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    depends_on:
+      - frontend-service
+      - backend-service
+    restart: always
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    environment:
+      SSL_SERVER_NAME: ${SSL_SERVER_NAME}
+      SSL_SUBJECT_TYPE: ${SSL_SUBJECT_TYPE}
+      SSL_CERT_NAME: ${SSL_CERT_NAME}
+      SSL_CONTACT_EMAIL: ${SSL_CONTACT_EMAIL}
+      CERTBOT_WEBROOT: /var/www/certbot
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+      - ./certbot/run-certbot.sh:/run-certbot.sh:ro
+    depends_on:
+      - nginx
+    entrypoint: ["/bin/sh", "/run-certbot.sh"]
+    restart: always
+
 volumes:
   postgres_data:
   minio_data:
+  letsencrypt:
+  certbot_webroot:
