@@ -167,7 +167,18 @@ database_url: sqlalchemy.engine.URL = sqlalchemy.engine.URL.create(
     port = environment.POSTGRES_PORT,
     database = environment.POSTGRES_DB)
 
-db_engine: sqlalchemy.ext.asyncio.AsyncEngine = sqlalchemy.ext.asyncio.create_async_engine(database_url)
+DB_POOL_SIZE: int = 15
+DB_MAX_OVERFLOW: int = 15
+DB_POOL_TIMEOUT_SECONDS: int = 15
+DB_POOL_RECYCLE_SECONDS: int = 1800
+
+db_engine: sqlalchemy.ext.asyncio.AsyncEngine = sqlalchemy.ext.asyncio.create_async_engine(
+    database_url,
+    pool_size = DB_POOL_SIZE,
+    max_overflow = DB_MAX_OVERFLOW,
+    pool_timeout = DB_POOL_TIMEOUT_SECONDS,
+    pool_pre_ping = True,
+    pool_recycle = DB_POOL_RECYCLE_SECONDS)
 async_session_maker: sqlalchemy.ext.asyncio.async_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind = db_engine, expire_on_commit = False)
 
 async def init_db():

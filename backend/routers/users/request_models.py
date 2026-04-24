@@ -19,6 +19,11 @@ class EmailRequestModel(pydantic.BaseModel):
     email_address: str = pydantic.EmailStr()
 
 
+class PasswordResetConfirmRequestModel(pydantic.BaseModel):
+    code: str = pydantic.Field(max_length = 100)
+    new_password: str = pydantic.Field(min_length = 5, max_length = 100)
+
+
 class LoginRequestModel(pydantic.BaseModel):
     login: str = pydantic.Field(max_length = 100)
     password: str = pydantic.Field(min_length = 5, max_length = 100)

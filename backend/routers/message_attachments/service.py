@@ -41,19 +41,25 @@ async def get_message_attachments_list(
 
 
 async def get_message_attachment_file(
-    selected_chat: Chat,
-    selected_message: Message,
-    selected_attachment: MessageAttachment,
-    selected_user: User,
-    minio_client: MinioClient,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.StreamingResponse:
+    attachment_file_path: str,
+    minio_client: MinioClient) -> fastapi.responses.StreamingResponse:
 
-    await validators.validate_get_message_attachment(selected_chat, selected_message, selected_attachment, selected_user, db)
-
-    file: urllib3.BaseHTTPResponse = await minio_client.get_file(MinioBucket.messages_attachments, selected_attachment.attachment_file_path)
-    file_stat: minio.datatypes.Object = await minio_client.get_file_stat(MinioBucket.messages_attachments, selected_attachment.attachment_file_path)
+    file: urllib3.BaseHTTPResponse = await minio_client.get_file(MinioBucket.messages_attachments, attachment_file_path)
+    file_stat: minio.datatypes.Object = await minio_client.get_file_stat(MinioBucket.messages_attachments, attachment_file_path)
 
     background_tasks = fastapi.BackgroundTasks()
     background_tasks.add_task(minio_client.close_file_stream, file)
 
     return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
+
+
+async def get_message_attachment_path(
+    selected_chat: Chat,
+    selected_message: Message,
+    selected_attachment: MessageAttachment,
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> str:
+
+    await validators.validate_get_message_attachment(selected_chat, selected_message, selected_attachment, selected_user, db)
+
+    return selected_attachment.attachment_file_path

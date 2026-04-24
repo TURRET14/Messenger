@@ -224,12 +224,8 @@ async def get_chat_members(
 
 
 async def get_chat_avatar(
-    selected_chat: Chat,
-    selected_user: User,
-    minio_client: MinioClient,
-    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.StreamingResponse:
-
-    avatar_photo_path: str = await validators.validate_get_chat_avatar(selected_chat, selected_user, db)
+    avatar_photo_path: str,
+    minio_client: MinioClient) -> fastapi.responses.StreamingResponse:
 
     file = await minio_client.get_file(MinioBucket.chats_avatars, avatar_photo_path)
     file_stat = await minio_client.get_file_stat(MinioBucket.chats_avatars, avatar_photo_path)
@@ -238,6 +234,14 @@ async def get_chat_avatar(
     background_tasks.add_task(minio_client.close_file_stream, file)
 
     return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
+
+
+async def get_chat_avatar_path(
+    selected_chat: Chat,
+    selected_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> str:
+
+    return await validators.validate_get_chat_avatar(selected_chat, selected_user, db)
 
 
 async def create_private_chat(

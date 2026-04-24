@@ -33,7 +33,8 @@ from backend.routers.users.request_models import (
     UserUpdateLoginRequestModel,
     UserUpdatePasswordRequestModel,
     CodeModel,
-    EmailRequestModel)
+    EmailRequestModel,
+    PasswordResetConfirmRequestModel)
 
 from backend.routers.users.response_models import (
     FriendRequestResponseModel,
@@ -57,7 +58,7 @@ async def register(
 
     register_session_code: str = await redis_client.create_register_session(data)
 
-    await EmailService.send_email_confirmation(data.email_address, register_session_code)
+    await EmailService.send_registration_confirmation(data.email_address, register_session_code)
 
     return fastapi.responses.Response(status_code = HTTP_204_NO_CONTENT)
 
@@ -124,6 +125,57 @@ async def login(
     response.status_code = fastapi.status.HTTP_200_OK
 
     return response
+
+
+async def request_password_reset(
+    email_data: EmailRequestModel,
+    redis_client: RedisClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
+
+    selected_user: User | None = ((await db.execute(
+    sqlalchemy.select(User)
+    .where(User.email_address == email_data.email_address)))
+    .scalars().first())
+
+    if not selected_user:
+        return fastapi.responses.Response(status_code = HTTP_204_NO_CONTENT)
+
+    request_code: str = await redis_client.create_password_reset_request(selected_user.id)
+    try:
+        await EmailService.send_password_reset_code(email_data.email_address, request_code)
+    except fastapi.exceptions.HTTPException:
+        await redis_client.delete_password_reset_request(request_code)
+        raise
+
+    return fastapi.responses.Response(status_code = HTTP_204_NO_CONTENT)
+
+
+async def confirm_password_reset(
+    password_reset_data: PasswordResetConfirmRequestModel,
+    redis_client: RedisClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
+
+    password_reset_request = await redis_client.get_password_reset_request(password_reset_data.code)
+
+    if not password_reset_request:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.invalid_email_code_error.error_status_code, detail = ErrorRegistry.invalid_email_code_error)
+
+    selected_user: User | None = ((await db.execute(
+    sqlalchemy.select(User)
+    .where(User.id == password_reset_request.user_id)))
+    .scalars().first())
+
+    if not selected_user:
+        await redis_client.delete_password_reset_request(password_reset_data.code)
+        return fastapi.responses.Response(status_code = HTTP_204_NO_CONTENT)
+
+    selected_user.password = await backend.routers.security.hash_password(password_reset_data.new_password)
+    await db.commit()
+
+    await redis_client.delete_password_reset_request(password_reset_data.code)
+    await redis_client.delete_all_user_sessions(selected_user.id)
+
+    return fastapi.responses.Response(status_code = HTTP_204_NO_CONTENT)
 
 
 async def get_all_sessions(
@@ -242,7 +294,7 @@ async def update_user_email(
 
     code: str = await redis_client.create_change_email_request(selected_user.id, email_data)
     try:
-        await EmailService.send_email_confirmation(email_data.email_address, code)
+        await EmailService.send_email_change_confirmation(email_data.email_address, code)
     except fastapi.exceptions.HTTPException:
         await redis_client.delete_change_email_request(code)
         raise

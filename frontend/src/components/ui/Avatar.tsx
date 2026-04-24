@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { apiFetch } from "../../api/client";
+import { getCachedMediaUrl, peekCachedMediaUrl } from "../../media/mediaCache";
 
 const wrap = (size: number): CSSProperties => ({
   width: size,
@@ -36,22 +36,22 @@ export function Avatar({
       setBlobUrl(null);
       return;
     }
-    let revoked = false;
-    let url: string | null = null;
+    const cached = peekCachedMediaUrl(src);
+    if (cached) {
+      setBlobUrl(cached);
+      return;
+    }
+    let cancelled = false;
     (async () => {
       try {
-        const res = await apiFetch(src);
-        const b = await res.blob();
-        if (revoked) return;
-        url = URL.createObjectURL(b);
-        setBlobUrl(url);
+        const url = await getCachedMediaUrl(src);
+        if (!cancelled) setBlobUrl(url);
       } catch {
-        if (!revoked) setBlobUrl(null);
+        if (!cancelled) setBlobUrl(null);
       }
     })();
     return () => {
-      revoked = true;
-      if (url) URL.revokeObjectURL(url);
+      cancelled = true;
     };
   }, [src]);
 

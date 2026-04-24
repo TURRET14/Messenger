@@ -57,12 +57,17 @@ description =
 Только для групповых чатов и каналов.
 """)
 async def get_chat_avatar(
-    selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
-    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
-    minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client),
-    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.StreamingResponse:
+    chat_id: int = fastapi.Path(ge = 0),
+    session_id: str | None = fastapi.Cookie(default = None),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
+    minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client)) -> fastapi.responses.StreamingResponse:
 
-    return await service.get_chat_avatar(selected_chat, current_user, minio_client, db)
+    async with async_session_maker() as db:
+        selected_chat: Chat = await backend.routers.dependencies.require_chat_by_id(chat_id, db)
+        current_user: User = await backend.routers.dependencies.require_session_user(session_id, db, redis_client)
+        avatar_photo_path: str = await service.get_chat_avatar_path(selected_chat, current_user, db)
+
+    return await service.get_chat_avatar(avatar_photo_path, minio_client)
 
 
 @chats_router.post("/chats/private", response_class = fastapi.responses.JSONResponse,

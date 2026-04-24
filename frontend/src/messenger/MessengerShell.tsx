@@ -113,6 +113,7 @@ export function MessengerShell({
   const [chatsDone, setChatsDone] = useState(false);
   const [loadingChats, setLoadingChats] = useState(false);
   const chatLoadRef = useRef(false);
+  const refreshChatsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedChatData, setSelectedChatData] = useState<Chat | null>(null);
@@ -165,12 +166,19 @@ export function MessengerShell({
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesBottomRef = useRef<HTMLDivElement>(null);
   const shouldScrollToBottomRef = useRef(false);
+  const prependScrollRestoreRef = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
+  const detachedSelectionRef = useRef(false);
+  const readAllInFlightRef = useRef(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const nextPickedFileIdRef = useRef(1);
   const [privatePeerByChat, setPrivatePeerByChat] = useState<Record<number, number>>({});
   const [composeError, setComposeError] = useState<string | null>(null);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
-  const readMarkedRef = useRef(new Set<number>());
+  const replyInflightRef = useRef(new Set<number>());
 
   const ensureName = useCallback(async (uid: number) => {
     if (userNamesRef.current[uid]) return;
@@ -198,12 +206,48 @@ export function MessengerShell({
     resetAttachmentInput();
   }, [resetAttachmentInput]);
 
+  const clearThreadSelection = useCallback(() => {
+    detachedSelectionRef.current = false;
+    setSelectedId(null);
+    setSelectedChatData(null);
+    setCommentRoot(null);
+    setMessages([]);
+    setSearchMode(false);
+    setSearchHitsChat([]);
+    searchChatPageRef.current = 0;
+    setSearchChatDone(false);
+    setReplyTo(null);
+    setEditing(null);
+    setDraft("");
+    setComposeError(null);
+    setProfileUserId(null);
+    setMyRole(null);
+    clearPickedFiles();
+  }, [clearPickedFiles]);
+
+  const updateJumpToBottomVisibility = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (!el) {
+      setShowJumpToBottom(false);
+      return;
+    }
+    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+    setShowJumpToBottom(distanceFromBottom > 160);
+  }, []);
+
+  const isNearMessagesBottom = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.clientHeight - el.scrollTop < 120;
+  }, []);
+
   const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const el = messagesScrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior });
     messagesBottomRef.current?.scrollIntoView({ block: "end", behavior });
-  }, []);
+    window.requestAnimationFrame(updateJumpToBottomVisibility);
+  }, [updateJumpToBottomVisibility]);
 
   const forceScrollMessagesToBottom = useCallback(() => {
     const run = () => scrollMessagesToBottom("auto");
@@ -309,6 +353,22 @@ export function MessengerShell({
     void refreshChats();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (refreshChatsTimerRef.current) {
+        clearTimeout(refreshChatsTimerRef.current);
+      }
+    };
+  }, []);
+
+  const scheduleRefreshChats = useCallback(() => {
+    if (refreshChatsTimerRef.current) return;
+    refreshChatsTimerRef.current = setTimeout(() => {
+      refreshChatsTimerRef.current = null;
+      void refreshChats();
+    }, 120);
+  }, [refreshChats]);
+
   const selectedChat = useMemo(() => {
     const fromList = chats.find((c) => c.id === selectedId) ?? null;
     if (fromList) return fromList;
@@ -333,6 +393,7 @@ export function MessengerShell({
             return [...rest, fresh];
           });
         }
+        detachedSelectionRef.current = !!options?.ephemeral;
         setSelectedChatData(fresh);
         setSelectedId(chatId);
         setCommentRoot(null);
@@ -370,6 +431,12 @@ export function MessengerShell({
   useEffect(() => {
     if (!selectedId) setSelectedChatData(null);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedId == null || detachedSelectionRef.current) return;
+    if (chats.some((c) => c.id === selectedId)) return;
+    clearThreadSelection();
+  }, [selectedId, chats, clearThreadSelection]);
 
   useEffect(() => {
     for (const c of chats) {
@@ -415,6 +482,13 @@ export function MessengerShell({
     async (reset: boolean) => {
       if (!selectedId) return;
       setLoadingMsg(true);
+      const scrollRestore =
+        !reset && !searchModeRef.current && messagesScrollRef.current
+          ? {
+              scrollHeight: messagesScrollRef.current.scrollHeight,
+              scrollTop: messagesScrollRef.current.scrollTop,
+            }
+          : null;
       try {
         const mult = reset ? 0 : msgPageRef.current + 1;
         let batch: Message[];
@@ -429,11 +503,13 @@ export function MessengerShell({
         }
         const reversed = [...batch].reverse();
         if (reset) {
+          prependScrollRestoreRef.current = null;
           shouldScrollToBottomRef.current = true;
           msgPageRef.current = 0;
           setMessages(reversed);
           setMsgDone(batch.length < PAGE);
         } else {
+          prependScrollRestoreRef.current = scrollRestore;
           msgPageRef.current = mult;
           setMessages((prev) => [...reversed, ...prev]);
           if (batch.length < PAGE) setMsgDone(true);
@@ -442,6 +518,8 @@ export function MessengerShell({
           if (m.sender_user_id) void ensureName(m.sender_user_id);
           if (m.reply_message_id) {
             const rid = m.reply_message_id;
+            if (replyCache[rid] || replyInflightRef.current.has(rid)) continue;
+            replyInflightRef.current.add(rid);
             void (async () => {
               try {
                 const rm = await apiJson<Message>(
@@ -451,6 +529,8 @@ export function MessengerShell({
                 if (rm.sender_user_id) void ensureName(rm.sender_user_id);
               } catch {
                 /* skip */
+              } finally {
+                replyInflightRef.current.delete(rid);
               }
             })();
           }
@@ -477,21 +557,43 @@ export function MessengerShell({
 
   const reloadMsgs = () => {
     if (selectedId) {
+      prependScrollRestoreRef.current = null;
       shouldScrollToBottomRef.current = true;
       void loadMessages(true);
     }
   };
 
   useLayoutEffect(() => {
+    const restore = prependScrollRestoreRef.current;
+    if (restore) {
+      prependScrollRestoreRef.current = null;
+      const el = messagesScrollRef.current;
+      if (el) {
+        el.scrollTop = restore.scrollTop + (el.scrollHeight - restore.scrollHeight);
+      }
+      updateJumpToBottomVisibility();
+      return;
+    }
     if (!shouldScrollToBottomRef.current) return;
     shouldScrollToBottomRef.current = false;
     forceScrollMessagesToBottom();
-  }, [messages.length, selectedId, commentRoot?.id, forceScrollMessagesToBottom]);
+  }, [
+    messages.length,
+    searchHitsChat.length,
+    selectedId,
+    commentRoot?.id,
+    forceScrollMessagesToBottom,
+    updateJumpToBottomVisibility,
+  ]);
 
-  useBackendSocket("/chats/post", true, refreshChats);
-  useBackendSocket("/chats/put", true, refreshChats);
-  useBackendSocket("/chats/delete", true, refreshChats);
-  useBackendSocket("/chats/messages/last", true, refreshChats);
+  useLayoutEffect(() => {
+    updateJumpToBottomVisibility();
+  }, [selectedId, commentRoot?.id, searchMode, updateJumpToBottomVisibility]);
+
+  useBackendSocket("/chats/post", true, scheduleRefreshChats);
+  useBackendSocket("/chats/put", true, scheduleRefreshChats);
+  useBackendSocket("/chats/delete", true, scheduleRefreshChats);
+  useBackendSocket("/chats/messages/last", true, scheduleRefreshChats);
 
   const parentKey = commentRoot?.id ?? null;
   const onWsMsg = useCallback(
@@ -501,7 +603,7 @@ export function MessengerShell({
         const data = JSON.parse(ev.data as string) as Message;
         const p = data.parent_message_id ?? null;
         if (data.chat_id !== selectedId || p !== parentKey) return;
-        if (data.sender_user_id === currentUser.id) {
+        if (data.sender_user_id === currentUser.id || isNearMessagesBottom()) {
           shouldScrollToBottomRef.current = true;
         }
         setMessages((prev) => mergeByIdAsc(prev, data));
@@ -510,7 +612,7 @@ export function MessengerShell({
         reloadMsgs();
       }
     },
-    [selectedId, parentKey, currentUser.id, ensureName],
+    [selectedId, parentKey, currentUser.id, ensureName, isNearMessagesBottom],
   );
 
   const onWsDel = useCallback(
@@ -602,25 +704,36 @@ export function MessengerShell({
   useEffect(() => {
     if (searchMode) return;
     if (!selectedChat || !selectedId) return;
+    if (commentRoot) return;
     if (
       selectedChat.chat_kind !== "GROUP" &&
       selectedChat.chat_kind !== "PRIVATE"
     )
       return;
-    for (const m of messages) {
-      if (
-        m.sender_user_id &&
+    const hasUnreadFromOthers = messages.some(
+      (m) =>
+        m.sender_user_id != null &&
         m.sender_user_id !== currentUser.id &&
-        m.is_read !== true &&
-        !readMarkedRef.current.has(m.id)
-      ) {
-        readMarkedRef.current.add(m.id);
-        void apiFetch(`/chats/id/${selectedId}/messages/id/${m.id}/read`, {
-          method: "POST",
-        }).catch(() => readMarkedRef.current.delete(m.id));
-      }
-    }
-  }, [messages, selectedChat, selectedId, currentUser.id, searchMode]);
+        m.is_read !== true,
+    );
+    if (!hasUnreadFromOthers || readAllInFlightRef.current) return;
+    readAllInFlightRef.current = true;
+    void apiFetch(`/chats/id/${selectedId}/messages/read-all`, {
+      method: "POST",
+    })
+      .then(() => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.sender_user_id != null && m.sender_user_id !== currentUser.id
+              ? { ...m, is_read: true }
+              : m,
+          ),
+        );
+      })
+      .finally(() => {
+        readAllInFlightRef.current = false;
+      });
+  }, [messages, selectedChat, selectedId, currentUser.id, searchMode, commentRoot]);
 
   const displayName = (uid: number | null) => {
     if (uid == null) return "Система";
@@ -734,12 +847,14 @@ export function MessengerShell({
     setChatSearchError(null);
     setLoadingSearchChat(true);
     try {
+      prependScrollRestoreRef.current = null;
       const enc = encodeURIComponent(q);
       const path = commentRoot
         ? `/chats/id/${selectedId}/messages/id/${commentRoot.id}/comments/search?message_text=${enc}&offset_multiplier=0`
         : `/chats/id/${selectedId}/messages/search?message_text=${enc}&offset_multiplier=0`;
       const batch = await apiJson<Message[]>(path);
       const reversed = [...batch].reverse();
+      shouldScrollToBottomRef.current = true;
       searchChatPageRef.current = 0;
       setSearchHitsChat(reversed);
       setSearchChatDone(batch.length < PAGE);
@@ -759,6 +874,12 @@ export function MessengerShell({
     const q = hdrSearch.trim();
     if (!q) return;
     setLoadingSearchChat(true);
+    const scrollRestore = messagesScrollRef.current
+      ? {
+          scrollHeight: messagesScrollRef.current.scrollHeight,
+          scrollTop: messagesScrollRef.current.scrollTop,
+        }
+      : null;
     try {
       const mult = searchChatPageRef.current + 1;
       const enc = encodeURIComponent(q);
@@ -768,6 +889,7 @@ export function MessengerShell({
       const batch = await apiJson<Message[]>(path);
       searchChatPageRef.current = mult;
       const reversed = [...batch].reverse();
+      prependScrollRestoreRef.current = scrollRestore;
       setSearchHitsChat((prev) => {
         const ids = new Set(prev.map((x) => x.id));
         const add = reversed.filter((x) => !ids.has(x.id));
@@ -912,10 +1034,7 @@ export function MessengerShell({
             type="button"
             className="ui-btn ui-btn--ghost"
             aria-label="Назад к списку"
-            onClick={() => {
-              setSelectedId(null);
-              setSelectedChatData(null);
-            }}
+            onClick={clearThreadSelection}
           >
             <IconChevronLeft />
           </button>
@@ -978,6 +1097,7 @@ export function MessengerShell({
                 key={c.id}
                 type="button"
                 onClick={() => {
+                  detachedSelectionRef.current = false;
                   setSelectedId(c.id);
                   setSelectedChatData(c);
                   setCommentRoot(null);
@@ -1213,9 +1333,16 @@ export function MessengerShell({
               ) : null}
 
               <div
-                ref={messagesScrollRef}
                 style={{
                   flex: 1,
+                  minHeight: 0,
+                  position: "relative",
+                }}
+              >
+                <div
+                ref={messagesScrollRef}
+                style={{
+                  height: "100%",
                   overflowY: "auto",
                   padding: 12,
                   display: "flex",
@@ -1224,6 +1351,7 @@ export function MessengerShell({
                 }}
                 onScroll={(e) => {
                   const el = e.currentTarget;
+                  updateJumpToBottomVisibility();
                   if (el.scrollTop < 60 && selectedChat) {
                     if (searchMode) {
                       if (!loadingSearchChat && !searchChatDone)
@@ -1305,19 +1433,23 @@ export function MessengerShell({
                   title="Прокрутить вниз"
                   onClick={() => scrollMessagesToBottom()}
                   style={{
-                    position: "sticky",
-                    bottom: 8,
-                    alignSelf: "center",
+                    position: "absolute",
+                    right: 16,
+                    bottom: 16,
                     width: 42,
                     height: 42,
                     padding: 0,
                     borderRadius: 999,
                     boxShadow: "0 4px 16px var(--shadow)",
+                    opacity: showJumpToBottom ? 1 : 0,
+                    pointerEvents: showJumpToBottom ? "auto" : "none",
+                    transition: "opacity 160ms ease",
                     zIndex: 2,
                   }}
                 >
                   <IconChevronDown size={24} />
                 </button>
+              </div>
               </div>
 
               <div

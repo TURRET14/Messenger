@@ -150,6 +150,21 @@ async def mark_message_as_read(
     return await service.mark_message_as_read(selected_chat, selected_message, current_user, redis_client, db)
 
 
+@messages_router.post("/chats/id/{chat_id}/messages/read-all", response_class = fastapi.responses.Response,
+description =
+"""
+Маршрут для отметки всех непрочитанных корневых сообщений в указанном чате как прочитанных.
+"""
+)
+async def mark_chat_messages_as_read(
+    selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await service.mark_chat_messages_as_read(selected_chat, current_user, redis_client, db)
+
+
 @messages_router.get("/chats/id/{chat_id}/messages/last", response_class = fastapi.responses.JSONResponse, response_model = LastMessageResponseModel,
 description =
 """

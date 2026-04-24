@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { ApiError, apiFetch, apiJson } from "../api/client";
+import { ApiError, apiJson } from "../api/client";
 import type { Message } from "../api/types";
 import { IconPaperclip, IconX } from "../components/Icons";
 import { ActionMenu, type ActionMenuItem } from "../components/ui/ActionMenu";
 import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
 import { useDialogs } from "../context/DialogsContext";
+import { getCachedMediaUrl, peekCachedMediaUrl } from "../media/mediaCache";
 import { previewKind } from "./attachmentUtils";
 
 export interface AttachmentMeta {
@@ -17,6 +18,31 @@ export interface AttachmentMeta {
 export interface PickedFileItem {
   id: number;
   file: File;
+}
+
+const attachmentListCache = new Map<string, AttachmentMeta[]>();
+const attachmentListPromiseCache = new Map<string, Promise<AttachmentMeta[]>>();
+
+async function getCachedAttachmentList(chatId: number, messageId: number): Promise<AttachmentMeta[]> {
+  const key = `${chatId}:${messageId}`;
+  const cached = attachmentListCache.get(key);
+  if (cached) return cached;
+
+  const pending = attachmentListPromiseCache.get(key);
+  if (pending) return pending;
+
+  const promise = apiJson<AttachmentMeta[]>(
+    `/chats/id/${chatId}/messages/id/${messageId}/attachments`,
+  );
+  attachmentListPromiseCache.set(key, promise);
+
+  try {
+    const list = await promise;
+    attachmentListCache.set(key, list);
+    return list;
+  } finally {
+    attachmentListPromiseCache.delete(key);
+  }
 }
 
 export function MessageBubble({
@@ -62,9 +88,7 @@ export function MessageBubble({
     let cancelled = false;
     (async () => {
       try {
-        const list = await apiJson<AttachmentMeta[]>(
-          `/chats/id/${cid}/messages/id/${m.id}/attachments`,
-        );
+        const list = await getCachedAttachmentList(cid, m.id);
         if (!cancelled) setAtts(list);
       } catch {
         if (!cancelled) setAtts([]);
@@ -76,34 +100,34 @@ export function MessageBubble({
   }, [cid, m.id]);
 
   useEffect(() => {
-    return () => {
-      for (const u of Object.values(blobMap)) URL.revokeObjectURL(u);
-    };
-  }, []);
+    setBlobMap({});
+  }, [cid, m.id]);
+
+  const ensureBlob = async (att: AttachmentMeta) => {
+    const path = `/chats/id/${cid}/messages/id/${m.id}/attachments/id/${att.id}`;
+    const cachedBlob = peekCachedMediaUrl(path);
+    if (cachedBlob) return cachedBlob;
+    return await getCachedMediaUrl(path);
+  };
+
+  useEffect(() => {
+    if (!atts) return;
+
+    for (const att of atts) {
+      if (previewKind(att.file_extension || "") === "file") continue;
+      void ensureBlob(att).then((url) => {
+        setBlobMap((prev) => (prev[att.id] === url ? prev : { ...prev, [att.id]: url }));
+      });
+    }
+  }, [atts]);
 
   const openBlob = async (att: AttachmentMeta) => {
     try {
-      const res = await apiFetch(
-        `/chats/id/${cid}/messages/id/${m.id}/attachments/id/${att.id}`,
-      );
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const url = await ensureBlob(att);
       window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Не удалось открыть файл");
     }
-  };
-
-  const ensureBlob = async (att: AttachmentMeta) => {
-    if (blobMap[att.id]) return blobMap[att.id];
-    const res = await apiFetch(
-      `/chats/id/${cid}/messages/id/${m.id}/attachments/id/${att.id}`,
-    );
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    setBlobMap((prev) => ({ ...prev, [att.id]: url }));
-    return url;
   };
 
   const mine = m.sender_user_id === currentUserId;
@@ -139,86 +163,89 @@ export function MessageBubble({
             boxShadow: "0 1px 2px var(--shadow)",
           }}
         >
-      {m.reply_message_id && (replySnippet != null || replySenderLabel) ? (
-        <div
-          style={{
-            fontSize: "0.8rem",
-            color: "var(--text-muted)",
-            borderLeft: "3px solid var(--accent)",
-            paddingLeft: 8,
-            marginBottom: 8,
-          }}
-        >
-          {replySenderLabel ? (
-            <strong style={{ color: "var(--text)" }}>{replySenderLabel}</strong>
+          {m.reply_message_id && (replySnippet != null || replySenderLabel) ? (
+            <div
+              style={{
+                fontSize: "0.8rem",
+                color: "var(--text-muted)",
+                borderLeft: "3px solid var(--accent)",
+                paddingLeft: 8,
+                marginBottom: 8,
+              }}
+            >
+              {replySenderLabel ? (
+                <strong style={{ color: "var(--text)" }}>
+                  {replySenderLabel}
+                </strong>
+              ) : null}
+              {replySenderLabel ? <br /> : null}
+              <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {replySnippet ?? "..."}
+              </span>
+            </div>
           ) : null}
-          {replySenderLabel ? <br /> : null}
-          <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {replySnippet ?? "…"}
-          </span>
-        </div>
-      ) : null}
 
-      <div
-        style={{
-          fontSize: "0.75rem",
-          color: "var(--text-muted)",
-          marginBottom: 6,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          flexWrap: "wrap",
-        }}
-      >
-        {m.sender_user_id != null ? (
-          <Avatar
-            src={userAvatarUrl(m.sender_user_id, avatarEpoch)}
-            label={displaySender}
-            size={28}
-            alt=""
-          />
-        ) : null}
-        <span>{displaySender}</span>
-        <time dateTime={m.date_and_time_sent}>
-          {new Date(m.date_and_time_sent).toLocaleString()}
-        </time>
-        {edited ? (
-          <span title="Изменено">
-            · изм. {new Date(m.date_and_time_edited!).toLocaleString()}
-          </span>
-        ) : null}
-        {mine && showReadReceipt && readLabel ? (
-          <span style={{ marginLeft: "auto", fontWeight: 600 }}>{readLabel}</span>
-        ) : null}
-        {actionItems.length > 0 ? button : null}
-      </div>
+          <div
+            style={{
+              fontSize: "0.75rem",
+              color: "var(--text-muted)",
+              marginBottom: 6,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            {m.sender_user_id != null ? (
+              <Avatar
+                src={userAvatarUrl(m.sender_user_id, avatarEpoch)}
+                label={displaySender}
+                size={28}
+                alt=""
+              />
+            ) : null}
+            <span>{displaySender}</span>
+            <time dateTime={m.date_and_time_sent}>
+              {new Date(m.date_and_time_sent).toLocaleString()}
+            </time>
+            {edited ? (
+              <span title="Изменено">
+                · изм. {new Date(m.date_and_time_edited!).toLocaleString()}
+              </span>
+            ) : null}
+            {mine && showReadReceipt && readLabel ? (
+              <span style={{ marginLeft: "auto", fontWeight: 600 }}>
+                {readLabel}
+              </span>
+            ) : null}
+            {actionItems.length > 0 ? button : null}
+          </div>
 
-      {m.message_text ? (
-        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-          {m.message_text}
-        </div>
-      ) : null}
+          {m.message_text ? (
+            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {m.message_text}
+            </div>
+          ) : null}
 
-      {atts && atts.length > 0 ? (
-        <div
-          style={{
-            marginTop: 10,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          {atts.map((att) => (
-            <AttachmentPreview
-              key={att.id}
-              att={att}
-              getBlob={() => ensureBlob(att)}
-              onOpen={() => void openBlob(att)}
-            />
-          ))}
-        </div>
-      ) : null}
-
+          {atts && atts.length > 0 ? (
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {atts.map((att) => (
+                <AttachmentPreview
+                  key={att.id}
+                  att={att}
+                  url={blobMap[att.id] ?? null}
+                  onOpen={() => void openBlob(att)}
+                />
+              ))}
+            </div>
+          ) : null}
         </article>
       )}
     </ActionMenu>
@@ -227,31 +254,14 @@ export function MessageBubble({
 
 function AttachmentPreview({
   att,
-  getBlob,
+  url,
   onOpen,
 }: {
   att: AttachmentMeta;
-  getBlob: () => Promise<string>;
+  url: string | null;
   onOpen: () => void;
 }) {
   const kind = previewKind(att.file_extension || "");
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (kind === "file") return;
-    let alive = true;
-    void (async () => {
-      try {
-        const u = await getBlob();
-        if (alive) setUrl(u);
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [att.id, kind, getBlob]);
 
   return (
     <div
@@ -283,11 +293,7 @@ function AttachmentPreview({
         </button>
       ) : null}
       {kind === "video" && url ? (
-        <video
-          src={url}
-          controls
-          style={{ maxHeight: 220, width: "100%" }}
-        />
+        <video src={url} controls style={{ maxHeight: 220, width: "100%" }} />
       ) : null}
       {kind === "audio" && url ? (
         <audio src={url} controls style={{ width: "100%" }} />

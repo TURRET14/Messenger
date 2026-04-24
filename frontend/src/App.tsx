@@ -13,6 +13,7 @@ import { ValidationError } from "./components/ui/ValidationError";
 import { SERVICE_DISPLAY_NAME } from "./config";
 import {
   validateCode,
+  validateEmailAddress,
   validateLogin,
   validatePassword,
   validateRegisterForm,
@@ -24,12 +25,16 @@ type Screen =
   | { name: "login" }
   | { name: "register" }
   | { name: "register-code"; email: string }
+  | { name: "reset-request" }
+  | { name: "reset-confirm"; email: string }
   | { name: "app"; user: CurrentUser };
 
 type AuthScreen =
   | { name: "login" }
   | { name: "register" }
-  | { name: "register-code"; email: string };
+  | { name: "register-code"; email: string }
+  | { name: "reset-request" }
+  | { name: "reset-confirm"; email: string };
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: "loading" });
@@ -117,6 +122,9 @@ function AuthShell({
   const [regPassword, setRegPassword] = useState("");
 
   const [code, setCode] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -216,6 +224,68 @@ function AuthShell({
     }
   };
 
+  const handleResetRequest = async (e: FormEvent) => {
+    e.preventDefault();
+
+    const emailError = validateEmailAddress(resetEmail, "Электронная почта");
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+
+    setError(null);
+    setBusy(true);
+    try {
+      await apiFetch("/users/password/reset", {
+        method: "POST",
+        body: JSON.stringify({ email_address: resetEmail.trim() }),
+      });
+      setScreen({ name: "reset-confirm", email: resetEmail.trim() });
+      setResetCode("");
+      setResetNewPassword("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось отправить код");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResetConfirm = async (e: FormEvent) => {
+    e.preventDefault();
+
+    const codeError = validateCode(resetCode);
+    if (codeError) {
+      setError(codeError);
+      return;
+    }
+
+    const passwordError = validatePassword(resetNewPassword, "Новый пароль");
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
+
+    setError(null);
+    setBusy(true);
+    try {
+      await apiFetch("/users/password/reset/confirm", {
+        method: "POST",
+        body: JSON.stringify({
+          code: resetCode.trim(),
+          new_password: resetNewPassword,
+        }),
+      });
+      setScreen({ name: "login" });
+      setPassword("");
+      setResetCode("");
+      setResetNewPassword("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось изменить пароль");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const card: CSSProperties = {
     width: "min(420px, 100%)",
     padding: 28,
@@ -243,6 +313,16 @@ function AuthShell({
     color: "#fff",
     fontWeight: 600,
     cursor: busy ? "wait" : "pointer",
+  };
+
+  const linkBtn: CSSProperties = {
+    border: "none",
+    background: "none",
+    color: "var(--accent)",
+    cursor: "pointer",
+    textDecoration: "underline",
+    padding: 0,
+    font: "inherit",
   };
 
   return (
@@ -334,17 +414,22 @@ function AuthShell({
                   setScreen({ name: "register" });
                   setError(null);
                 }}
-                style={{
-                  border: "none",
-                  background: "none",
-                  color: "var(--accent)",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  padding: 0,
-                  font: "inherit",
-                }}
+                style={linkBtn}
               >
                 Регистрация
+              </button>
+            </p>
+            <p style={{ marginTop: 8, fontSize: "0.9rem", textAlign: "center" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setScreen({ name: "reset-request" });
+                  setResetEmail(login.trim());
+                  setError(null);
+                }}
+                style={linkBtn}
+              >
+                Забыли пароль?
               </button>
             </p>
           </>
@@ -444,15 +529,7 @@ function AuthShell({
                   setScreen({ name: "login" });
                   setError(null);
                 }}
-                style={{
-                  border: "none",
-                  background: "none",
-                  color: "var(--accent)",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  padding: 0,
-                  font: "inherit",
-                }}
+                style={linkBtn}
               >
                 Назад ко входу
               </button>
@@ -483,6 +560,96 @@ function AuthShell({
                 Создать аккаунт
               </button>
             </form>
+          </>
+        ) : null}
+
+        {screen.name === "reset-request" ? (
+          <>
+            <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Восстановление пароля</h2>
+            <p style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
+              Введите электронную почту аккаунта. Мы отправим код для сброса пароля.
+            </p>
+            <form noValidate onSubmit={(e) => void handleResetRequest(e)}>
+              <input
+                style={input}
+                type="email"
+                value={resetEmail}
+                onChange={(e) => {
+                  setResetEmail(e.target.value);
+                  setError(null);
+                }}
+                placeholder="Электронная почта"
+                required
+                maxLength={254}
+              />
+              <ValidationError message={error} />
+              <button type="submit" disabled={busy} style={btn}>
+                Отправить код
+              </button>
+            </form>
+            <p style={{ marginTop: 16, fontSize: "0.9rem", textAlign: "center" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setScreen({ name: "login" });
+                  setError(null);
+                }}
+                style={linkBtn}
+              >
+                Назад ко входу
+              </button>
+            </p>
+          </>
+        ) : null}
+
+        {screen.name === "reset-confirm" ? (
+          <>
+            <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Сброс пароля</h2>
+            <p style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
+              Введите код из письма, отправленного на {screen.email}, и задайте новый пароль.
+            </p>
+            <form noValidate onSubmit={(e) => void handleResetConfirm(e)}>
+              <input
+                style={input}
+                value={resetCode}
+                onChange={(e) => {
+                  setResetCode(e.target.value);
+                  setError(null);
+                }}
+                placeholder="Код из письма"
+                required
+                maxLength={100}
+              />
+              <input
+                style={input}
+                type="password"
+                value={resetNewPassword}
+                onChange={(e) => {
+                  setResetNewPassword(e.target.value);
+                  setError(null);
+                }}
+                placeholder="Новый пароль"
+                required
+                minLength={5}
+                maxLength={100}
+              />
+              <ValidationError message={error} />
+              <button type="submit" disabled={busy} style={btn}>
+                Изменить пароль
+              </button>
+            </form>
+            <p style={{ marginTop: 16, fontSize: "0.9rem", textAlign: "center" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setScreen({ name: "reset-request" });
+                  setError(null);
+                }}
+                style={linkBtn}
+              >
+                Отправить код заново
+              </button>
+            </p>
           </>
         ) : null}
       </div>

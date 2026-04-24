@@ -14,6 +14,7 @@ from backend.routers.messages.response_models import (MessageResponseModel)
 import backend.routers.dependencies
 import backend.routers.parameters as parameters
 from backend.routers.messages.validation import validators
+from backend.routers.messages.validation import checks as validation_checks
 import backend.routers.common_validators.validators as common_validators
 from backend.routers.messages import minio_deletion_service
 from backend.routers.messages import utils
@@ -434,6 +435,60 @@ async def mark_message_as_read(
             receivers = [selected_message.sender_user_id]))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(IDModel(id = message_read_mark.id)), status_code = fastapi.status.HTTP_201_CREATED)
+
+
+async def mark_chat_messages_as_read(
+    selected_chat: Chat,
+    selected_user: User,
+    redis_client: RedisClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
+
+    await common_validators.validate_chat_user_membership(selected_chat, selected_user, db)
+    await validation_checks.check_chat_does_not_have_comments(selected_chat)
+
+    unread_messages: Sequence[Message] = ((await db.execute(
+    sqlalchemy.select(Message)
+    .select_from(Message)
+    .outerjoin(
+        MessageReceipt,
+        sqlalchemy.and_(
+            MessageReceipt.message_id == Message.id,
+            MessageReceipt.receiver_user_id == selected_user.id))
+    .where(sqlalchemy.and_(
+        Message.chat_id == selected_chat.id,
+        Message.parent_message_id.is_(None),
+        Message.sender_user_id.is_not(None),
+        Message.sender_user_id != selected_user.id,
+        MessageReceipt.id.is_(None)))
+    .order_by(Message.date_and_time_sent.asc())))
+    .scalars().all())
+
+    if not unread_messages:
+        return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
+
+    receipts: list[tuple[MessageReceipt, Message]] = []
+    for unread_message in unread_messages:
+        message_read_mark = MessageReceipt(
+        message_id = unread_message.id,
+        date_and_time_received = datetime.datetime.now(datetime.timezone.utc),
+        receiver_user_id = selected_user.id)
+        receipts.append((message_read_mark, unread_message))
+        db.add(message_read_mark)
+
+    await db.flush()
+    await db.commit()
+
+    for message_read_mark, unread_message in receipts:
+        if unread_message.sender_user_id is not None:
+            await redis_client.pubsub_publish_message_read_post(ReadMarkPubsubWebsocketModel(
+                id = message_read_mark.id,
+                chat_id = selected_chat.id,
+                message_id = message_read_mark.message_id,
+                reader_user_id = selected_user.id,
+                date_and_time_received = message_read_mark.date_and_time_received,
+                receivers = [unread_message.sender_user_id]))
+
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def get_chat_last_message(

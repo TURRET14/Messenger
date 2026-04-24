@@ -12,10 +12,10 @@ from backend.routers.errors import (ErrorRegistry)
 from backend.storage.redis_handler import SessionModel
 
 
-async def get_session_user(
-    session_id: str | None = fastapi.Cookie(default = None),
-    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db),
-    redis_client: RedisClient = fastapi.Depends(redis_handler.get_redis_client)) -> User:
+async def require_session_user(
+    session_id: str | None,
+    db: sqlalchemy.ext.asyncio.AsyncSession,
+    redis_client: RedisClient) -> User:
 
     if not session_id:
         raise fastapi.HTTPException(status_code = ErrorRegistry.unauthorized_error.error_status_code, detail = ErrorRegistry.unauthorized_error)
@@ -34,9 +34,9 @@ async def get_session_user(
         raise fastapi.HTTPException(status_code = ErrorRegistry.unauthorized_error.error_status_code, detail = ErrorRegistry.unauthorized_error)
 
 
-async def get_user_by_path_user_id(
-    user_id: int = fastapi.Path(ge = 0),
-    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> User:
+async def require_user_by_id(
+    user_id: int,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> User:
 
     selected_user: User | None = (await db.execute(sqlalchemy.select(User).where(User.id == user_id))).scalars().first()
 
@@ -44,6 +44,57 @@ async def get_user_by_path_user_id(
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_not_found_error.error_status_code, detail = ErrorRegistry.user_not_found_error)
     else:
         return selected_user
+
+
+async def require_chat_by_id(
+    chat_id: int,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> Chat:
+
+    selected_chat: Chat | None = (await db.execute(sqlalchemy.select(Chat).where(Chat.id == chat_id))).scalars().first()
+
+    if not selected_chat:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_not_found_error.error_status_code, detail = ErrorRegistry.chat_not_found_error)
+    else:
+        return selected_chat
+
+
+async def require_message_by_id(
+    message_id: int,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> Message:
+
+    selected_message: Message | None = (await db.execute(sqlalchemy.select(Message).where(Message.id == message_id))).scalars().first()
+
+    if not selected_message:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_not_found_error.error_status_code, detail = ErrorRegistry.message_not_found_error)
+    else:
+        return selected_message
+
+
+async def require_message_attachment_by_id(
+    attachment_id: int,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> MessageAttachment:
+
+    selected_attachment: MessageAttachment | None = (await db.execute(sqlalchemy.select(MessageAttachment).where(MessageAttachment.id == attachment_id))).scalars().first()
+
+    if not selected_attachment:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_attachment_not_found_error.error_status_code, detail = ErrorRegistry.message_attachment_not_found_error)
+    else:
+        return selected_attachment
+
+
+async def get_session_user(
+    session_id: str | None = fastapi.Cookie(default = None),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db),
+    redis_client: RedisClient = fastapi.Depends(redis_handler.get_redis_client)) -> User:
+
+    return await require_session_user(session_id, db, redis_client)
+
+
+async def get_user_by_path_user_id(
+    user_id: int = fastapi.Path(ge = 0),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> User:
+
+    return await require_user_by_id(user_id, db)
 
 
 async def get_user_by_data_id(
@@ -62,36 +113,21 @@ async def get_chat_by_path_id(
     chat_id: int = fastapi.Path(ge = 0),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> Chat:
 
-    selected_chat: Chat | None = (await db.execute(sqlalchemy.select(Chat).where(Chat.id == chat_id))).scalars().first()
-
-    if not selected_chat:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.chat_not_found_error.error_status_code, detail = ErrorRegistry.chat_not_found_error)
-    else:
-        return selected_chat
+    return await require_chat_by_id(chat_id, db)
 
 
 async def get_message_by_path_id(
     message_id: int = fastapi.Path(ge = 0),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> Message:
 
-    selected_message: Message | None = (await db.execute(sqlalchemy.select(Message).where(Message.id == message_id))).scalars().first()
-
-    if not selected_message:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_not_found_error.error_status_code, detail = ErrorRegistry.message_not_found_error)
-    else:
-        return selected_message
+    return await require_message_by_id(message_id, db)
 
 
 async def get_message_attachment_by_id(
     attachment_id: int = fastapi.Path(ge = 0),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> MessageAttachment:
 
-    selected_attachment: MessageAttachment | None = (await db.execute(sqlalchemy.select(MessageAttachment).where(MessageAttachment.id == attachment_id))).scalars().first()
-
-    if not selected_attachment:
-        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.message_attachment_not_found_error.error_status_code, detail = ErrorRegistry.message_attachment_not_found_error)
-    else:
-        return selected_attachment
+    return await require_message_attachment_by_id(attachment_id, db)
 
 
 async def get_chat_membership_by_path_id(

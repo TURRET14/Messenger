@@ -13,6 +13,7 @@ from backend.routers.users.request_models import (
     UserUpdateRequestModel,
     UserUpdateLoginRequestModel,
     UserUpdatePasswordRequestModel, CodeModel, EmailRequestModel)
+from backend.routers.users.request_models import PasswordResetConfirmRequestModel
 
 from backend.routers.users.response_models import (
     UserInListResponseModel,
@@ -65,6 +66,34 @@ async def login(
     redis_client: RedisClient = fastapi.Depends(redis_handler.get_redis_client)) -> fastapi.responses.Response:
 
     return await service.login(request, data, db, redis_client)
+
+
+@users_router.post("/users/password/reset", response_class = fastapi.responses.Response,
+description =
+"""
+Маршрут запроса кода восстановления пароля на электронную почту пользователя.
+"""
+)
+async def request_password_reset(
+    email_data: EmailRequestModel = fastapi.Body(),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await service.request_password_reset(email_data, redis_client, db)
+
+
+@users_router.post("/users/password/reset/confirm", response_class = fastapi.responses.Response,
+description =
+"""
+Маршрут подтверждения восстановления пароля по коду из письма и установки нового пароля.
+"""
+)
+async def confirm_password_reset(
+    password_reset_data: PasswordResetConfirmRequestModel = fastapi.Body(),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await service.confirm_password_reset(password_reset_data, redis_client, db)
 
 
 @users_router.get("/users/me/sessions", response_class = fastapi.responses.JSONResponse, response_model = list[SessionResponseModel],
@@ -211,8 +240,14 @@ description =
 Маршрут получения фотографии профиля указанного пользователя.
 """)
 async def get_user_avatar(
-    selected_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_path_user_id),
+    user_id: int = fastapi.Path(ge = 0),
+    session_id: str | None = fastapi.Cookie(default = None),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client)) -> fastapi.responses.StreamingResponse:
+
+    async with async_session_maker() as db:
+        await backend.routers.dependencies.require_session_user(session_id, db, redis_client)
+        selected_user: User = await backend.routers.dependencies.require_user_by_id(user_id, db)
 
     return await service.get_user_avatar(selected_user, minio_client)
 
@@ -223,8 +258,12 @@ description =
 Маршрут получения фотографии профиля текущего пользователя.
 """)
 async def get_current_user_avatar(
-    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    session_id: str | None = fastapi.Cookie(default = None),
+    redis_client: RedisClient = fastapi.Depends(get_redis_client),
     minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client)) -> fastapi.responses.StreamingResponse:
+
+    async with async_session_maker() as db:
+        current_user: User = await backend.routers.dependencies.require_session_user(session_id, db, redis_client)
 
     return await service.get_user_avatar(current_user, minio_client)
 

@@ -29,6 +29,10 @@ class ChangeEmailRequestModel:
     user_id: int
     new_email_address: str
 
+@dataclasses.dataclass()
+class PasswordResetRequestModel:
+    user_id: int
+
 
 class RedisPubsubChannel(enum.Enum):
     MESSAGES_POST = "MESSAGES_POST"
@@ -108,6 +112,31 @@ class RedisClient:
     async def delete_change_email_request(self, request_id: str):
         if await self.client.exists(f"change_email:request_id:{request_id}"):
             await self.client.delete(f"change_email:request_id:{request_id}")
+
+
+    async def create_password_reset_request(self, user_id: int) -> str:
+        request_code = ''.join(str(secrets.randbelow(10)) for _ in range(6))
+        creation_datetime: int = int(datetime.datetime.now().timestamp())
+        expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds=parameters.REDIS_REGISTER_SESSION_EXPIRATION_TIME_SECONDS).total_seconds())
+
+        await self.client.hset(f"password_reset:request_code:{request_code}",
+                         mapping = {"user_id": user_id})
+
+        await self.client.expireat(f"password_reset:request_code:{request_code}", expiration_datetime)
+        return request_code
+
+
+    async def get_password_reset_request(self, request_code: str) -> PasswordResetRequestModel | None:
+        if await self.client.exists(f"password_reset:request_code:{request_code}"):
+            request_data: dict = await self.client.hgetall(f"password_reset:request_code:{request_code}")
+            return PasswordResetRequestModel(user_id = int(request_data["user_id"]))
+        else:
+            return None
+
+
+    async def delete_password_reset_request(self, request_code: str):
+        if await self.client.exists(f"password_reset:request_code:{request_code}"):
+            await self.client.delete(f"password_reset:request_code:{request_code}")
 
 
     async def create_user_session(self, user_id: int, user_agent: str) -> str:
