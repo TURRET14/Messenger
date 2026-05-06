@@ -19,6 +19,11 @@ class EmailRequestModel(pydantic.BaseModel):
     email_address: str = pydantic.EmailStr()
 
 
+class UserUpdateEmailRequestModel(pydantic.BaseModel):
+    email_address: str = pydantic.EmailStr()
+    password: str = pydantic.Field(min_length=5, max_length=100)
+
+
 class PasswordResetConfirmRequestModel(pydantic.BaseModel):
     code: str = pydantic.Field(max_length = 100)
     new_password: str = pydantic.Field(min_length = 5, max_length = 100)
@@ -61,7 +66,8 @@ class UserUpdateLoginRequestModel(pydantic.BaseModel):
 
 
 class UserUpdatePasswordRequestModel(pydantic.BaseModel):
-    new_password: str = pydantic.Field(min_length = 5, max_length = 100)
+    old_password: str = pydantic.Field(min_length=5, max_length=100)
+    new_password: str = pydantic.Field(min_length=5, max_length=100)
 
 
 class CodeModel(pydantic.BaseModel):

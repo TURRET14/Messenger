@@ -99,6 +99,11 @@ export function MessengerShell({
   const [currentUser, setCurrentUser] = useState(initialUser);
   useEffect(() => setCurrentUser(initialUser), [initialUser]);
 
+  const handleLogout = async () => {
+    if (!(await confirm({ message: "Выйти из аккаунта?", confirmLabel: "Выйти" }))) return;
+    onLogout();
+  };
+
   const [wide, setWide] = useState(true);
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 900px)");
@@ -1064,7 +1069,7 @@ export function MessengerShell({
           <IconMenu />
         </button>
         <ThemeSwitcher />
-        <button type="button" className="ui-btn ui-btn--ghost" onClick={onLogout}>
+        <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void handleLogout()}>
           <IconLogout size={18} /> {wide ? "Выйти" : ""}
         </button>
       </header>
@@ -1273,6 +1278,7 @@ export function MessengerShell({
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
+                    flexShrink: 0,
                   }}
                 >
                   <button
@@ -1286,7 +1292,7 @@ export function MessengerShell({
               ) : null}
 
               {commentRoot ? (
-                <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
+                <div style={{ padding: 12, borderBottom: "1px solid var(--border)", maxHeight: 160, overflowY: "auto", flexShrink: 0 }}>
                   <MessageBubble
                     m={commentRoot}
                     chatId={selectedChat.id}
@@ -1457,6 +1463,7 @@ export function MessengerShell({
                   padding: 12,
                   borderTop: "1px solid var(--border)",
                   background: "var(--bg-elevated)",
+                  flexShrink: 0,
                 }}
               >
                 {canPostHere ? (

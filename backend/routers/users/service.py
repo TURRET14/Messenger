@@ -32,6 +32,7 @@ from backend.routers.users.request_models import (
     UserUpdateRequestModel,
     UserUpdateLoginRequestModel,
     UserUpdatePasswordRequestModel,
+    UserUpdateEmailRequestModel,
     CodeModel,
     EmailRequestModel,
     PasswordResetConfirmRequestModel)
@@ -282,17 +283,21 @@ async def update_user(
 
 
 async def update_user_email(
-    email_data: EmailRequestModel,
+    email_data: UserUpdateEmailRequestModel,
     selected_user: User,
     redis_client: RedisClient,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
+
+    if not await backend.routers.security.verify_password(selected_user.password, email_data.password):
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.incorrect_password_error.error_status_code, detail = ErrorRegistry.incorrect_password_error)
 
     if selected_user.email_address == email_data.email_address:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.bad_request_error.error_status_code, detail = ErrorRegistry.bad_request_error)
 
     await checks.check_is_email_address_not_taken(email_data.email_address, db)
 
-    code: str = await redis_client.create_change_email_request(selected_user.id, email_data)
+    email_request = EmailRequestModel(email_address=email_data.email_address)
+    code: str = await redis_client.create_change_email_request(selected_user.id, email_request)
     try:
         await EmailService.send_email_change_confirmation(email_data.email_address, code)
     except fastapi.exceptions.HTTPException:
@@ -348,6 +353,9 @@ async def update_user_password(
     user_password_data: UserUpdatePasswordRequestModel,
     selected_user: User,
     db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
+
+    if not await backend.routers.security.verify_password(selected_user.password, user_password_data.old_password):
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.incorrect_password_error.error_status_code, detail = ErrorRegistry.incorrect_password_error)
 
     selected_user.password = await backend.routers.security.hash_password(user_password_data.new_password)
 

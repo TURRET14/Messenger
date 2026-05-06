@@ -89,7 +89,7 @@ class RedisClient:
 
 
     async def create_change_email_request(self, user_id: int, email_data: EmailRequestModel) -> str:
-        request_id = secrets.token_urlsafe(64)
+        request_id = ''.join(str(secrets.randbelow(10)) for _ in range(6))
         creation_datetime: int = int(datetime.datetime.now().timestamp())
         expiration_datetime: int = creation_datetime + int(datetime.timedelta(seconds=parameters.REDIS_REGISTER_SESSION_EXPIRATION_TIME_SECONDS).total_seconds())
 
