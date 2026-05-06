@@ -1,0 +1,17 @@
+{
+	email {$SSL_CONTACT_EMAIL}
+	default_sni {$SSL_SERVER_NAME}
+}
+
+{$SSL_SERVER_NAME} {
+	@backend path /login /users* /chats*
+	reverse_proxy @backend backend:8000
+
+	reverse_proxy frontend:8080
+
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
+}

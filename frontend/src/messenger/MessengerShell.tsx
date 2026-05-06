@@ -99,6 +99,11 @@ export function MessengerShell({
   const [currentUser, setCurrentUser] = useState(initialUser);
   useEffect(() => setCurrentUser(initialUser), [initialUser]);
 
+  const handleLogout = async () => {
+    if (!(await confirm({ message: "Выйти из аккаунта?", confirmLabel: "Выйти" }))) return;
+    onLogout();
+  };
+
   const [wide, setWide] = useState(true);
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 900px)");
@@ -1064,7 +1069,7 @@ export function MessengerShell({
           <IconMenu />
         </button>
         <ThemeSwitcher />
-        <button type="button" className="ui-btn ui-btn--ghost" onClick={onLogout}>
+        <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void handleLogout()}>
           <IconLogout size={18} /> {wide ? "Выйти" : ""}
         </button>
       </header>
@@ -1202,6 +1207,7 @@ export function MessengerShell({
                   alignItems: "center",
                   width: "100%",
                   boxSizing: "border-box",
+                  flexShrink: 0,
                 }}
               >
                 {!wide && selectedChat.chat_kind !== "PROFILE" ? (
@@ -1273,6 +1279,7 @@ export function MessengerShell({
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
+                    flexShrink: 0,
                   }}
                 >
                   <button
@@ -1282,21 +1289,6 @@ export function MessengerShell({
                   >
                     <IconChevronLeft /> К корню чата
                   </button>
-                </div>
-              ) : null}
-
-              {commentRoot ? (
-                <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
-                  <MessageBubble
-                    m={commentRoot}
-                    chatId={selectedChat.id}
-                    currentUserId={currentUser.id}
-                    displaySender={displayName(commentRoot.sender_user_id)}
-                    replySnippet={null}
-                    replySenderLabel={null}
-                    interactive={false}
-                    avatarEpoch={assetEpoch}
-                  />
                 </div>
               ) : null}
 
@@ -1311,6 +1303,7 @@ export function MessengerShell({
                     justifyContent: "space-between",
                     gap: 8,
                     flexWrap: "wrap",
+                    flexShrink: 0,
                   }}
                 >
                   <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
@@ -1337,6 +1330,7 @@ export function MessengerShell({
                   flex: 1,
                   minHeight: 0,
                   position: "relative",
+                  overflow: "hidden",
                 }}
               >
                 <div
@@ -1362,6 +1356,20 @@ export function MessengerShell({
                   }
                 }}
               >
+                {commentRoot ? (
+                  <div style={{ padding: "4px 0 8px", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
+                    <MessageBubble
+                      m={commentRoot}
+                      chatId={selectedChat.id}
+                      currentUserId={currentUser.id}
+                      displaySender={displayName(commentRoot.sender_user_id)}
+                      replySnippet={null}
+                      replySenderLabel={null}
+                      interactive={false}
+                      avatarEpoch={assetEpoch}
+                    />
+                  </div>
+                ) : null}
                 {searchMode && loadingSearchChat && searchHitsChat.length === 0 ? (
                   <span style={{ color: "var(--text-muted)" }}>Поиск…</span>
                 ) : null}
@@ -1457,6 +1465,7 @@ export function MessengerShell({
                   padding: 12,
                   borderTop: "1px solid var(--border)",
                   background: "var(--bg-elevated)",
+                  flexShrink: 0,
                 }}
               >
                 {canPostHere ? (

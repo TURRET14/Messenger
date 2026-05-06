@@ -12,7 +12,10 @@ from backend.routers.users.request_models import (
     SessionRequestModel,
     UserUpdateRequestModel,
     UserUpdateLoginRequestModel,
-    UserUpdatePasswordRequestModel, CodeModel, EmailRequestModel)
+    UserUpdatePasswordRequestModel,
+    UserUpdateEmailRequestModel,
+    CodeModel,
+    EmailRequestModel)
 from backend.routers.users.request_models import PasswordResetConfirmRequestModel
 
 from backend.routers.users.response_models import (
@@ -186,7 +189,7 @@ description =
 Если новый адрес электронной почты не занят, на нее отправляется письмо с кодом подтверждения.
 """)
 async def update_user_email(
-    email_data: EmailRequestModel = fastapi.Body(),
+    email_data: UserUpdateEmailRequestModel = fastapi.Body(),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     redis_client: RedisClient = fastapi.Depends(get_redis_client),
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:

@@ -59,6 +59,7 @@ export function MainAppMenu({
 
   const [u, setU] = useState<CurrentUser>(currentUser);
   const [emailNew, setEmailNew] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
   const [emailCode, setEmailCode] = useState("");
   const [emailConfirmOpen, setEmailConfirmOpen] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -68,6 +69,7 @@ export function MainAppMenu({
   const [loginNew, setLoginNew] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSaving, setLoginSaving] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordRepeat, setNewPasswordRepeat] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -178,6 +180,11 @@ export function MainAppMenu({
       setEmailError(validationError);
       return;
     }
+    const passwordError = validatePassword(emailPassword, "Пароль");
+    if (passwordError) {
+      setEmailError(passwordError);
+      return;
+    }
     if (emailNew.trim() === u.email_address) {
       setEmailError("Новая почта совпадает с текущей.");
       return;
@@ -188,7 +195,7 @@ export function MainAppMenu({
     try {
       await apiFetch("/users/me/email", {
         method: "PATCH",
-        body: JSON.stringify({ email_address: emailNew.trim() }),
+        body: JSON.stringify({ email_address: emailNew.trim(), password: emailPassword }),
       });
       setEmailCode("");
       setEmailConfirmOpen(true);
@@ -228,13 +235,14 @@ export function MainAppMenu({
   };
 
   const updatePassword = async () => {
+    const currentPasswordError = validatePassword(currentPassword, "Текущий пароль");
     const newPasswordError = validatePassword(newPassword, "Новый пароль");
     const repeatPasswordError = validatePassword(
       newPasswordRepeat,
       "Повтор нового пароля",
     );
     const validationError =
-      newPasswordError ?? repeatPasswordError;
+      currentPasswordError ?? newPasswordError ?? repeatPasswordError;
     if (validationError) {
       setPasswordError(validationError);
       return;
@@ -250,9 +258,11 @@ export function MainAppMenu({
       await apiFetch("/users/me/password", {
         method: "PUT",
         body: JSON.stringify({
+          old_password: currentPassword,
           new_password: newPassword,
         }),
       });
+      setCurrentPassword("");
       setNewPassword("");
       setNewPasswordRepeat("");
       void alert("Пароль обновлён");
@@ -329,16 +339,17 @@ export function MainAppMenu({
   };
 
   const loadUsers = useCallback(
-    async (reset: boolean) => {
+    async (reset: boolean, overrideSearch?: typeof uSearch) => {
       if (loadingRef.current && !reset) return;
+      const search = overrideSearch ?? uSearch;
       const searchError =
-        uSearch.mode === "username"
-          ? validateUsernameSearch(uSearch.q)
-          : uSearch.mode === "names"
+        search.mode === "username"
+          ? validateUsernameSearch(search.q)
+          : search.mode === "names"
             ? validateNamesSearch({
-                name: uSearch.n,
-                surname: uSearch.s,
-                secondName: uSearch.o,
+                name: search.n,
+                surname: search.s,
+                secondName: search.o,
               })
             : null;
       if (reset && searchError) {
@@ -350,19 +361,19 @@ export function MainAppMenu({
       try {
         const mult = reset ? 0 : uPageRef.current + 1;
         let batch: UserInList[] = [];
-        if (uSearch.mode === "all") {
+        if (search.mode === "all") {
           batch = await apiJson<UserInList[]>(
             `/users?offset_multiplier=${mult}`,
           );
-        } else if (uSearch.mode === "username") {
-          const q = uSearch.q.trim();
+        } else if (search.mode === "username") {
+          const q = search.q.trim();
           batch = await apiJson<UserInList[]>(
             `/users/search/by-username?username=${encodeURIComponent(q)}&offset_multiplier=${mult}`,
           );
         } else {
-          const n = uSearch.n.trim();
-          const s = uSearch.s.trim();
-          const o = uSearch.o.trim();
+          const n = search.n.trim();
+          const s = search.s.trim();
+          const o = search.o.trim();
           const p = new URLSearchParams();
           p.set("offset_multiplier", String(mult));
           if (n) p.set("name", n);
@@ -394,16 +405,17 @@ export function MainAppMenu({
   );
 
   const loadFriends = useCallback(
-    async (reset: boolean) => {
+    async (reset: boolean, overrideSearch?: typeof fSearch) => {
       if (loadingRef.current && !reset) return;
+      const search = overrideSearch ?? fSearch;
       const searchError =
-        fSearch.mode === "username"
-          ? validateUsernameSearch(fSearch.q)
-          : fSearch.mode === "names"
+        search.mode === "username"
+          ? validateUsernameSearch(search.q)
+          : search.mode === "names"
             ? validateNamesSearch({
-                name: fSearch.n,
-                surname: fSearch.s,
-                secondName: fSearch.o,
+                name: search.n,
+                surname: search.s,
+                secondName: search.o,
               })
             : null;
       if (reset && searchError) {
@@ -415,19 +427,19 @@ export function MainAppMenu({
       try {
         const mult = reset ? 0 : fPageRef.current + 1;
         let batch: FriendUser[] = [];
-        if (fSearch.mode === "all") {
+        if (search.mode === "all") {
           batch = await apiJson<FriendUser[]>(
             `/users/me/friends?offset_multiplier=${mult}`,
           );
-        } else if (fSearch.mode === "username") {
-          const q = fSearch.q.trim();
+        } else if (search.mode === "username") {
+          const q = search.q.trim();
           batch = await apiJson<FriendUser[]>(
             `/users/me/friends/search/by-username?username=${encodeURIComponent(q)}&offset_multiplier=${mult}`,
           );
         } else {
-          const n = fSearch.n.trim();
-          const s = fSearch.s.trim();
-          const o = fSearch.o.trim();
+          const n = search.n.trim();
+          const s = search.s.trim();
+          const o = search.o.trim();
           const p = new URLSearchParams();
           p.set("offset_multiplier", String(mult));
           if (n) p.set("name", n);
@@ -556,20 +568,22 @@ export function MainAppMenu({
 
   useEffect(() => {
     if (tab !== "users") return;
-    setUSearch({ mode: "all", q: "", n: "", s: "", o: "" });
+    const resetSearch = { mode: "all" as const, q: "", n: "", s: "", o: "" };
+    setUSearch(resetSearch);
     setUsers([]);
     setUDone(false);
     uPageRef.current = 0;
-    void loadUsers(true);
+    void loadUsers(true, resetSearch);
   }, [tab]);
 
   useEffect(() => {
     if (tab !== "friends") return;
-    setFSearch({ mode: "all", q: "", n: "", s: "", o: "" });
+    const resetSearch = { mode: "all" as const, q: "", n: "", s: "", o: "" };
+    setFSearch(resetSearch);
     setFriends([]);
     setFDone(false);
     fPageRef.current = 0;
-    void loadFriends(true);
+    void loadFriends(true, resetSearch);
   }, [tab]);
 
   useEffect(() => {
@@ -850,6 +864,21 @@ export function MainAppMenu({
           <hr style={{ borderColor: "var(--border)" }} />
           <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена пароля</h3>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Текущий пароль</span>
+            <input
+              className="ui-input"
+              type="password"
+              name={`profile-current-password-${u.id}`}
+              value={currentPassword}
+              onChange={(e) => {
+                setCurrentPassword(e.target.value);
+                setPasswordError(null);
+              }}
+              maxLength={100}
+              autoComplete="new-password"
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Новый пароль</span>
             <input
               className="ui-input"
@@ -914,6 +943,21 @@ export function MainAppMenu({
                 setEmailError(null);
               }}
               maxLength={254}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Пароль от аккаунта</span>
+            <input
+              className="ui-input"
+              type="password"
+              name={`profile-email-password-${u.id}`}
+              value={emailPassword}
+              onChange={(e) => {
+                setEmailPassword(e.target.value);
+                setEmailError(null);
+              }}
+              maxLength={100}
+              autoComplete="new-password"
             />
           </label>
           <button
@@ -1347,7 +1391,7 @@ export function MainAppMenu({
             Введите код, который мы отправили на новую почту.
           </p>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Код из письма</span>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Код из письма (6 цифр)</span>
             <input
               className="ui-input"
               value={emailCode}
@@ -1355,7 +1399,7 @@ export function MainAppMenu({
                 setEmailCode(e.target.value);
                 setEmailError(null);
               }}
-              maxLength={100}
+              maxLength={6}
               autoFocus
             />
           </label>

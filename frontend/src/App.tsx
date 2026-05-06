@@ -617,6 +617,7 @@ function AuthShell({
                   setError(null);
                 }}
                 placeholder="Код из письма"
+                autoComplete="one-time-code"
                 required
                 maxLength={100}
               />
@@ -629,6 +630,7 @@ function AuthShell({
                   setError(null);
                 }}
                 placeholder="Новый пароль"
+                autoComplete="new-password"
                 required
                 minLength={5}
                 maxLength={100}
