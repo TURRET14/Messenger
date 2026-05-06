@@ -1,31 +1,66 @@
+/* =========================================================
+   Дизайн-система мессенджера. Без теней и градиентов.
+   Разметка адаптивна и оптимизирована под мобильные устройства.
+   ========================================================= */
+
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f4f5f7;
+  --bg: #f5f6fa;
   --bg-elevated: #ffffff;
-  --bg-muted: #e8eaef;
-  --border: #d8dce6;
+  --bg-muted: #ecedf2;
+  --bg-input: #ffffff;
+  --bg-hover: rgba(15, 23, 42, 0.06);
+  --bg-active: rgba(15, 23, 42, 0.10);
+  --bubble-mine: #e6efff;
+  --bubble-other: #ffffff;
+  --border: #d6dae5;
+  --border-strong: #b9c0d0;
   --text: #1a1d26;
   --text-muted: #5c6478;
+  --text-subtle: #8087a0;
   --accent: #3b5bdb;
-  --accent-hover: #2f4ac4;
+  --accent-strong: #2f4ac4;
+  --accent-soft: rgba(59, 91, 219, 0.12);
+  --on-accent: #ffffff;
   --danger: #c92a2a;
+  --danger-strong: #a52121;
+  --danger-soft: rgba(201, 42, 42, 0.10);
+  --on-danger: #ffffff;
   --success: #2b8a3e;
-  --shadow: rgba(15, 23, 42, 0.08);
+  --success-soft: rgba(43, 138, 62, 0.12);
+  --warning: #b97500;
+  --overlay: rgba(15, 23, 42, 0.55);
+  --focus-ring: rgba(59, 91, 219, 0.35);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #12141a;
-  --bg-elevated: #1c1f28;
-  --bg-muted: #252a36;
-  --border: #343b4d;
+  --bg: #0f1218;
+  --bg-elevated: #181c25;
+  --bg-muted: #232733;
+  --bg-input: #181c25;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.12);
+  --bubble-mine: #243454;
+  --bubble-other: #232733;
+  --border: #2c313e;
+  --border-strong: #3c4250;
   --text: #e8eaef;
-  --text-muted: #9aa3b8;
+  --text-muted: #98a0b1;
+  --text-subtle: #6c7484;
   --accent: #748ffc;
-  --accent-hover: #91a7ff;
+  --accent-strong: #91a7ff;
+  --accent-soft: rgba(116, 143, 252, 0.20);
+  --on-accent: #11131a;
   --danger: #ff6b6b;
+  --danger-strong: #ff8787;
+  --danger-soft: rgba(255, 107, 107, 0.18);
+  --on-danger: #11131a;
   --success: #51cf66;
-  --shadow: rgba(0, 0, 0, 0.35);
+  --success-soft: rgba(81, 207, 102, 0.18);
+  --warning: #ffa94d;
+  --overlay: rgba(0, 0, 0, 0.65);
+  --focus-ring: rgba(116, 143, 252, 0.45);
 }
 
 *,
@@ -41,16 +76,24 @@ body,
   margin: 0;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.45;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   color: inherit;
 }
@@ -61,7 +104,43 @@ button {
 
 a {
   color: var(--accent);
+  text-decoration: none;
 }
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ============================ Скроллбар ============================ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-subtle);
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+
+/* ============================ Утилиты ============================ */
 
 .sr-only {
   position: absolute;
@@ -75,19 +154,43 @@ a {
   border: 0;
 }
 
+/* ============================ Кнопки ============================ */
+
 .ui-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 9px 16px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--bg-elevated);
   color: var(--text);
   font-weight: 600;
+  font-size: 0.92rem;
   cursor: pointer;
-  font-size: 0.9rem;
+  user-select: none;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ui-btn:hover:not(:disabled) {
+  background: var(--bg-muted);
+}
+
+.ui-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ui-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .ui-btn:disabled {
@@ -97,19 +200,372 @@ a {
 
 .ui-btn--primary {
   background: var(--accent);
-  color: #fff;
-  border-color: transparent;
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+
+.ui-btn--primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 .ui-btn--danger {
   background: var(--danger);
-  color: #fff;
-  border-color: transparent;
+  color: var(--on-danger);
+  border-color: var(--danger);
+}
+
+.ui-btn--danger:hover:not(:disabled) {
+  background: var(--danger-strong);
+  border-color: var(--danger-strong);
 }
 
 .ui-btn--ghost {
   background: transparent;
+  border-color: transparent;
 }
+
+.ui-btn--ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.ui-btn--soft {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.ui-btn--soft:hover:not(:disabled) {
+  background: var(--accent-soft);
+  filter: brightness(0.96);
+}
+
+.ui-btn--block {
+  width: 100%;
+}
+
+.ui-btn--sm {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+
+.ui-btn--lg {
+  padding: 12px 20px;
+  font-size: 1rem;
+  border-radius: 12px;
+}
+
+/* Круглая иконка-кнопка */
+.ui-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+
+.ui-icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.ui-icon-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.ui-icon-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-icon-btn--accent {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.ui-icon-btn--accent:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.ui-icon-btn--danger {
+  color: var(--danger);
+}
+
+.ui-icon-btn--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.ui-icon-btn--sm {
+  width: 32px;
+  height: 32px;
+}
+
+.ui-icon-btn--lg {
+  width: 48px;
+  height: 48px;
+}
+
+/* ============================ Поля ввода ============================ */
+
+.ui-input,
+.ui-textarea,
+.ui-select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ui-input:hover:not(:disabled),
+.ui-textarea:hover:not(:disabled),
+.ui-select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.ui-input:focus-visible,
+.ui-textarea:focus-visible,
+.ui-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.ui-input:disabled,
+.ui-textarea:disabled,
+.ui-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ui-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ui-field-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.ui-field-hint {
+  font-size: 0.78rem;
+  color: var(--text-subtle);
+}
+
+/* ============================ Чипы / Пилюли ============================ */
+
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.ui-chip--accent {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.ui-chip--success {
+  background: var(--success-soft);
+  border-color: transparent;
+  color: var(--success);
+}
+
+.ui-chip--danger {
+  background: var(--danger-soft);
+  border-color: transparent;
+  color: var(--danger);
+}
+
+/* ============================ Карточки ============================ */
+
+.ui-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.ui-card--muted {
+  background: var(--bg-muted);
+}
+
+.ui-divider {
+  height: 1px;
+  background: var(--border);
+  border: 0;
+  margin: 4px 0;
+}
+
+/* ============================ Списки ============================ */
+
+.ui-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.ui-row--button {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.ui-row--button:hover:not(:disabled) {
+  background: var(--bg-muted);
+}
+
+.ui-row--button:active:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.ui-row--selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* ============================ Анимации ============================ */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-right {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes message-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes spinner-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.anim-fade-in { animation: fade-in 180ms ease-out both; }
+.anim-slide-up { animation: slide-up 220ms ease-out both; }
+.anim-slide-down { animation: slide-down 220ms ease-out both; }
+.anim-slide-right { animation: slide-right 220ms ease-out both; }
+.anim-scale-in { animation: scale-in 200ms ease-out both; }
+.anim-message-pop { animation: message-pop 220ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================ Спиннер ============================ */
+
+.ui-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spinner-rotate 800ms linear infinite;
+  display: inline-block;
+}
+
+.ui-spinner--lg {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+}
+
+/* ============================ Скелетон ============================ */
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.ui-skeleton {
+  background: var(--bg-muted);
+  border-radius: 8px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* ============================ Модальные окна ============================ */
 
 .ui-modal-actions {
   display: flex;
@@ -118,23 +574,57 @@ a {
   justify-content: flex-end;
 }
 
-.ui-input,
-.ui-textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 10px;
+/* ============================ Контекстное меню ============================ */
+
+.ui-menu {
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--bg-elevated);
+}
+
+.ui-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: background-color 120ms ease;
 }
 
-.ui-textarea {
-  resize: vertical;
-  min-height: 80px;
+.ui-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
 }
 
-@media (max-width: 900px) {
-  .messenger-hide-mobile {
-    display: none !important;
+.ui-menu-item--danger {
+  color: var(--danger);
+}
+
+.ui-menu-item--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+/* ============================ Адаптивность ============================ */
+
+@media (max-width: 720px) {
+  body {
+    font-size: 14.5px;
   }
+  .ui-btn {
+    padding: 9px 14px;
+  }
+}
+
+/* Утилитарный safe-area для iOS */
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
 }

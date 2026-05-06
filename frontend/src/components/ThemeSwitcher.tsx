@@ -1,19 +1,5 @@
-import type { CSSProperties } from "react";
 import { useTheme, type ThemePreference } from "../theme/ThemeContext";
 import { IconMonitor, IconMoon, IconSun } from "./Icons";
-
-const btnStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 40,
-  height: 40,
-  padding: 0,
-  border: "1px solid var(--border)",
-  borderRadius: 10,
-  background: "var(--bg-elevated)",
-  color: "var(--text)",
-};
 
 export function ThemeSwitcher() {
   const { preference, setPreference } = useTheme();
@@ -30,7 +16,7 @@ export function ThemeSwitcher() {
     ) : preference === "dark" ? (
       <IconMoon title="Тёмная тема" />
     ) : (
-      <IconMonitor title="Как в системе" />
+      <IconMonitor title="Тема системы" />
     );
 
   const label =
@@ -43,7 +29,7 @@ export function ThemeSwitcher() {
   return (
     <button
       type="button"
-      style={btnStyle}
+      className="ui-icon-btn"
       onClick={cycle}
       title={`${label}. Нажмите, чтобы переключить.`}
       aria-label={label}

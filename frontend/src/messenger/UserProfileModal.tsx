@@ -1,14 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
-import type { Chat, CurrentUser, FriendUser, UserBlockRow, UserPublic } from "../api/types";
-import { IconUser } from "../components/Icons";
+import type {
+  Chat,
+  CurrentUser,
+  FriendUser,
+  UserBlockRow,
+  UserPublic,
+} from "../api/types";
+import {
+  IconAtSign,
+  IconBan,
+  IconCalendar,
+  IconChat,
+  IconInfo,
+  IconMessageCircle,
+  IconPhone,
+  IconUser,
+  IconUserCheck,
+  IconUserPlus,
+  IconUserX,
+} from "../components/Icons";
 import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
 import { ModalChrome } from "../components/ui/ModalChrome";
 import { useDialogs } from "../context/DialogsContext";
 import {
   avatarLetterFromUser,
   formatUserFullName,
-  userListLabel,
 } from "./userFormat";
 
 const PAGE = 50;
@@ -166,7 +183,18 @@ export function UserProfileModal({
   if (loading || !u) {
     return (
       <ModalChrome title="Профиль" onClose={onClose} narrow>
-        <p>Загрузка…</p>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            padding: 24,
+            color: "var(--text-muted)",
+          }}
+        >
+          <span className="ui-spinner" aria-hidden="true" /> Загружаем профиль…
+        </div>
       </ModalChrome>
     );
   }
@@ -174,99 +202,214 @@ export function UserProfileModal({
   const genderLabel =
     u.gender === "MALE" ? "Мужской" : u.gender === "FEMALE" ? "Женский" : "—";
 
-  const readOnlyRows: { label: string; value: string }[] = [
-    { label: "Имя пользователя", value: `@${u.username}` },
-    { label: "ФИО", value: formatUserFullName(u) || "—" },
-    {
-      label: "Дата рождения",
-      value: u.date_of_birth?.slice(0, 10) ?? "—",
-    },
-    { label: "Пол", value: genderLabel },
-    { label: "Телефон", value: u.phone_number ?? "—" },
-    { label: "О себе", value: u.about?.trim() ? u.about : "—" },
-    {
-      label: "Дата регистрации",
-      value: new Date(u.date_and_time_registered).toLocaleString(),
-    },
-  ];
-
   return (
     <ModalChrome title={isSelf ? "Мой профиль" : "Профиль"} onClose={onClose} narrow>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 10,
+          padding: "4px 0 16px",
+        }}
+      >
         <Avatar
           src={userAvatarUrl(u.id, assetEpoch)}
           label={avatarLetterFromUser(u)}
-          size={88}
+          size={92}
         />
-        <div style={{ fontWeight: 700 }}>{userListLabel(u)}</div>
+        <div
+          style={{
+            fontWeight: 700,
+            textAlign: "center",
+            wordBreak: "break-word",
+          }}
+        >
+          {formatUserFullName(u) || u.username}
+        </div>
+        <div
+          className="ui-chip"
+          style={{ display: "inline-flex", gap: 6 }}
+        >
+          <IconAtSign size={12} />
+          {u.username}
+        </div>
       </div>
 
       <div
         style={{
-          marginTop: 16,
           display: "flex",
           flexDirection: "column",
           gap: 10,
-          fontSize: "0.9rem",
+          marginBottom: 16,
         }}
       >
-        {readOnlyRows.map((row) => (
-          <div key={row.label}>
-            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              {row.label}
-            </div>
-            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-              {row.value}
-            </div>
-          </div>
-        ))}
+        <ProfileInfoRow
+          icon={<IconUser size={16} />}
+          label="Имя пользователя"
+          value={`@${u.username}`}
+        />
+        <ProfileInfoRow
+          icon={<IconUser size={16} />}
+          label="ФИО"
+          value={formatUserFullName(u) || "—"}
+        />
+        <ProfileInfoRow
+          icon={<IconCalendar size={16} />}
+          label="Дата рождения"
+          value={u.date_of_birth?.slice(0, 10) ?? "—"}
+        />
+        <ProfileInfoRow
+          icon={<IconUser size={16} />}
+          label="Пол"
+          value={genderLabel}
+        />
+        <ProfileInfoRow
+          icon={<IconPhone size={16} />}
+          label="Телефон"
+          value={u.phone_number ?? "—"}
+        />
+        <ProfileInfoRow
+          icon={<IconInfo size={16} />}
+          label="О себе"
+          value={u.about?.trim() || "—"}
+          multiline
+        />
+        <ProfileInfoRow
+          icon={<IconCalendar size={16} />}
+          label="Дата регистрации"
+          value={new Date(u.date_and_time_registered).toLocaleString()}
+        />
         {"email_address" in u ? (
-          <div>
-            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              Электронная почта
-            </div>
-            <div>{u.email_address}</div>
-          </div>
+          <ProfileInfoRow
+            icon={<IconAtSign size={16} />}
+            label="Электронная почта"
+            value={u.email_address}
+          />
         ) : null}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-        <button type="button" className="ui-btn ui-btn--primary" onClick={() => void openProfileChat()}>
-          <IconUser size={18} /> Лента профиля
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button
+          type="button"
+          className="ui-btn ui-btn--soft ui-btn--block"
+          onClick={() => void openProfileChat()}
+        >
+          <IconChat size={16} /> Лента профиля
         </button>
 
         {!isSelf ? (
           <>
             {friendship ? (
               <>
-                <button type="button" className="ui-btn ui-btn--primary" onClick={() => void openPrivate()}>
-                  Личный чат
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--primary ui-btn--block"
+                  onClick={() => void openPrivate()}
+                >
+                  <IconMessageCircle size={16} /> Личный чат
                 </button>
-                <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void removeFriend()}>
-                  Удалить из друзей
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--ghost ui-btn--block"
+                  onClick={() => void removeFriend()}
+                >
+                  <IconUserX size={16} /> Удалить из друзей
                 </button>
               </>
             ) : (
-              <button type="button" className="ui-btn ui-btn--primary" onClick={() => void sendFriendRequest()}>
-                Запрос в друзья
+              <button
+                type="button"
+                className="ui-btn ui-btn--primary ui-btn--block"
+                onClick={() => void sendFriendRequest()}
+              >
+                <IconUserPlus size={16} /> Запрос в друзья
               </button>
             )}
             {blockRow ? (
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void unblockUser()}>
-                Разблокировать
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost ui-btn--block"
+                onClick={() => void unblockUser()}
+              >
+                <IconUserCheck size={16} /> Разблокировать
               </button>
             ) : (
-              <button type="button" className="ui-btn ui-btn--danger" onClick={() => void blockUser()}>
-                Заблокировать
+              <button
+                type="button"
+                className="ui-btn ui-btn--danger ui-btn--block"
+                onClick={() => void blockUser()}
+              >
+                <IconBan size={16} /> Заблокировать
               </button>
             )}
           </>
         ) : (
-          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-muted)" }}>
-            Редактирование данных и смена фото — в меню «Профиль».
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.85rem",
+              color: "var(--text-muted)",
+              padding: "10px 12px",
+              background: "var(--bg-muted)",
+              borderRadius: 10,
+            }}
+          >
+            Редактирование данных и смена фото — в разделе «Профиль» главного меню.
           </p>
         )}
       </div>
     </ModalChrome>
+  );
+}
+
+function ProfileInfoRow({
+  icon,
+  label,
+  value,
+  multiline,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  multiline?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+      <span
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 10,
+          background: "var(--bg-muted)",
+          color: "var(--text-muted)",
+          display: "grid",
+          placeItems: "center",
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--text-muted)",
+            marginBottom: 2,
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: "0.92rem",
+            whiteSpace: multiline ? "pre-wrap" : "normal",
+            wordBreak: "break-word",
+          }}
+        >
+          {value}
+        </div>
+      </div>
+    </div>
   );
 }

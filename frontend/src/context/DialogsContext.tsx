@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { ModalChrome } from "../components/ui/ModalChrome";
+import { IconCheck, IconTrash, IconX } from "../components/Icons";
 
 type AlertState = {
   title?: string;
@@ -91,13 +92,17 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
           <p style={{ margin: "0 0 16px", whiteSpace: "pre-wrap" }}>
             {alertState.message}
           </p>
-          <button
-            type="button"
-            className="ui-btn ui-btn--primary"
-            onClick={alertState.onClose}
-          >
-            ОК
-          </button>
+          <div className="ui-modal-actions">
+            <button
+              type="button"
+              className="ui-btn ui-btn--primary"
+              onClick={alertState.onClose}
+              autoFocus
+            >
+              <IconCheck size={16} />
+              ОК
+            </button>
+          </div>
         </ModalChrome>
       ) : null}
       {confirmState ? (
@@ -115,6 +120,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
               className="ui-btn ui-btn--ghost"
               onClick={() => confirmState.onResult(false)}
             >
+              <IconX size={16} />
               {confirmState.cancelLabel ?? "Отмена"}
             </button>
             <button
@@ -125,7 +131,9 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
                   : "ui-btn ui-btn--primary"
               }
               onClick={() => confirmState.onResult(true)}
+              autoFocus
             >
+              {confirmState.danger ? <IconTrash size={16} /> : <IconCheck size={16} />}
               {confirmState.confirmLabel ?? "Да"}
             </button>
           </div>

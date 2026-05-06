@@ -21,6 +21,8 @@ import {
   IconChat,
   IconChevronDown,
   IconChevronLeft,
+  IconHash,
+  IconInfo,
   IconLogout,
   IconMenu,
   IconPaperclip,
@@ -28,6 +30,7 @@ import {
   IconSearch,
   IconSend,
   IconUser,
+  IconUsers,
   IconX,
 } from "../components/Icons";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
@@ -286,7 +289,7 @@ export function MessengerShell({
       setPickedFiles((prev) => [...prev, ...nextItems]);
       resetAttachmentInput();
     },
-    [alert, resetAttachmentInput],
+    [resetAttachmentInput],
   );
 
   const openAttachmentPicker = useCallback(() => {
@@ -984,22 +987,25 @@ export function MessengerShell({
     }
   };
 
+  /* ============================ Layout ============================ */
+
   const shell: CSSProperties = {
     display: "flex",
     flexDirection: "column",
     height: "100%",
     overflow: "hidden",
+    background: "var(--bg)",
   };
 
   const topBar: CSSProperties = {
     display: "flex",
     alignItems: "center",
     gap: 10,
-    padding: "10px 12px",
+    padding: "10px 14px",
     borderBottom: "1px solid var(--border)",
     background: "var(--bg-elevated)",
     flexShrink: 0,
-    flexWrap: "wrap",
+    minHeight: 56,
   };
 
   const row: CSSProperties = {
@@ -1013,12 +1019,12 @@ export function MessengerShell({
   const showThread = wide || !!selectedId;
 
   const sidebar: CSSProperties = {
-    width: wide ? 300 : "100%",
+    width: wide ? 320 : "100%",
     maxWidth: "100%",
     borderRight: wide ? "1px solid var(--border)" : "none",
     display: showChatList ? "flex" : "none",
     flexDirection: "column",
-    background: "var(--bg-muted)",
+    background: "var(--bg-elevated)",
     minHeight: 0,
   };
 
@@ -1037,57 +1043,87 @@ export function MessengerShell({
         {!wide && selectedId ? (
           <button
             type="button"
-            className="ui-btn ui-btn--ghost"
-            aria-label="Назад к списку"
+            className="ui-icon-btn"
+            aria-label="Назад к списку чатов"
+            title="Назад"
             onClick={clearThreadSelection}
           >
             <IconChevronLeft />
           </button>
         ) : null}
-        <IconChat size={22} title="" />
-        <strong style={{ flex: 1, fontSize: "1.02rem", minWidth: 120 }}>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            color: "var(--accent)",
+          }}
+        >
+          <IconChat size={22} />
+        </div>
+        <strong style={{ fontSize: "1.02rem", whiteSpace: "nowrap" }}>
           {SERVICE_DISPLAY_NAME}
         </strong>
+        <span style={{ flex: 1 }} />
         <span
           style={{
             color: "var(--text-muted)",
             fontSize: "0.85rem",
-            maxWidth: 140,
+            display: wide ? "inline-flex" : "none",
+            alignItems: "center",
+            gap: 6,
+            maxWidth: 200,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}
         >
-          <IconUser size={16} /> {currentUser.username}
+          <IconUser size={16} />
+          {currentUser.username}
         </span>
+        <ThemeSwitcher />
         <button
           type="button"
-          className="ui-btn ui-btn--ghost"
+          className="ui-icon-btn"
           onClick={() => setMenuOpen(true)}
           aria-label="Меню"
+          title="Меню"
         >
           <IconMenu />
         </button>
-        <ThemeSwitcher />
-        <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void handleLogout()}>
-          <IconLogout size={18} /> {wide ? "Выйти" : ""}
+        <button
+          type="button"
+          className="ui-icon-btn ui-icon-btn--danger"
+          onClick={() => void handleLogout()}
+          aria-label="Выйти"
+          title="Выйти"
+        >
+          <IconLogout size={18} />
         </button>
       </header>
 
       <div style={row}>
         <aside style={sidebar}>
-          <div style={{ padding: 10, display: "flex", gap: 8 }}>
+          <div style={{ padding: 10, flexShrink: 0 }}>
             <button
               type="button"
-              className="ui-btn ui-btn--primary"
-              style={{ flex: 1 }}
+              className="ui-btn ui-btn--primary ui-btn--block"
               onClick={() => setComposeOpen(true)}
             >
-              <IconPlus size={18} /> Новый чат
+              <IconPlus size={18} />
+              Новый чат
             </button>
           </div>
           <div
-            style={{ flex: 1, overflowY: "auto", padding: 8 }}
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "0 10px 10px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              minHeight: 0,
+            }}
             onScroll={(e) => {
               const el = e.currentTarget;
               if (el.scrollTop + el.clientHeight >= el.scrollHeight - 32)
@@ -1095,90 +1131,122 @@ export function MessengerShell({
             }}
           >
             {loadingChats && chats.length === 0 ? (
-              <p style={{ color: "var(--text-muted)" }}>Загрузка…</p>
+              <div style={{ padding: 12, color: "var(--text-muted)" }}>
+                <span className="ui-spinner" aria-hidden="true" /> Загружаем чаты…
+              </div>
             ) : null}
-            {sortedChats.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  detachedSelectionRef.current = false;
-                  setSelectedId(c.id);
-                  setSelectedChatData(c);
-                  setCommentRoot(null);
-                  setEditing(null);
-                  setReplyTo(null);
-                  setDraft("");
-                  clearPickedFiles();
-                  setSearchMode(false);
-                  setSearchHitsChat([]);
-                  searchChatPageRef.current = 0;
-                  setSearchChatDone(false);
-                }}
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  width: "100%",
-                  textAlign: "left",
-                  padding: 10,
-                  marginBottom: 8,
-                  borderRadius: 12,
-                  border:
-                    selectedId === c.id
-                      ? "2px solid var(--accent)"
-                      : "1px solid var(--border)",
-                  background:
-                    selectedId === c.id ? "var(--bg-elevated)" : "var(--bg)",
-                  cursor: "pointer",
-                  color: "inherit",
-                  alignItems: "center",
-                }}
-              >
-                <Avatar src={chatAvatarSrc(c)} label={chatLabel(c)} size={48} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 700 }}>{chatLabel(c)}</div>
-                  <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                    {chatKindLabel(c.chat_kind)}
-                  </div>
-                  {c.last_message ? (
+            {sortedChats.map((c) => {
+              const selected = selectedId === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    detachedSelectionRef.current = false;
+                    setSelectedId(c.id);
+                    setSelectedChatData(c);
+                    setCommentRoot(null);
+                    setEditing(null);
+                    setReplyTo(null);
+                    setDraft("");
+                    clearPickedFiles();
+                    setSearchMode(false);
+                    setSearchHitsChat([]);
+                    searchChatPageRef.current = 0;
+                    setSearchChatDone(false);
+                  }}
+                  className={selected ? "ui-row ui-row--selected" : "ui-row ui-row--button"}
+                  style={{
+                    padding: 10,
+                    gap: 12,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <Avatar src={chatAvatarSrc(c)} label={chatLabel(c)} size={48} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
                     <div
                       style={{
-                        fontSize: "0.8rem",
-                        color: "var(--text-muted)",
-                        marginTop: 6,
-                        minWidth: 0,
+                        fontWeight: 700,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      {c.last_message.sender_user_id != null ? (
+                      {chatLabel(c)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.72rem",
+                        color: "var(--text-subtle)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      {kindIcon(c.chat_kind)}
+                      {chatKindLabel(c.chat_kind)}
+                    </div>
+                    {c.last_message ? (
+                      <div
+                        style={{
+                          fontSize: "0.8rem",
+                          color: "var(--text-muted)",
+                          marginTop: 4,
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                        }}
+                      >
+                        {c.last_message.sender_user_id != null ? (
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              color: "var(--text)",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              maxWidth: "100%",
+                            }}
+                            title={displayName(c.last_message.sender_user_id)}
+                          >
+                            {displayName(c.last_message.sender_user_id)}
+                          </div>
+                        ) : null}
                         <div
                           style={{
-                            fontWeight: 600,
-                            marginBottom: 2,
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
+                            maxWidth: "100%",
                           }}
+                          title={
+                            (c.last_message.message_text ?? "").trim() ||
+                            "Вложение"
+                          }
                         >
-                          {displayName(c.last_message.sender_user_id)}
+                          {((c.last_message.message_text ?? "").trim() ||
+                            "Вложение").replace(/\s+/g, " ")}
                         </div>
-                      ) : null}
-                      <div
-                        style={{
-                          overflow: "hidden",
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          wordBreak: "break-word",
-                        }}
-                      >
-                        {(c.last_message.message_text ?? "").trim() ||
-                          "Вложение"}
                       </div>
-                    </div>
-                  ) : null}
-                </div>
-              </button>
-            ))}
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+            {!loadingChats && sortedChats.length === 0 ? (
+              <div
+                style={{
+                  padding: "32px 12px",
+                  textAlign: "center",
+                  color: "var(--text-muted)",
+                  fontSize: "0.9rem",
+                }}
+              >
+                У вас пока нет чатов. Нажмите «Новый чат», чтобы начать.
+              </div>
+            ) : null}
           </div>
         </aside>
 
@@ -1190,15 +1258,39 @@ export function MessengerShell({
                 display: "grid",
                 placeItems: "center",
                 color: "var(--text-muted)",
+                padding: 24,
+                textAlign: "center",
               }}
             >
-              Выберите чат
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: "50%",
+                    background: "var(--bg-muted)",
+                    display: "grid",
+                    placeItems: "center",
+                    color: "var(--text-subtle)",
+                  }}
+                >
+                  <IconChat size={28} />
+                </div>
+                <div>Выберите чат, чтобы открыть переписку</div>
+              </div>
             </div>
           ) : (
             <>
               <div
                 style={{
-                  padding: "10px 12px",
+                  padding: "10px 14px",
                   borderBottom: "1px solid var(--border)",
                   background: "var(--bg-elevated)",
                   display: "flex",
@@ -1213,13 +1305,19 @@ export function MessengerShell({
                 {!wide && selectedChat.chat_kind !== "PROFILE" ? (
                   <button
                     type="button"
-                    className="ui-btn ui-btn--ghost"
+                    className="ui-icon-btn"
                     onClick={() => setInfoOpen(true)}
+                    aria-label="Информация о чате"
+                    title="Информация о чате"
                   >
-                    Инфо
+                    <IconInfo />
                   </button>
                 ) : null}
-                <Avatar src={chatAvatarSrc(selectedChat)} label={chatLabel(selectedChat)} size={44} />
+                <Avatar
+                  src={chatAvatarSrc(selectedChat)}
+                  label={chatLabel(selectedChat)}
+                  size={42}
+                />
                 <div
                   style={{
                     flex: "0 1 auto",
@@ -1227,15 +1325,33 @@ export function MessengerShell({
                     maxWidth: "min(240px, 38vw)",
                   }}
                 >
-                  <div style={{ fontWeight: 800 }}>{chatLabel(selectedChat)}</div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {chatLabel(selectedChat)}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "var(--text-muted)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    {kindIcon(selectedChat.chat_kind)}
                     {chatKindLabel(selectedChat.chat_kind)}
                   </div>
                 </div>
                 <div
                   style={{
                     display: "flex",
-                    gap: 8,
+                    gap: 6,
                     flex: "1 1 160px",
                     minWidth: 0,
                     alignItems: "center",
@@ -1256,19 +1372,23 @@ export function MessengerShell({
                   />
                   <button
                     type="button"
-                    className="ui-btn ui-btn--primary"
+                    className="ui-icon-btn"
                     style={{ flexShrink: 0 }}
                     onClick={() => void runHdrSearch()}
                     aria-label="Искать в чате"
+                    title="Искать в чате"
                   >
                     <IconSearch size={18} />
                   </button>
                 </div>
               </div>
-              <ValidationError
-                message={chatSearchError}
-                style={{ margin: "8px 12px 0" }}
-              />
+
+              {chatSearchError ? (
+                <ValidationError
+                  message={chatSearchError}
+                  style={{ margin: "8px 12px 0", flexShrink: 0 }}
+                />
+              ) : null}
 
               {commentRoot ? (
                 <div
@@ -1284,10 +1404,10 @@ export function MessengerShell({
                 >
                   <button
                     type="button"
-                    className="ui-btn ui-btn--ghost"
+                    className="ui-btn ui-btn--ghost ui-btn--sm"
                     onClick={() => setCommentRoot(null)}
                   >
-                    <IconChevronLeft /> К корню чата
+                    <IconChevronLeft size={16} /> К корню чата
                   </button>
                 </div>
               ) : null}
@@ -1307,11 +1427,11 @@ export function MessengerShell({
                   }}
                 >
                   <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-                    Режим поиска: показаны только совпадения
+                    <IconSearch size={14} /> Режим поиска: показаны только совпадения
                   </span>
                   <button
                     type="button"
-                    className="ui-btn ui-btn--ghost"
+                    className="ui-btn ui-btn--ghost ui-btn--sm"
                     onClick={() => {
                       setSearchMode(false);
                       setSearchHitsChat([]);
@@ -1320,7 +1440,7 @@ export function MessengerShell({
                       void loadMessages(true);
                     }}
                   >
-                    Сбросить
+                    <IconX size={14} /> Сбросить
                   </button>
                 </div>
               ) : null}
@@ -1334,109 +1454,122 @@ export function MessengerShell({
                 }}
               >
                 <div
-                ref={messagesScrollRef}
-                style={{
-                  height: "100%",
-                  overflowY: "auto",
-                  padding: 12,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                }}
-                onScroll={(e) => {
-                  const el = e.currentTarget;
-                  updateJumpToBottomVisibility();
-                  if (el.scrollTop < 60 && selectedChat) {
-                    if (searchMode) {
-                      if (!loadingSearchChat && !searchChatDone)
-                        void loadMoreSearchChat();
-                    } else if (!loadingMsg && !msgDone) {
-                      void loadMessages(false);
+                  ref={messagesScrollRef}
+                  style={{
+                    height: "100%",
+                    overflowY: "auto",
+                    padding: 12,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                  onScroll={(e) => {
+                    const el = e.currentTarget;
+                    updateJumpToBottomVisibility();
+                    if (el.scrollTop < 60 && selectedChat) {
+                      if (searchMode) {
+                        if (!loadingSearchChat && !searchChatDone)
+                          void loadMoreSearchChat();
+                      } else if (!loadingMsg && !msgDone) {
+                        void loadMessages(false);
+                      }
                     }
-                  }
-                }}
-              >
-                {commentRoot ? (
-                  <div style={{ padding: "4px 0 8px", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
-                    <MessageBubble
-                      m={commentRoot}
-                      chatId={selectedChat.id}
-                      currentUserId={currentUser.id}
-                      displaySender={displayName(commentRoot.sender_user_id)}
-                      replySnippet={null}
-                      replySenderLabel={null}
-                      interactive={false}
-                      avatarEpoch={assetEpoch}
-                    />
-                  </div>
-                ) : null}
-                {searchMode && loadingSearchChat && searchHitsChat.length === 0 ? (
-                  <span style={{ color: "var(--text-muted)" }}>Поиск…</span>
-                ) : null}
-                {!searchMode && loadingMsg && messages.length === 0 ? (
-                  <span style={{ color: "var(--text-muted)" }}>Загрузка…</span>
-                ) : null}
-                {(searchMode ? searchHitsChat : messages).map((m) => {
-                  const rm = m.reply_message_id
-                    ? replyCache[m.reply_message_id]
-                    : undefined;
-                  return (
-                    <MessageBubble
-                      key={m.id}
-                      m={m}
-                      chatId={selectedChat.id}
-                      currentUserId={currentUser.id}
-                      displaySender={displayName(m.sender_user_id)}
-                      replySnippet={rm?.message_text ?? null}
-                      replySenderLabel={
-                        rm ? displayName(rm.sender_user_id) : null
-                      }
-                      onReply={() => {
-                        setReplyTo(m);
-                        setEditing(null);
+                  }}
+                >
+                  {commentRoot ? (
+                    <div
+                      style={{
+                        padding: "4px 0 8px",
+                        borderBottom: "1px solid var(--border)",
+                        marginBottom: 4,
                       }}
-                      onEdit={
-                        m.sender_user_id === currentUser.id
-                          ? () => {
-                              setEditing(m);
-                              setDraft(m.message_text ?? "");
-                              setReplyTo(null);
-                              clearPickedFiles();
-                            }
-                          : undefined
-                      }
-                      onDelete={
-                        canDeleteMessage(m)
-                          ? () => void handleDelete(m)
-                          : undefined
-                      }
-                      onOpenComments={
-                        canCommentBtn && !m.parent_message_id
-                          ? () => setCommentRoot(m)
-                          : undefined
-                      }
-                      canOpenComments={!!canCommentBtn && !m.parent_message_id}
-                      showReadReceipt={
-                        m.sender_user_id === currentUser.id &&
-                        !commentRoot &&
-                        (selectedChat.chat_kind === "GROUP" ||
-                          selectedChat.chat_kind === "PRIVATE")
-                      }
-                      readLabel={
-                        m.is_read === true
-                          ? "Прочитано"
-                          : m.is_read === false
-                            ? "Доставлено"
-                            : ""
-                      }
-                      avatarEpoch={assetEpoch}
-                    />
-                  );
-                })}
-                <div ref={messagesBottomRef} style={{ height: 1, flexShrink: 0 }} />
+                    >
+                      <MessageBubble
+                        m={commentRoot}
+                        chatId={selectedChat.id}
+                        currentUserId={currentUser.id}
+                        displaySender={displayName(commentRoot.sender_user_id)}
+                        replySnippet={null}
+                        replySenderLabel={null}
+                        interactive={false}
+                        avatarEpoch={assetEpoch}
+                        onOpenAuthorProfile={(uid) => setProfileUserId(uid)}
+                      />
+                    </div>
+                  ) : null}
+                  {searchMode && loadingSearchChat && searchHitsChat.length === 0 ? (
+                    <span style={{ color: "var(--text-muted)" }}>
+                      <span className="ui-spinner" aria-hidden="true" /> Поиск…
+                    </span>
+                  ) : null}
+                  {!searchMode && loadingMsg && messages.length === 0 ? (
+                    <span style={{ color: "var(--text-muted)" }}>
+                      <span className="ui-spinner" aria-hidden="true" /> Загрузка…
+                    </span>
+                  ) : null}
+                  {(searchMode ? searchHitsChat : messages).map((m) => {
+                    const rm = m.reply_message_id
+                      ? replyCache[m.reply_message_id]
+                      : undefined;
+                    return (
+                      <MessageBubble
+                        key={m.id}
+                        m={m}
+                        chatId={selectedChat.id}
+                        currentUserId={currentUser.id}
+                        displaySender={displayName(m.sender_user_id)}
+                        replySnippet={rm?.message_text ?? null}
+                        replySenderLabel={
+                          rm ? displayName(rm.sender_user_id) : null
+                        }
+                        onReply={() => {
+                          setReplyTo(m);
+                          setEditing(null);
+                        }}
+                        onEdit={
+                          m.sender_user_id === currentUser.id
+                            ? () => {
+                                setEditing(m);
+                                setDraft(m.message_text ?? "");
+                                setReplyTo(null);
+                                clearPickedFiles();
+                              }
+                            : undefined
+                        }
+                        onDelete={
+                          canDeleteMessage(m)
+                            ? () => void handleDelete(m)
+                            : undefined
+                        }
+                        onOpenComments={
+                          canCommentBtn && !m.parent_message_id
+                            ? () => setCommentRoot(m)
+                            : undefined
+                        }
+                        canOpenComments={!!canCommentBtn && !m.parent_message_id}
+                        showReadReceipt={
+                          m.sender_user_id === currentUser.id &&
+                          !commentRoot &&
+                          (selectedChat.chat_kind === "GROUP" ||
+                            selectedChat.chat_kind === "PRIVATE")
+                        }
+                        readLabel={
+                          m.is_read === true
+                            ? "Прочитано"
+                            : m.is_read === false
+                              ? "Доставлено"
+                              : ""
+                        }
+                        avatarEpoch={assetEpoch}
+                        onOpenAuthorProfile={(uid) => setProfileUserId(uid)}
+                      />
+                    );
+                  })}
+                  <div ref={messagesBottomRef} style={{ height: 1, flexShrink: 0 }} />
+                </div>
                 <button
                   type="button"
-                  className="ui-btn ui-btn--primary"
+                  className="ui-icon-btn ui-icon-btn--accent"
                   aria-label="Прокрутить вниз"
                   title="Прокрутить вниз"
                   onClick={() => scrollMessagesToBottom()}
@@ -1446,18 +1579,14 @@ export function MessengerShell({
                     bottom: 16,
                     width: 42,
                     height: 42,
-                    padding: 0,
-                    borderRadius: 999,
-                    boxShadow: "0 4px 16px var(--shadow)",
                     opacity: showJumpToBottom ? 1 : 0,
                     pointerEvents: showJumpToBottom ? "auto" : "none",
                     transition: "opacity 160ms ease",
                     zIndex: 2,
                   }}
                 >
-                  <IconChevronDown size={24} />
+                  <IconChevronDown size={22} />
                 </button>
-              </div>
               </div>
 
               <div
@@ -1477,56 +1606,77 @@ export function MessengerShell({
                           alignItems: "flex-start",
                           gap: 8,
                           marginBottom: 8,
+                          padding: "6px 10px",
+                          borderRadius: 10,
+                          background: "var(--bg-muted)",
                           fontSize: "0.85rem",
                           color: "var(--text-muted)",
                         }}
                       >
-                        <div style={{ flex: 1 }}>
-                          <strong>
+                        <div
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            borderLeft: "3px solid var(--accent)",
+                            paddingLeft: 8,
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, color: "var(--text)" }}>
                             {displayName(replyTo.sender_user_id)}
-                          </strong>
-                          : {(replyTo.message_text ?? "").slice(0, 100)}
+                          </div>
+                          <div
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {(replyTo.message_text ?? "").slice(0, 100) || "Вложение"}
+                          </div>
                         </div>
                         <button
                           type="button"
                           aria-label="Отменить ответ"
+                          title="Отменить ответ"
                           onClick={() => setReplyTo(null)}
-                          style={{
-                            border: "none",
-                            background: "var(--bg-muted)",
-                            borderRadius: "50%",
-                            width: 32,
-                            height: 32,
-                            cursor: "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
+                          className="ui-icon-btn ui-icon-btn--sm"
                         >
-                          <IconX size={18} />
+                          <IconX size={16} />
                         </button>
                       </div>
                     ) : null}
                     {editing ? (
-                      <div style={{ marginBottom: 8, fontSize: "0.85rem" }}>
-                        Редактирование{" "}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          marginBottom: 8,
+                          fontSize: "0.85rem",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        <span>Редактирование сообщения</span>
                         <button
                           type="button"
-                          className="ui-btn ui-btn--ghost"
+                          className="ui-btn ui-btn--ghost ui-btn--sm"
                           onClick={() => {
                             setEditing(null);
                             setDraft("");
                             setComposeError(null);
                           }}
                         >
-                          Отмена
+                          <IconX size={14} /> Отмена
                         </button>
                       </div>
                     ) : null}
                     <PickedFilesStrip
                       files={pickedFiles}
                       onRemove={(id) => {
-                        setPickedFiles((prev) => prev.filter((item) => item.id !== id));
+                        setPickedFiles((prev) =>
+                          prev.filter((item) => item.id !== id),
+                        );
                         resetAttachmentInput();
                       }}
                     />
@@ -1544,21 +1694,13 @@ export function MessengerShell({
                           />
                           <button
                             type="button"
-                            aria-label="РџСЂРёРєСЂРµРїРёС‚СЊ С„Р°Р№Р»С‹"
+                            aria-label="Прикрепить файлы"
+                            title="Прикрепить файлы"
                             onClick={openAttachmentPicker}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              width: 44,
-                              height: 44,
-                              borderRadius: "50%",
-                              border: "1px solid var(--border)",
-                              background: "var(--bg)",
-                              flexShrink: 0,
-                            }}
+                            className="ui-icon-btn"
+                            style={{ flexShrink: 0 }}
                           >
-                            <IconPaperclip />
+                            <IconPaperclip size={20} />
                           </button>
                         </>
                       ) : null}
@@ -1569,24 +1711,40 @@ export function MessengerShell({
                           setDraft(e.target.value);
                           setComposeError(null);
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            if (editing) void handleSaveEdit();
+                            else void handleSend();
+                          }
+                        }}
                         placeholder="Сообщение…"
-                        rows={2}
-                        style={{ flex: 1, minHeight: 48 }}
+                        rows={1}
+                        style={{ flex: 1, minHeight: 44, resize: "none" }}
                       />
                       <button
                         type="button"
-                        className="ui-btn ui-btn--primary"
-                        style={{ borderRadius: "50%", width: 48, height: 48, padding: 0 }}
+                        className="ui-icon-btn ui-icon-btn--accent ui-icon-btn--lg"
                         onClick={() =>
                           editing ? void handleSaveEdit() : void handleSend()
                         }
+                        title={editing ? "Сохранить" : "Отправить"}
+                        aria-label={editing ? "Сохранить" : "Отправить"}
                       >
-                        <IconSend />
+                        <IconSend size={20} />
                       </button>
                     </div>
                   </>
                 ) : (
-                  <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "var(--text-muted)",
+                      fontSize: "0.9rem",
+                      textAlign: "center",
+                      padding: "8px 0",
+                    }}
+                  >
                     У вас нет прав писать в корне этого чата.
                   </p>
                 )}
@@ -1615,23 +1773,35 @@ export function MessengerShell({
 
       {composeOpen ? (
         <ModalChrome title="Новый чат" onClose={() => setComposeOpen(false)} narrow>
-          <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              marginBottom: 16,
+              flexWrap: "wrap",
+            }}
+          >
             {(
               [
-                ["private", "Личный чат"],
-                ["group", "Группа"],
-                ["channel", "Канал"],
+                ["private", "Личный", <IconUser size={16} key="ico" />],
+                ["group", "Группа", <IconUsers size={16} key="ico" />],
+                ["channel", "Канал", <IconHash size={16} key="ico" />],
               ] as const
-            ).map(([k, lab]) => (
+            ).map(([k, lab, ico]) => (
               <button
                 key={k}
                 type="button"
-                className={composeTab === k ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
+                className={
+                  composeTab === k
+                    ? "ui-btn ui-btn--primary ui-btn--sm"
+                    : "ui-btn ui-btn--ghost ui-btn--sm"
+                }
                 onClick={() => {
                   setComposeTab(k);
                   setNewChatError(null);
                 }}
               >
+                {ico}
                 {lab}
               </button>
             ))}
@@ -1639,8 +1809,11 @@ export function MessengerShell({
           {composeTab === "private" ? (
             <>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-                <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Имя пользователя</span>
+                <label
+                  className="ui-field"
+                  style={{ flex: 1, minWidth: 0 }}
+                >
+                  <span className="ui-field-label">Имя пользователя</span>
                   <input
                     className="ui-input"
                     value={usernameQuery}
@@ -1648,43 +1821,70 @@ export function MessengerShell({
                       setUsernameQuery(e.target.value);
                       setNewChatError(null);
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void searchUsersCompose();
+                    }}
                     maxLength={100}
                   />
                 </label>
                 <button
                   type="button"
-                  className="ui-btn ui-btn--primary"
+                  className="ui-icon-btn ui-icon-btn--accent"
                   onClick={() => void searchUsersCompose()}
+                  aria-label="Найти"
+                  title="Найти"
                 >
-                  <IconSearch />
+                  <IconSearch size={18} />
                 </button>
               </div>
               <ValidationError message={newChatError} />
-              {searchHits.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  className="ui-btn ui-btn--ghost"
-                  style={{
-                    width: "100%",
-                    marginTop: 8,
-                    justifyContent: "flex-start",
-                  }}
-                  onClick={() => void createPrivate(u.id)}
-                >
-                  <Avatar
-                    src={userAvatarUrl(u.id, assetEpoch)}
-                    label={avatarLetterFromUser(u)}
-                    size={36}
-                  />
-                  <span style={{ marginLeft: 8 }}>{userListLabel(u)}</span>
-                </button>
-              ))}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  marginTop: 8,
+                  maxHeight: "55vh",
+                  overflowY: "auto",
+                }}
+              >
+                {searchHits.map((u) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    className="ui-row ui-row--button"
+                    onClick={() => void createPrivate(u.id)}
+                  >
+                    <Avatar
+                      src={userAvatarUrl(u.id, assetEpoch)}
+                      label={avatarLetterFromUser(u)}
+                      size={40}
+                    />
+                    <span style={{ fontSize: "0.92rem" }}>
+                      {userListLabel(u)}
+                    </span>
+                  </button>
+                ))}
+                {searchHits.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "16px 12px",
+                      color: "var(--text-muted)",
+                      fontSize: "0.9rem",
+                      textAlign: "center",
+                    }}
+                  >
+                    Введите имя пользователя и нажмите «Найти».
+                  </div>
+                ) : null}
+              </div>
             </>
           ) : (
             <>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Название</span>
+              <label className="ui-field">
+                <span className="ui-field-label">
+                  Название {composeTab === "group" ? "группы" : "канала"}
+                </span>
                 <input
                   className="ui-input"
                   value={groupName}
@@ -1693,17 +1893,21 @@ export function MessengerShell({
                     setNewChatError(null);
                   }}
                   maxLength={100}
+                  autoFocus
                 />
               </label>
               <ValidationError message={newChatError} />
               <button
                 type="button"
-                className="ui-btn ui-btn--primary"
-                style={{ width: "100%" }}
+                className="ui-btn ui-btn--primary ui-btn--block"
+                style={{ marginTop: 8 }}
                 onClick={() =>
-                  void createGroupOrChannel(composeTab === "group" ? "group" : "channel")
+                  void createGroupOrChannel(
+                    composeTab === "group" ? "group" : "channel",
+                  )
                 }
               >
+                <IconPlus size={16} />
                 Создать
               </button>
             </>
@@ -1764,18 +1968,32 @@ export function MessengerShell({
             height: "100dvh",
             width: "100%",
             overflow: "hidden",
+            animation: "slide-right 220ms ease-out both",
           }}
         >
-          <div style={{ padding: 8, flexShrink: 0 }}>
+          <div
+            style={{
+              padding: 8,
+              borderBottom: "1px solid var(--border)",
+              flexShrink: 0,
+            }}
+          >
             <button
               type="button"
               className="ui-btn ui-btn--ghost"
               onClick={() => setInfoOpen(false)}
             >
-              <IconX /> Закрыть панель
+              <IconChevronLeft size={18} /> Назад к чату
             </button>
           </div>
-          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <ChatInfoPanel
               variant="sheet"
               chat={selectedChat}
@@ -1798,4 +2016,11 @@ export function MessengerShell({
       ) : null}
     </div>
   );
+}
+
+function kindIcon(kind: Chat["chat_kind"]) {
+  if (kind === "PRIVATE") return <IconUser size={12} />;
+  if (kind === "GROUP") return <IconUsers size={12} />;
+  if (kind === "CHANNEL") return <IconHash size={12} />;
+  return <IconUser size={12} />;
 }

@@ -4,10 +4,20 @@ import {
   useState,
   type CSSProperties,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import { ApiError, apiFetch, apiJson } from "./api/client";
 import type { CurrentUser } from "./api/types";
-import { IconUser } from "./components/Icons";
+import {
+  IconAtSign,
+  IconChat,
+  IconChevronLeft,
+  IconKey,
+  IconLock,
+  IconMail,
+  IconUser,
+  IconUserPlus,
+} from "./components/Icons";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { ValidationError } from "./components/ui/ValidationError";
 import { SERVICE_DISPLAY_NAME } from "./config";
@@ -77,9 +87,10 @@ export default function App() {
           display: "grid",
           placeItems: "center",
           color: "var(--text-muted)",
+          gap: 12,
         }}
       >
-        Загрузка...
+        <span className="ui-spinner ui-spinner--lg" aria-hidden="true" />
       </div>
     );
   }
@@ -96,6 +107,39 @@ export default function App() {
       onLoggedIn={() => void checkSession()}
       setScreen={setScreen}
     />
+  );
+}
+
+const inputIconWrap: CSSProperties = {
+  position: "relative",
+  display: "block",
+};
+
+const iconInside: CSSProperties = {
+  position: "absolute",
+  left: 12,
+  top: "50%",
+  transform: "translateY(-50%)",
+  color: "var(--text-subtle)",
+  pointerEvents: "none",
+};
+
+const inputWithIconStyle: CSSProperties = {
+  paddingLeft: 38,
+};
+
+function FieldWithIcon({
+  icon,
+  children,
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div style={inputIconWrap}>
+      <span style={iconInside}>{icon}</span>
+      {children}
+    </div>
   );
 }
 
@@ -125,6 +169,11 @@ function AuthShell({
   const [resetEmail, setResetEmail] = useState("");
   const [resetCode, setResetCode] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
+
+  // Очищаем ошибки при смене экрана
+  useEffect(() => {
+    setError(null);
+  }, [screen.name]);
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -287,32 +336,11 @@ function AuthShell({
   };
 
   const card: CSSProperties = {
-    width: "min(420px, 100%)",
+    width: "min(440px, 100%)",
     padding: 28,
-    borderRadius: 16,
+    borderRadius: 18,
     background: "var(--bg-elevated)",
     border: "1px solid var(--border)",
-    boxShadow: "0 8px 32px var(--shadow)",
-  };
-
-  const input: CSSProperties = {
-    width: "100%",
-    padding: "10px 12px",
-    marginBottom: 12,
-    borderRadius: 10,
-    border: "1px solid var(--border)",
-    background: "var(--bg)",
-  };
-
-  const btn: CSSProperties = {
-    width: "100%",
-    padding: "12px 16px",
-    borderRadius: 10,
-    border: "none",
-    background: "var(--accent)",
-    color: "#fff",
-    fontWeight: 600,
-    cursor: busy ? "wait" : "pointer",
   };
 
   const linkBtn: CSSProperties = {
@@ -320,9 +348,39 @@ function AuthShell({
     background: "none",
     color: "var(--accent)",
     cursor: "pointer",
-    textDecoration: "underline",
     padding: 0,
     font: "inherit",
+    fontWeight: 600,
+  };
+
+  const subtleLink: CSSProperties = {
+    border: "none",
+    background: "none",
+    color: "var(--text-muted)",
+    cursor: "pointer",
+    padding: 0,
+    font: "inherit",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+  };
+
+  const formStack: CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  };
+
+  const sectionTitle: CSSProperties = {
+    margin: "0 0 6px",
+    fontSize: "1.35rem",
+    fontWeight: 700,
+  };
+
+  const subHelp: CSSProperties = {
+    margin: "0 0 18px",
+    fontSize: "0.92rem",
+    color: "var(--text-muted)",
   };
 
   return (
@@ -341,317 +399,482 @@ function AuthShell({
           display: "flex",
           alignItems: "center",
           gap: 16,
-          width: "min(420px, 100%)",
-          justifyContent: "flex-end",
+          width: "min(440px, 100%)",
+          justifyContent: "space-between",
         }}
       >
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 10,
+            color: "var(--text)",
+            fontWeight: 700,
+          }}
+        >
+          <IconChat size={22} />
+          <span>{SERVICE_DISPLAY_NAME}</span>
+        </div>
         <ThemeSwitcher />
       </header>
 
-      <div style={card}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 20,
-          }}
-        >
-          <IconUser size={28} title="" />
-          <h1 style={{ margin: 0, fontSize: "1.35rem" }}>
-            {SERVICE_DISPLAY_NAME}
-          </h1>
-        </div>
-
+      <div style={card} className="anim-slide-up">
         {screen.name === "login" ? (
           <>
-            <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Вход</h2>
-            <form noValidate onSubmit={(e) => void handleLogin(e)}>
-              <label className="sr-only" htmlFor="login">
-                Логин
+            <h1 style={sectionTitle}>Вход в аккаунт</h1>
+            <p style={subHelp}>Войдите, чтобы открыть свои чаты.</p>
+            <form noValidate onSubmit={(e) => void handleLogin(e)} style={formStack}>
+              <label className="ui-field">
+                <span className="ui-field-label">Логин</span>
+                <FieldWithIcon icon={<IconAtSign size={18} />}>
+                  <input
+                    className="ui-input"
+                    style={inputWithIconStyle}
+                    value={login}
+                    onChange={(e) => {
+                      setLogin(e.target.value);
+                      setError(null);
+                    }}
+                    autoComplete="username"
+                    placeholder="Ваш логин"
+                    required
+                    maxLength={100}
+                  />
+                </FieldWithIcon>
               </label>
-              <input
-                id="login"
-                style={input}
-                value={login}
-                onChange={(e) => {
-                  setLogin(e.target.value);
-                  setError(null);
-                }}
-                autoComplete="username"
-                placeholder="Логин"
-                required
-                maxLength={100}
-              />
-              <label className="sr-only" htmlFor="password">
-                Пароль
+              <label className="ui-field">
+                <span className="ui-field-label">Пароль</span>
+                <FieldWithIcon icon={<IconLock size={18} />}>
+                  <input
+                    type="password"
+                    className="ui-input"
+                    style={inputWithIconStyle}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setError(null);
+                    }}
+                    autoComplete="current-password"
+                    placeholder="Минимум 5 символов"
+                    required
+                    minLength={5}
+                    maxLength={100}
+                  />
+                </FieldWithIcon>
               </label>
-              <input
-                id="password"
-                type="password"
-                style={input}
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setError(null);
-                }}
-                autoComplete="current-password"
-                placeholder="Пароль"
-                required
-                minLength={5}
-                maxLength={100}
-              />
               <ValidationError message={error} />
-              <button type="submit" disabled={busy} style={btn}>
-                Войти
+              <button
+                type="submit"
+                disabled={busy}
+                className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block"
+              >
+                {busy ? <span className="ui-spinner" aria-hidden="true" /> : null}
+                {busy ? "Входим…" : "Войти"}
               </button>
             </form>
-            <p style={{ marginTop: 16, fontSize: "0.9rem", textAlign: "center" }}>
-              Нет аккаунта?{" "}
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                fontSize: "0.92rem",
+                textAlign: "center",
+              }}
+            >
+              <div>
+                Нет аккаунта?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen({ name: "register" });
+                    setError(null);
+                  }}
+                  style={linkBtn}
+                >
+                  Зарегистрироваться
+                </button>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen({ name: "reset-request" });
+                    setResetEmail(login.trim());
+                    setError(null);
+                  }}
+                  style={subtleLink}
+                >
+                  <IconKey size={14} /> Забыли пароль?
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {screen.name === "register" ? (
+          <>
+            <h1 style={sectionTitle}>Регистрация</h1>
+            <p style={subHelp}>Создайте новый аккаунт за пару минут.</p>
+            <form
+              noValidate
+              onSubmit={(e) => void handleRegisterRequest(e)}
+              style={formStack}
+            >
+              <label className="ui-field">
+                <span className="ui-field-label">Имя пользователя</span>
+                <FieldWithIcon icon={<IconAtSign size={18} />}>
+                  <input
+                    className="ui-input"
+                    style={inputWithIconStyle}
+                    value={regUsername}
+                    onChange={(e) => {
+                      setRegUsername(e.target.value);
+                      setError(null);
+                    }}
+                    placeholder="Уникальное имя в системе"
+                    required
+                    maxLength={100}
+                  />
+                </FieldWithIcon>
+              </label>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: 12,
+                  gridTemplateColumns: "1fr 1fr",
+                }}
+              >
+                <label className="ui-field">
+                  <span className="ui-field-label">Фамилия</span>
+                  <input
+                    className="ui-input"
+                    value={regSurname}
+                    onChange={(e) => {
+                      setRegSurname(e.target.value);
+                      setError(null);
+                    }}
+                    placeholder="Не обязательно"
+                    maxLength={100}
+                  />
+                </label>
+                <label className="ui-field">
+                  <span className="ui-field-label">Имя</span>
+                  <input
+                    className="ui-input"
+                    value={regName}
+                    onChange={(e) => {
+                      setRegName(e.target.value);
+                      setError(null);
+                    }}
+                    required
+                    maxLength={100}
+                  />
+                </label>
+              </div>
+              <label className="ui-field">
+                <span className="ui-field-label">Отчество</span>
+                <input
+                  className="ui-input"
+                  value={regSecond}
+                  onChange={(e) => {
+                    setRegSecond(e.target.value);
+                    setError(null);
+                  }}
+                  placeholder="Не обязательно"
+                  maxLength={100}
+                />
+              </label>
+
+              <label className="ui-field">
+                <span className="ui-field-label">Электронная почта</span>
+                <FieldWithIcon icon={<IconMail size={18} />}>
+                  <input
+                    className="ui-input"
+                    style={inputWithIconStyle}
+                    type="email"
+                    value={regEmail}
+                    onChange={(e) => {
+                      setRegEmail(e.target.value);
+                      setError(null);
+                    }}
+                    autoComplete="email"
+                    required
+                    maxLength={254}
+                  />
+                </FieldWithIcon>
+              </label>
+
+              <label className="ui-field">
+                <span className="ui-field-label">Логин для входа</span>
+                <FieldWithIcon icon={<IconUser size={18} />}>
+                  <input
+                    className="ui-input"
+                    style={inputWithIconStyle}
+                    value={regLogin}
+                    onChange={(e) => {
+                      setRegLogin(e.target.value);
+                      setError(null);
+                    }}
+                    autoComplete="username"
+                    required
+                    maxLength={100}
+                  />
+                </FieldWithIcon>
+              </label>
+
+              <label className="ui-field">
+                <span className="ui-field-label">Пароль</span>
+                <FieldWithIcon icon={<IconLock size={18} />}>
+                  <input
+                    className="ui-input"
+                    style={inputWithIconStyle}
+                    type="password"
+                    value={regPassword}
+                    onChange={(e) => {
+                      setRegPassword(e.target.value);
+                      setError(null);
+                    }}
+                    autoComplete="new-password"
+                    placeholder="Минимум 5 символов"
+                    required
+                    minLength={5}
+                    maxLength={100}
+                  />
+                </FieldWithIcon>
+              </label>
+
+              <ValidationError message={error} />
+              <button
+                type="submit"
+                disabled={busy}
+                className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block"
+              >
+                {busy ? <span className="ui-spinner" aria-hidden="true" /> : null}
+                <IconUserPlus size={18} />
+                {busy ? "Отправляем…" : "Отправить код на почту"}
+              </button>
+            </form>
+            <div
+              style={{
+                marginTop: 16,
+                fontSize: "0.92rem",
+                textAlign: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setScreen({ name: "login" });
+                  setError(null);
+                }}
+                style={subtleLink}
+              >
+                <IconChevronLeft size={14} /> Назад ко входу
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {screen.name === "register-code" ? (
+          <>
+            <h1 style={sectionTitle}>Подтверждение</h1>
+            <p style={subHelp}>
+              Мы отправили 6-значный код на <strong>{screen.email}</strong>.
+              Введите его ниже, чтобы завершить регистрацию.
+            </p>
+            <form
+              noValidate
+              onSubmit={(e) => void handleRegisterComplete(e)}
+              style={formStack}
+            >
+              <label className="ui-field">
+                <span className="ui-field-label">Код из письма</span>
+                <input
+                  className="ui-input"
+                  value={code}
+                  onChange={(e) => {
+                    setCode(e.target.value);
+                    setError(null);
+                  }}
+                  placeholder="6 цифр"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  required
+                  maxLength={100}
+                  autoFocus
+                />
+              </label>
+              <ValidationError message={error} />
+              <button
+                type="submit"
+                disabled={busy}
+                className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block"
+              >
+                {busy ? <span className="ui-spinner" aria-hidden="true" /> : null}
+                {busy ? "Создаём аккаунт…" : "Создать аккаунт"}
+              </button>
+            </form>
+            <div
+              style={{
+                marginTop: 16,
+                fontSize: "0.92rem",
+                textAlign: "center",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => {
                   setScreen({ name: "register" });
                   setError(null);
                 }}
-                style={linkBtn}
+                style={subtleLink}
               >
-                Регистрация
+                <IconChevronLeft size={14} /> Изменить данные
               </button>
-            </p>
-            <p style={{ marginTop: 8, fontSize: "0.9rem", textAlign: "center" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setScreen({ name: "reset-request" });
-                  setResetEmail(login.trim());
-                  setError(null);
-                }}
-                style={linkBtn}
-              >
-                Забыли пароль?
-              </button>
-            </p>
-          </>
-        ) : null}
-
-        {screen.name === "register" ? (
-          <>
-            <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Регистрация</h2>
-            <form noValidate onSubmit={(e) => void handleRegisterRequest(e)}>
-              <input
-                style={input}
-                value={regUsername}
-                onChange={(e) => {
-                  setRegUsername(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Имя пользователя"
-                required
-                maxLength={100}
-              />
-              <input
-                style={input}
-                value={regSurname}
-                onChange={(e) => {
-                  setRegSurname(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Фамилия (необязательно)"
-                maxLength={100}
-              />
-              <input
-                style={input}
-                value={regName}
-                onChange={(e) => {
-                  setRegName(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Имя"
-                required
-                maxLength={100}
-              />
-              <input
-                style={input}
-                value={regSecond}
-                onChange={(e) => {
-                  setRegSecond(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Отчество (необязательно)"
-                maxLength={100}
-              />
-              <input
-                style={input}
-                type="email"
-                value={regEmail}
-                onChange={(e) => {
-                  setRegEmail(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Электронная почта"
-                required
-                maxLength={254}
-              />
-              <input
-                style={input}
-                value={regLogin}
-                onChange={(e) => {
-                  setRegLogin(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Логин для входа"
-                required
-                maxLength={100}
-              />
-              <input
-                style={input}
-                type="password"
-                value={regPassword}
-                onChange={(e) => {
-                  setRegPassword(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Пароль (от 5 символов)"
-                required
-                minLength={5}
-                maxLength={100}
-              />
-              <ValidationError message={error} />
-              <button type="submit" disabled={busy} style={btn}>
-                Отправить код на почту
-              </button>
-            </form>
-            <p style={{ marginTop: 16, fontSize: "0.9rem", textAlign: "center" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setScreen({ name: "login" });
-                  setError(null);
-                }}
-                style={linkBtn}
-              >
-                Назад ко входу
-              </button>
-            </p>
-          </>
-        ) : null}
-
-        {screen.name === "register-code" ? (
-          <>
-            <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Подтверждение</h2>
-            <p style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
-              Введите код из письма, отправленного на {screen.email}
-            </p>
-            <form noValidate onSubmit={(e) => void handleRegisterComplete(e)}>
-              <input
-                style={input}
-                value={code}
-                onChange={(e) => {
-                  setCode(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Код"
-                required
-                maxLength={100}
-              />
-              <ValidationError message={error} />
-              <button type="submit" disabled={busy} style={btn}>
-                Создать аккаунт
-              </button>
-            </form>
+            </div>
           </>
         ) : null}
 
         {screen.name === "reset-request" ? (
           <>
-            <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Восстановление пароля</h2>
-            <p style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
-              Введите электронную почту аккаунта. Мы отправим код для сброса пароля.
+            <h1 style={sectionTitle}>Восстановление пароля</h1>
+            <p style={subHelp}>
+              Укажите электронную почту аккаунта — отправим вам код для сброса
+              пароля.
             </p>
-            <form noValidate onSubmit={(e) => void handleResetRequest(e)}>
-              <input
-                style={input}
-                type="email"
-                value={resetEmail}
-                onChange={(e) => {
-                  setResetEmail(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Электронная почта"
-                required
-                maxLength={254}
-              />
+            <form
+              noValidate
+              onSubmit={(e) => void handleResetRequest(e)}
+              style={formStack}
+            >
+              <label className="ui-field">
+                <span className="ui-field-label">Электронная почта</span>
+                <FieldWithIcon icon={<IconMail size={18} />}>
+                  <input
+                    className="ui-input"
+                    style={inputWithIconStyle}
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => {
+                      setResetEmail(e.target.value);
+                      setError(null);
+                    }}
+                    autoComplete="email"
+                    required
+                    maxLength={254}
+                  />
+                </FieldWithIcon>
+              </label>
               <ValidationError message={error} />
-              <button type="submit" disabled={busy} style={btn}>
-                Отправить код
+              <button
+                type="submit"
+                disabled={busy}
+                className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block"
+              >
+                {busy ? <span className="ui-spinner" aria-hidden="true" /> : null}
+                {busy ? "Отправляем…" : "Отправить код"}
               </button>
             </form>
-            <p style={{ marginTop: 16, fontSize: "0.9rem", textAlign: "center" }}>
+            <div
+              style={{
+                marginTop: 16,
+                fontSize: "0.92rem",
+                textAlign: "center",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => {
                   setScreen({ name: "login" });
                   setError(null);
                 }}
-                style={linkBtn}
+                style={subtleLink}
               >
-                Назад ко входу
+                <IconChevronLeft size={14} /> Назад ко входу
               </button>
-            </p>
+            </div>
           </>
         ) : null}
 
         {screen.name === "reset-confirm" ? (
           <>
-            <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Сброс пароля</h2>
-            <p style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
-              Введите код из письма, отправленного на {screen.email}, и задайте новый пароль.
+            <h1 style={sectionTitle}>Сброс пароля</h1>
+            <p style={subHelp}>
+              Введите код из письма, отправленного на{" "}
+              <strong>{screen.email}</strong>, и задайте новый пароль.
             </p>
-            <form noValidate onSubmit={(e) => void handleResetConfirm(e)}>
-              <input
-                style={input}
-                value={resetCode}
-                onChange={(e) => {
-                  setResetCode(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Код из письма"
-                autoComplete="one-time-code"
-                required
-                maxLength={100}
-              />
-              <input
-                style={input}
-                type="password"
-                value={resetNewPassword}
-                onChange={(e) => {
-                  setResetNewPassword(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Новый пароль"
-                autoComplete="new-password"
-                required
-                minLength={5}
-                maxLength={100}
-              />
+            <form
+              noValidate
+              onSubmit={(e) => void handleResetConfirm(e)}
+              style={formStack}
+            >
+              <label className="ui-field">
+                <span className="ui-field-label">Код из письма</span>
+                <input
+                  className="ui-input"
+                  value={resetCode}
+                  onChange={(e) => {
+                    setResetCode(e.target.value);
+                    setError(null);
+                  }}
+                  placeholder="6 цифр"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  required
+                  maxLength={100}
+                  autoFocus
+                />
+              </label>
+              <label className="ui-field">
+                <span className="ui-field-label">Новый пароль</span>
+                <FieldWithIcon icon={<IconLock size={18} />}>
+                  <input
+                    type="password"
+                    className="ui-input"
+                    style={inputWithIconStyle}
+                    value={resetNewPassword}
+                    onChange={(e) => {
+                      setResetNewPassword(e.target.value);
+                      setError(null);
+                    }}
+                    autoComplete="new-password"
+                    placeholder="Минимум 5 символов"
+                    required
+                    minLength={5}
+                    maxLength={100}
+                  />
+                </FieldWithIcon>
+              </label>
               <ValidationError message={error} />
-              <button type="submit" disabled={busy} style={btn}>
-                Изменить пароль
+              <button
+                type="submit"
+                disabled={busy}
+                className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block"
+              >
+                {busy ? <span className="ui-spinner" aria-hidden="true" /> : null}
+                {busy ? "Сохраняем…" : "Изменить пароль"}
               </button>
             </form>
-            <p style={{ marginTop: 16, fontSize: "0.9rem", textAlign: "center" }}>
+            <div
+              style={{
+                marginTop: 16,
+                fontSize: "0.92rem",
+                textAlign: "center",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => {
                   setScreen({ name: "reset-request" });
                   setError(null);
                 }}
-                style={linkBtn}
+                style={subtleLink}
               >
                 Отправить код заново
               </button>
-            </p>
+            </div>
           </>
         ) : null}
       </div>

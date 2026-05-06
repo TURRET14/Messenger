@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
 import type {
   Chat,
@@ -8,7 +15,26 @@ import type {
   UserBlockRow,
   UserInList,
 } from "../api/types";
-import { IconCheck, IconTrash, IconUser, IconX } from "../components/Icons";
+import {
+  IconArrowUp,
+  IconAtSign,
+  IconBan,
+  IconCamera,
+  IconCheck,
+  IconChevronRight,
+  IconInbox,
+  IconKey,
+  IconMail,
+  IconSearch,
+  IconShield,
+  IconTrash,
+  IconUser,
+  IconUserCheck,
+  IconUserPlus,
+  IconUsers,
+  IconUserX,
+  IconX,
+} from "../components/Icons";
 import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
 import { ModalChrome } from "../components/ui/ModalChrome";
 import { ValidationError } from "../components/ui/ValidationError";
@@ -27,13 +53,24 @@ import { avatarLetterFromUser, userListLabel } from "./userFormat";
 
 const PAGE = 50;
 
-type Tab =
+type Section =
   | "profile"
+  | "security"
   | "users"
   | "friends"
   | "in"
   | "out"
   | "blocks";
+
+const NAV_ITEMS: { id: Section; label: string; icon: ReactNode }[] = [
+  { id: "profile", label: "Профиль", icon: <IconUser size={18} /> },
+  { id: "security", label: "Безопасность", icon: <IconShield size={18} /> },
+  { id: "users", label: "Пользователи", icon: <IconUsers size={18} /> },
+  { id: "friends", label: "Друзья", icon: <IconUserCheck size={18} /> },
+  { id: "in", label: "Заявки", icon: <IconInbox size={18} /> },
+  { id: "out", label: "Исходящие", icon: <IconArrowUp size={18} /> },
+  { id: "blocks", label: "Блокировки", icon: <IconBan size={18} /> },
+];
 
 export function MainAppMenu({
   currentUser,
@@ -55,34 +92,71 @@ export function MainAppMenu({
   onOpenChat?: (chatId: number, options?: { ephemeral?: boolean }) => void;
 }) {
   const { alert, confirm } = useDialogs();
-  const [tab, setTab] = useState<Tab>("profile");
+  const [section, setSection] = useState<Section>("profile");
+  const [wide, setWide] = useState(true);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 760px)");
+    const fn = () => setWide(mq.matches);
+    setWide(mq.matches);
+    mq.addEventListener("change", fn);
+    return () => mq.removeEventListener("change", fn);
+  }, []);
+
+  /* ============= state: profile ============= */
 
   const [u, setU] = useState<CurrentUser>(currentUser);
-  const [emailNew, setEmailNew] = useState("");
-  const [emailPassword, setEmailPassword] = useState("");
-  const [emailCode, setEmailCode] = useState("");
-  const [emailConfirmOpen, setEmailConfirmOpen] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [emailSending, setEmailSending] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+
+  useEffect(() => {
+    setU(currentUser);
+  }, [currentUser]);
+
+  /* ============= state: security ============= */
+
   const [currentLogin, setCurrentLogin] = useState("");
-  const [loginNew, setLoginNew] = useState("");
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loginSaving, setLoginSaving] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newPasswordRepeat, setNewPasswordRepeat] = useState("");
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await apiJson<{ login: string }>("/users/me/login");
+        if (!cancelled) setCurrentLogin(data.login);
+      } catch {
+        if (!cancelled) setCurrentLogin("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id]);
+
+  /* ============= state: users / friends ============= */
 
   const [users, setUsers] = useState<UserInList[]>([]);
   const [uDone, setUDone] = useState(false);
-  const [uSearch, setUSearch] = useState({ mode: "all" as "all" | "username" | "names", q: "", n: "", s: "", o: "" });
+  const [uSearch, setUSearch] = useState({
+    mode: "all" as "all" | "username" | "names",
+    q: "",
+    n: "",
+    s: "",
+    o: "",
+  });
   const [usersSearchError, setUsersSearchError] = useState<string | null>(null);
 
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [fDone, setFDone] = useState(false);
-  const [fSearch, setFSearch] = useState({ mode: "all" as "all" | "username" | "names", q: "", n: "", s: "", o: "" });
+  const [fSearch, setFSearch] = useState({
+    mode: "all" as "all" | "username" | "names",
+    q: "",
+    n: "",
+    s: "",
+    o: "",
+  });
   const [friendsSearchError, setFriendsSearchError] = useState<string | null>(null);
 
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
@@ -104,30 +178,7 @@ export function MainAppMenu({
   const uPageRef = useRef(0);
   const fPageRef = useRef(0);
 
-  useEffect(() => {
-    setU(currentUser);
-  }, [currentUser]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await apiJson<{ login: string }>("/users/me/login");
-        if (!cancelled) {
-          setCurrentLogin(data.login);
-          setLoginNew(data.login);
-        }
-      } catch {
-        if (!cancelled) {
-          setCurrentLogin("");
-          setLoginNew("");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser.id]);
+  /* ============= profile actions ============= */
 
   const saveProfile = async () => {
     const profilePayload = {
@@ -149,6 +200,7 @@ export function MainAppMenu({
     }
 
     setProfileError(null);
+    setProfileSaving(true);
     try {
       await apiFetch("/users/me", {
         method: "PATCH",
@@ -171,128 +223,8 @@ export function MainAppMenu({
         e instanceof ApiError ? e.message : "Не удалось сохранить профиль";
       setProfileError(message);
       void alert(message, "Ошибка сохранения");
-    }
-  };
-
-  const requestEmailChange = async () => {
-    const validationError = validateEmailAddress(emailNew, "Новая почта");
-    if (validationError) {
-      setEmailError(validationError);
-      return;
-    }
-    const passwordError = validatePassword(emailPassword, "Пароль");
-    if (passwordError) {
-      setEmailError(passwordError);
-      return;
-    }
-    if (emailNew.trim() === u.email_address) {
-      setEmailError("Новая почта совпадает с текущей.");
-      return;
-    }
-
-    setEmailError(null);
-    setEmailSending(true);
-    try {
-      await apiFetch("/users/me/email", {
-        method: "PATCH",
-        body: JSON.stringify({ email_address: emailNew.trim(), password: emailPassword }),
-      });
-      setEmailCode("");
-      setEmailConfirmOpen(true);
-      void alert("Код отправлен на новую почту");
-    } catch (e) {
-      setEmailError(e instanceof ApiError ? e.message : "Не удалось отправить код");
     } finally {
-      setEmailSending(false);
-    }
-  };
-
-  const updateLogin = async () => {
-    const validationError = validateLogin(loginNew, "Новый логин");
-    if (validationError) {
-      setLoginError(validationError);
-      return;
-    }
-    if (loginNew.trim() === currentLogin) {
-      setLoginError("Новый логин совпадает с текущим.");
-      return;
-    }
-
-    setLoginError(null);
-    setLoginSaving(true);
-    try {
-      await apiFetch("/users/me/login", {
-        method: "PUT",
-        body: JSON.stringify({ login: loginNew.trim() }),
-      });
-      setCurrentLogin(loginNew.trim());
-      void alert("Логин обновлён");
-    } catch (e) {
-      setLoginError(e instanceof ApiError ? e.message : "Не удалось обновить логин");
-    } finally {
-      setLoginSaving(false);
-    }
-  };
-
-  const updatePassword = async () => {
-    const currentPasswordError = validatePassword(currentPassword, "Текущий пароль");
-    const newPasswordError = validatePassword(newPassword, "Новый пароль");
-    const repeatPasswordError = validatePassword(
-      newPasswordRepeat,
-      "Повтор нового пароля",
-    );
-    const validationError =
-      currentPasswordError ?? newPasswordError ?? repeatPasswordError;
-    if (validationError) {
-      setPasswordError(validationError);
-      return;
-    }
-    if (newPassword !== newPasswordRepeat) {
-      setPasswordError("Новый пароль и повтор пароля не совпадают.");
-      return;
-    }
-
-    setPasswordError(null);
-    setPasswordSaving(true);
-    try {
-      await apiFetch("/users/me/password", {
-        method: "PUT",
-        body: JSON.stringify({
-          old_password: currentPassword,
-          new_password: newPassword,
-        }),
-      });
-      setCurrentPassword("");
-      setNewPassword("");
-      setNewPasswordRepeat("");
-      void alert("Пароль обновлён");
-    } catch (e) {
-      setPasswordError(e instanceof ApiError ? e.message : "Не удалось обновить пароль");
-    } finally {
-      setPasswordSaving(false);
-    }
-  };
-
-  const confirmEmail = async () => {
-    const validationError = validateCode(emailCode, "Код");
-    if (validationError) {
-      setEmailError(validationError);
-      return;
-    }
-
-    setEmailError(null);
-    try {
-      await apiFetch("/users/me/email/confirm", {
-        method: "PATCH",
-        body: JSON.stringify({ code: emailCode.trim() }),
-      });
-      await onRefreshUser();
-      setEmailConfirmOpen(false);
-      setEmailNew("");
-      setEmailCode("");
-      void alert("Почта обновлена");
-    } catch (e) {
-      setEmailError(e instanceof ApiError ? e.message : "Неверный код");
+      setProfileSaving(false);
     }
   };
 
@@ -337,6 +269,8 @@ export function MainAppMenu({
       void alert(e instanceof ApiError ? e.message : "Не удалось удалить пользователя");
     }
   };
+
+  /* ============= users / friends list loaders ============= */
 
   const loadUsers = useCallback(
     async (reset: boolean, overrideSearch?: typeof uSearch) => {
@@ -566,37 +500,41 @@ export function MainAppMenu({
     }
   };
 
+  /* ============= section auto-load ============= */
+
   useEffect(() => {
-    if (tab !== "users") return;
+    if (section !== "users") return;
     const resetSearch = { mode: "all" as const, q: "", n: "", s: "", o: "" };
     setUSearch(resetSearch);
     setUsers([]);
     setUDone(false);
     uPageRef.current = 0;
     void loadUsers(true, resetSearch);
-  }, [tab]);
+  }, [section]);
 
   useEffect(() => {
-    if (tab !== "friends") return;
+    if (section !== "friends") return;
     const resetSearch = { mode: "all" as const, q: "", n: "", s: "", o: "" };
     setFSearch(resetSearch);
     setFriends([]);
     setFDone(false);
     fPageRef.current = 0;
     void loadFriends(true, resetSearch);
-  }, [tab]);
+  }, [section]);
 
   useEffect(() => {
-    if (tab === "in") void loadIncoming(true);
-  }, [tab]);
+    if (section === "in") void loadIncoming(true);
+  }, [section]);
 
   useEffect(() => {
-    if (tab === "out") void loadOutgoing(true);
-  }, [tab]);
+    if (section === "out") void loadOutgoing(true);
+  }, [section]);
 
   useEffect(() => {
-    if (tab === "blocks") void loadBlocks(true);
-  }, [tab]);
+    if (section === "blocks") void loadBlocks(true);
+  }, [section]);
+
+  /* ============= friend / block actions ============= */
 
   const acceptReq = async (id: number) => {
     try {
@@ -649,779 +587,1480 @@ export function MainAppMenu({
     }
   };
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "profile", label: "Профиль" },
-    { id: "users", label: "Пользователи" },
-    { id: "friends", label: "Друзья" },
-    { id: "in", label: "Заявки" },
-    { id: "out", label: "Исходящие" },
-    { id: "blocks", label: "Блокировки" },
-  ];
+  /* ============= UI ============= */
+
+  const navStyles: CSSProperties = wide
+    ? {
+        width: 230,
+        flexShrink: 0,
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+        paddingRight: 12,
+        borderRight: "1px solid var(--border)",
+      }
+    : {
+        display: "flex",
+        gap: 6,
+        overflowX: "auto",
+        paddingBottom: 10,
+        marginBottom: 8,
+        borderBottom: "1px solid var(--border)",
+      };
+
+  const renderNav = () => (
+    <nav style={navStyles} aria-label="Разделы меню">
+      {NAV_ITEMS.map((item) => {
+        const active = section === item.id;
+        const baseStyle: CSSProperties = wide
+          ? {
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "none",
+              background: active ? "var(--accent-soft)" : "transparent",
+              color: active ? "var(--accent)" : "var(--text)",
+              fontWeight: active ? 700 : 500,
+              cursor: "pointer",
+              textAlign: "left",
+              transition: "background-color 120ms ease, color 120ms ease",
+            }
+          : {
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 12px",
+              borderRadius: 999,
+              border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
+              background: active ? "var(--accent-soft)" : "transparent",
+              color: active ? "var(--accent)" : "var(--text)",
+              fontWeight: active ? 700 : 500,
+              cursor: "pointer",
+              flexShrink: 0,
+              fontSize: "0.85rem",
+              whiteSpace: "nowrap",
+            };
+        return (
+          <button
+            key={item.id}
+            type="button"
+            style={baseStyle}
+            onClick={() => setSection(item.id)}
+            aria-current={active ? "page" : undefined}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
 
   return (
     <>
-    <ModalChrome title="Меню" onClose={onClose}>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 6,
-          marginBottom: 16,
-        }}
-      >
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={tab === t.id ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "profile" ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-            <Avatar
-              src={userAvatarUrl(u.id, assetEpoch)}
-              label={avatarLetterFromUser(u)}
-              size={88}
-            />
-            <label
-              className="ui-btn ui-btn--ghost"
-              style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}
-            >
-              <IconUser size={18} />
-              Выбрать фото
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) void uploadAvatar(f);
-                }}
-              />
-            </label>
-          </div>
-          {onOpenChat ? (
-            <button
-              type="button"
-              className="ui-btn ui-btn--primary"
-              onClick={() =>
-                void (async () => {
-                  try {
-                    const chat = await apiJson<Chat>(
-                      `/users/id/${u.id}/profile`,
-                    );
-                    onOpenChat(chat.id, { ephemeral: true });
-                    onClose();
-                  } catch (e) {
-                    void alert(
-                      e instanceof ApiError ? e.message : "Не удалось открыть",
-                    );
-                  }
-                })()
-              }
-            >
-              <IconUser size={18} /> Моя лента профиля
-            </button>
-          ) : null}
-          {(
-            [
-              ["username", "Имя пользователя"],
-              ["name", "Имя"],
-              ["surname", "Фамилия"],
-              ["second_name", "Отчество"],
-              ["phone_number", "Телефон"],
-              ["about", "О себе"],
-            ] as const
-          ).map(([key, lab]) => {
-            const isRequiredProfileField = key === "username" || key === "name";
-            return (
-              <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{lab}</span>
-                {key === "about" ? (
-                  <textarea
-                    className="ui-textarea"
-                    value={(u[key] as string) ?? ""}
-                    onChange={(e) => {
-                      setU({ ...u, [key]: e.target.value || null });
-                      setProfileError(null);
-                    }}
-                    rows={4}
-                    maxLength={5000}
-                  />
-                ) : (
-                  <input
-                    className="ui-input"
-                    value={(u[key] as string) ?? ""}
-                    onChange={(e) => {
-                      setU({
-                        ...u,
-                        [key]: isRequiredProfileField
-                          ? e.target.value
-                          : e.target.value || null,
-                      });
-                      setProfileError(null);
-                    }}
-                    maxLength={100}
-                  />
-                )}
-              </label>
-            );
-          })}
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Дата рождения</span>
-            <input
-              className="ui-input"
-              type="date"
-              value={u.date_of_birth?.slice(0, 10) ?? ""}
-              onChange={(e) => {
-                setU({ ...u, date_of_birth: e.target.value || null });
-                setProfileError(null);
-              }}
-            />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Пол</span>
-            <select
-              className="ui-input"
-              value={u.gender ?? ""}
-              onChange={(e) =>
-                {
-                  setU({
-                  ...u,
-                  gender: (e.target.value || null) as CurrentUser["gender"],
-                  });
-                  setProfileError(null);
+      <ModalChrome title="Меню" onClose={onClose}>
+        <div
+          style={
+            wide
+              ? {
+                  display: "flex",
+                  gap: 18,
+                  alignItems: "stretch",
+                  minHeight: 480,
                 }
-              }
-            >
-              <option value="">Не указан</option>
-              <option value="MALE">Мужской</option>
-              <option value="FEMALE">Женский</option>
-            </select>
-          </label>
+              : { display: "flex", flexDirection: "column" }
+          }
+        >
+          {renderNav()}
           <div
-            style={{
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--bg-muted)",
-              wordBreak: "break-word",
-            }}
+            style={{ flex: 1, minWidth: 0, paddingLeft: wide ? 6 : 0 }}
+            key={section}
+            className="anim-fade-in"
           >
-            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 4 }}>
-              Дата регистрации
-            </div>
-            <div>{new Date(u.date_and_time_registered).toLocaleString()}</div>
-          </div>
-          <ValidationError message={profileError} />
-          <button type="button" className="ui-btn ui-btn--primary" onClick={() => void saveProfile()}>
-            Сохранить профиль
-          </button>
-          <hr style={{ borderColor: "var(--border)" }} />
-          <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена логина</h3>
-          <div
-            style={{
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--bg-muted)",
-              wordBreak: "break-word",
-            }}
-          >
-            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 4 }}>
-              Текущий логин
-            </div>
-            <div>{currentLogin || "Загрузка..."}</div>
-          </div>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Новый логин</span>
-            <input
-              className="ui-input"
-              value={loginNew}
-              onChange={(e) => {
-                setLoginNew(e.target.value);
-                setLoginError(null);
-              }}
-              maxLength={100}
-            />
-          </label>
-          <ValidationError message={loginError} />
-          <button
-            type="button"
-            className="ui-btn ui-btn--primary"
-            disabled={loginSaving}
-            onClick={() => void updateLogin()}
-          >
-            {loginSaving ? "Сохранение..." : "Сменить логин"}
-          </button>
-          <hr style={{ borderColor: "var(--border)" }} />
-          <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена пароля</h3>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Текущий пароль</span>
-            <input
-              className="ui-input"
-              type="password"
-              name={`profile-current-password-${u.id}`}
-              value={currentPassword}
-              onChange={(e) => {
-                setCurrentPassword(e.target.value);
-                setPasswordError(null);
-              }}
-              maxLength={100}
-              autoComplete="new-password"
-            />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Новый пароль</span>
-            <input
-              className="ui-input"
-              type="password"
-              name={`profile-new-password-${u.id}`}
-              value={newPassword}
-              onChange={(e) => {
-                setNewPassword(e.target.value);
-                setPasswordError(null);
-              }}
-              maxLength={100}
-              autoComplete="new-password"
-            />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Повтор нового пароля</span>
-            <input
-              className="ui-input"
-              type="password"
-              name={`profile-repeat-password-${u.id}`}
-              value={newPasswordRepeat}
-              onChange={(e) => {
-                setNewPasswordRepeat(e.target.value);
-                setPasswordError(null);
-              }}
-              maxLength={100}
-              autoComplete="new-password"
-            />
-          </label>
-          <ValidationError message={passwordError} />
-          <button
-            type="button"
-            className="ui-btn ui-btn--primary"
-            disabled={passwordSaving}
-            onClick={() => void updatePassword()}
-          >
-            {passwordSaving ? "Сохранение..." : "Сменить пароль"}
-          </button>
-          <hr style={{ borderColor: "var(--border)" }} />
-          <h3 style={{ margin: 0, fontSize: "1rem" }}>Смена почты</h3>
-          <div
-            style={{
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--bg-muted)",
-              wordBreak: "break-word",
-            }}
-          >
-            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 4 }}>
-              Текущая электронная почта
-            </div>
-            <div>{u.email_address}</div>
-          </div>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Новая почта</span>
-            <input
-              className="ui-input"
-              value={emailNew}
-              onChange={(e) => {
-                setEmailNew(e.target.value);
-                setEmailError(null);
-              }}
-              maxLength={254}
-            />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Пароль от аккаунта</span>
-            <input
-              className="ui-input"
-              type="password"
-              name={`profile-email-password-${u.id}`}
-              value={emailPassword}
-              onChange={(e) => {
-                setEmailPassword(e.target.value);
-                setEmailError(null);
-              }}
-              maxLength={100}
-              autoComplete="new-password"
-            />
-          </label>
-          <button
-            type="button"
-            className="ui-btn ui-btn--primary"
-            disabled={emailSending}
-            onClick={() => void requestEmailChange()}
-          >
-            {emailSending ? "Отправка..." : "Отправить код на новую почту"}
-          </button>
-          <ValidationError message={emailError} />
-          <hr style={{ borderColor: "var(--border)" }} />
-          <button
-            type="button"
-            className="ui-btn ui-btn--danger"
-            onClick={() => void deleteCurrentUser()}
-          >
-            Удалить пользователя
-          </button>
-        </div>
-      ) : null}
-
-      {tab === "users" ? (
-        <div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className={uSearch.mode === "all" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
-              onClick={() => {
-                setUSearch((s) => ({ ...s, mode: "all" }));
-                setUsersSearchError(null);
-              }}
-            >
-              Все
-            </button>
-            <button
-              type="button"
-              className={uSearch.mode === "username" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
-              onClick={() => {
-                setUSearch((s) => ({ ...s, mode: "username" }));
-                setUsersSearchError(null);
-              }}
-            >
-              По имени пользователя
-            </button>
-            <button
-              type="button"
-              className={uSearch.mode === "names" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"}
-              onClick={() => {
-                setUSearch((s) => ({ ...s, mode: "names" }));
-                setUsersSearchError(null);
-              }}
-            >
-              По ФИО
-            </button>
-          </div>
-          {uSearch.mode === "all" ? null : uSearch.mode === "username" ? (
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Имя пользователя</span>
-              <input
-                className="ui-input"
-                value={uSearch.q}
-                onChange={(e) => {
-                  setUSearch((s) => ({ ...s, q: e.target.value }));
-                  setUsersSearchError(null);
-                }}
-                maxLength={100}
+            {section === "profile" ? (
+              <ProfileSection
+                u={u}
+                setU={setU}
+                error={profileError}
+                setError={setProfileError}
+                saving={profileSaving}
+                onSave={() => void saveProfile()}
+                onUploadAvatar={(file) => void uploadAvatar(file)}
+                onDelete={() => void deleteCurrentUser()}
+                onOpenSelfChat={
+                  onOpenChat
+                    ? () =>
+                        void (async () => {
+                          try {
+                            const chat = await apiJson<Chat>(
+                              `/users/id/${u.id}/profile`,
+                            );
+                            onOpenChat(chat.id, { ephemeral: true });
+                            onClose();
+                          } catch (e) {
+                            void alert(
+                              e instanceof ApiError
+                                ? e.message
+                                : "Не удалось открыть",
+                            );
+                          }
+                        })()
+                    : undefined
+                }
+                assetEpoch={assetEpoch}
               />
-            </label>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-              {(
-                [
-                  ["n", "Имя"],
-                  ["s", "Фамилия"],
-                  ["o", "Отчество"],
-                ] as const
-              ).map(([k, lab]) => (
-                <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{lab}</span>
-                  <input
-                    className="ui-input"
-                    value={uSearch[k]}
-                    onChange={(e) => {
-                      setUSearch((s) => ({ ...s, [k]: e.target.value }));
-                      setUsersSearchError(null);
-                    }}
-                    maxLength={100}
-                  />
-                </label>
-              ))}
-            </div>
-          )}
-          <ValidationError message={usersSearchError} />
-          <button type="button" className="ui-btn ui-btn--primary" style={{ width: "100%", marginBottom: 12 }} onClick={() => void loadUsers(true)}>
-            <IconUser size={18} /> Показать пользователей
-          </button>
-          <div style={{ maxHeight: 360, overflowY: "auto" }}>
-            {users.map((row) => (
-              <button
-                key={row.id}
-                type="button"
-                onClick={() => onOpenProfile(row.id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  width: "100%",
-                  padding: 8,
-                  marginBottom: 6,
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  background: "var(--bg)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  color: "inherit",
-                }}
-              >
-                <Avatar
-                  src={userAvatarUrl(row.id, assetEpoch)}
-                  label={avatarLetterFromUser(row)}
-                  size={40}
-                />
-                <span style={{ fontSize: "0.9rem" }}>{userListLabel(row)}</span>
-              </button>
-            ))}
-          </div>
-          {!uDone ? (
-            <button type="button" className="ui-btn ui-btn--ghost" style={{ width: "100%", marginTop: 8 }} onClick={() => void loadUsers(false)}>
-              Загрузить ещё
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {tab === "friends" ? (
-        <div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-            <button type="button" className={fSearch.mode === "all" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => {
-              setFSearch((s) => ({ ...s, mode: "all" }));
-              setFriendsSearchError(null);
-            }}>
-              Все
-            </button>
-            <button type="button" className={fSearch.mode === "username" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => {
-              setFSearch((s) => ({ ...s, mode: "username" }));
-              setFriendsSearchError(null);
-            }}>
-              По имени пользователя
-            </button>
-            <button type="button" className={fSearch.mode === "names" ? "ui-btn ui-btn--primary" : "ui-btn ui-btn--ghost"} onClick={() => {
-              setFSearch((s) => ({ ...s, mode: "names" }));
-              setFriendsSearchError(null);
-            }}>
-              По ФИО
-            </button>
-          </div>
-          {fSearch.mode === "all" ? null : fSearch.mode === "username" ? (
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Имя пользователя</span>
-              <input
-                className="ui-input"
-                value={fSearch.q}
-                onChange={(e) => {
-                  setFSearch((s) => ({ ...s, q: e.target.value }));
-                  setFriendsSearchError(null);
-                }}
-                maxLength={100}
+            ) : null}
+            {section === "security" ? (
+              <SecuritySection
+                currentLogin={currentLogin}
+                emailAddress={u.email_address}
+                onChangeLogin={() => setLoginDialogOpen(true)}
+                onChangePassword={() => setPasswordDialogOpen(true)}
+                onChangeEmail={() => setEmailDialogOpen(true)}
               />
-            </label>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-              {(
-                [
-                  ["n", "Имя"],
-                  ["s", "Фамилия"],
-                  ["o", "Отчество"],
-                ] as const
-              ).map(([k, lab]) => (
-                <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{lab}</span>
-                  <input
-                    className="ui-input"
-                    value={fSearch[k]}
-                    onChange={(e) => {
-                      setFSearch((s) => ({ ...s, [k]: e.target.value }));
-                      setFriendsSearchError(null);
-                    }}
-                    maxLength={100}
-                  />
-                </label>
-              ))}
-            </div>
-          )}
-          <ValidationError message={friendsSearchError} />
-          <button type="button" className="ui-btn ui-btn--primary" style={{ width: "100%", marginBottom: 12 }} onClick={() => void loadFriends(true)}>
-            <IconUser size={18} /> Показать друзей
-          </button>
-          <div style={{ maxHeight: 360, overflowY: "auto" }}>
-            {friends.map((row) => (
-              <div
-                key={row.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  marginBottom: 8,
-                  padding: 8,
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  background: "var(--bg)",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => onOpenProfile(row.id)}
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    border: "none",
-                    background: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    textAlign: "left",
-                    color: "inherit",
-                    minWidth: 0,
-                  }}
-                >
-                  <Avatar
-                    src={userAvatarUrl(row.id, assetEpoch)}
-                    label={avatarLetterFromUser(row)}
-                    size={40}
-                  />
-                  <span style={{ fontSize: "0.9rem" }}>{userListLabel(row)}</span>
-                </button>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--danger"
-                  onClick={() => void removeFriend(row.friendship_id)}
-                >
-                  <IconTrash size={18} />
-                </button>
-              </div>
-            ))}
-          </div>
-          {!fDone ? (
-            <button type="button" className="ui-btn ui-btn--ghost" style={{ width: "100%" }} onClick={() => void loadFriends(false)}>
-              Ещё
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {tab === "in" ? (
-        <div style={{ maxHeight: 400, overflowY: "auto" }}>
-          {incoming.map((r) => {
-            const iu = incomingUsers[r.sender_user_id];
-            return (
-              <div
-                key={r.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 10,
-                  padding: 8,
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  background: "var(--bg)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => onOpenProfile(r.sender_user_id)}
-                  style={{
-                    flex: 1,
-                    minWidth: 160,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    border: "none",
-                    background: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    textAlign: "left",
-                    color: "inherit",
-                  }}
-                >
-                  <Avatar
-                    src={userAvatarUrl(r.sender_user_id, assetEpoch)}
-                    label={iu ? avatarLetterFromUser(iu) : "?"}
-                    size={40}
-                  />
-                  <span style={{ fontSize: "0.9rem" }}>
-                    {iu ? userListLabel(iu) : `Пользователь #${r.sender_user_id}`}
-                  </span>
-                </button>
-                <button type="button" className="ui-btn ui-btn--primary" onClick={() => void acceptReq(r.id)}>
-                  <IconCheck size={18} /> Принять
-                </button>
-                <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void declineReq(r.id)}>
-                  <IconX size={18} /> Отклонить
-                </button>
-              </div>
-            );
-          })}
-          {!iDone ? (
-            <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void loadIncoming(false)}>
-              Ещё
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {tab === "out" ? (
-        <div style={{ maxHeight: 400, overflowY: "auto" }}>
-          {outgoing.map((r) => {
-            const ou = outgoingUsers[r.receiver_user_id];
-            return (
-              <div
-                key={r.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 10,
-                  padding: 8,
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  background: "var(--bg)",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => onOpenProfile(r.receiver_user_id)}
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    border: "none",
-                    background: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    textAlign: "left",
-                    color: "inherit",
-                    minWidth: 0,
-                  }}
-                >
-                  <Avatar
-                    src={userAvatarUrl(r.receiver_user_id, assetEpoch)}
-                    label={ou ? avatarLetterFromUser(ou) : "?"}
-                    size={40}
-                  />
-                  <span style={{ fontSize: "0.9rem" }}>
-                    {ou ? userListLabel(ou) : `Пользователь #${r.receiver_user_id}`}
-                  </span>
-                </button>
-                <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void cancelSent(r.id)}>
-                  <IconTrash size={18} /> Отозвать
-                </button>
-              </div>
-            );
-          })}
-          {!oDone ? (
-            <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void loadOutgoing(false)}>
-              Ещё
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {tab === "blocks" ? (
-        <div style={{ maxHeight: 400, overflowY: "auto" }}>
-          {blocks.map((b) => {
-            const bu = blockUsers[b.blocked_user_id];
-            return (
-              <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => onOpenProfile(b.blocked_user_id)}
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    border: "none",
-                    background: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                    color: "inherit",
-                    textAlign: "left",
-                  }}
-                >
-                  <Avatar
-                    src={userAvatarUrl(b.blocked_user_id, assetEpoch)}
-                    label={bu ? avatarLetterFromUser(bu) : `#${b.blocked_user_id}`}
-                    size={40}
-                  />
-                  <span>{bu ? userListLabel(bu) : `Пользователь ${b.blocked_user_id}`}</span>
-                </button>
-                <button type="button" className="ui-btn ui-btn--primary" onClick={() => void unblock(b.id)}>
-                  <IconCheck size={18} /> Разблокировать
-                </button>
-              </div>
-            );
-          })}
-          {!bDone ? (
-            <button type="button" className="ui-btn ui-btn--ghost" onClick={() => void loadBlocks(false)}>
-              Ещё
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </ModalChrome>
-
-    {emailConfirmOpen ? (
-      <ModalChrome
-        title="Подтверждение почты"
-        onClose={() => {
-          setEmailConfirmOpen(false);
-          setEmailError(null);
-        }}
-        narrow
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.9rem" }}>
-            Введите код, который мы отправили на новую почту.
-          </p>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Код из письма (6 цифр)</span>
-            <input
-              className="ui-input"
-              value={emailCode}
-              onChange={(e) => {
-                setEmailCode(e.target.value);
-                setEmailError(null);
-              }}
-              maxLength={6}
-              autoFocus
-            />
-          </label>
-          <ValidationError message={emailError} />
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="ui-btn ui-btn--ghost"
-              onClick={() => {
-                setEmailConfirmOpen(false);
-                setEmailError(null);
-              }}
-            >
-              Отмена
-            </button>
-            <button type="button" className="ui-btn ui-btn--primary" onClick={() => void confirmEmail()}>
-              Подтвердить почту
-            </button>
+            ) : null}
+            {section === "users" ? (
+              <UsersListSection
+                items={users}
+                done={uDone}
+                search={uSearch}
+                setSearch={setUSearch}
+                searchError={usersSearchError}
+                onClearSearchError={() => setUsersSearchError(null)}
+                onSearch={() => void loadUsers(true)}
+                onMore={() => void loadUsers(false)}
+                onOpenProfile={onOpenProfile}
+                assetEpoch={assetEpoch}
+              />
+            ) : null}
+            {section === "friends" ? (
+              <FriendsListSection
+                items={friends}
+                done={fDone}
+                search={fSearch}
+                setSearch={setFSearch}
+                searchError={friendsSearchError}
+                onClearSearchError={() => setFriendsSearchError(null)}
+                onSearch={() => void loadFriends(true)}
+                onMore={() => void loadFriends(false)}
+                onOpenProfile={onOpenProfile}
+                onRemoveFriend={(id) => void removeFriend(id)}
+                assetEpoch={assetEpoch}
+              />
+            ) : null}
+            {section === "in" ? (
+              <IncomingSection
+                items={incoming}
+                done={iDone}
+                onMore={() => void loadIncoming(false)}
+                onAccept={(id) => void acceptReq(id)}
+                onDecline={(id) => void declineReq(id)}
+                onOpenProfile={onOpenProfile}
+                userMap={incomingUsers}
+                assetEpoch={assetEpoch}
+              />
+            ) : null}
+            {section === "out" ? (
+              <OutgoingSection
+                items={outgoing}
+                done={oDone}
+                onMore={() => void loadOutgoing(false)}
+                onCancel={(id) => void cancelSent(id)}
+                onOpenProfile={onOpenProfile}
+                userMap={outgoingUsers}
+                assetEpoch={assetEpoch}
+              />
+            ) : null}
+            {section === "blocks" ? (
+              <BlocksSection
+                items={blocks}
+                done={bDone}
+                onMore={() => void loadBlocks(false)}
+                onUnblock={(id) => void unblock(id)}
+                onOpenProfile={onOpenProfile}
+                userMap={blockUsers}
+                assetEpoch={assetEpoch}
+              />
+            ) : null}
           </div>
         </div>
       </ModalChrome>
-    ) : null}
+
+      {loginDialogOpen ? (
+        <ChangeLoginDialog
+          currentLogin={currentLogin}
+          onClose={() => setLoginDialogOpen(false)}
+          onSuccess={(newLogin) => {
+            setCurrentLogin(newLogin);
+            setLoginDialogOpen(false);
+          }}
+        />
+      ) : null}
+
+      {passwordDialogOpen ? (
+        <ChangePasswordDialog
+          userId={u.id}
+          onClose={() => setPasswordDialogOpen(false)}
+        />
+      ) : null}
+
+      {emailDialogOpen ? (
+        <ChangeEmailDialog
+          userId={u.id}
+          currentEmail={u.email_address}
+          onClose={() => setEmailDialogOpen(false)}
+          onSuccess={async () => {
+            await onRefreshUser();
+            setEmailDialogOpen(false);
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+/* =============================================================
+   Profile section
+   ============================================================= */
+
+function ProfileSection({
+  u,
+  setU,
+  error,
+  setError,
+  saving,
+  onSave,
+  onUploadAvatar,
+  onDelete,
+  onOpenSelfChat,
+  assetEpoch,
+}: {
+  u: CurrentUser;
+  setU: (u: CurrentUser) => void;
+  error: string | null;
+  setError: (s: string | null) => void;
+  saving: boolean;
+  onSave: () => void;
+  onUploadAvatar: (file: File) => void;
+  onDelete: () => void;
+  onOpenSelfChat?: () => void;
+  assetEpoch: number;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          flexDirection: "column",
+          gap: 12,
+          padding: "12px 0",
+        }}
+      >
+        <Avatar
+          src={userAvatarUrl(u.id, assetEpoch)}
+          label={u.name || u.username}
+          size={92}
+        />
+        <label
+          className="ui-btn ui-btn--ghost"
+          style={{ cursor: "pointer" }}
+        >
+          <IconCamera size={18} />
+          Сменить фото
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) onUploadAvatar(f);
+            }}
+          />
+        </label>
+        {onOpenSelfChat ? (
+          <button
+            type="button"
+            className="ui-btn ui-btn--soft"
+            onClick={onOpenSelfChat}
+          >
+            <IconUser size={16} />
+            Моя лента профиля
+          </button>
+        ) : null}
+      </div>
+
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+        {(
+          [
+            ["username", "Имя пользователя"],
+            ["name", "Имя"],
+            ["surname", "Фамилия"],
+            ["second_name", "Отчество"],
+          ] as const
+        ).map(([key, label]) => {
+          const isReq = key === "username" || key === "name";
+          return (
+            <label key={key} className="ui-field" style={{ minWidth: 0 }}>
+              <span className="ui-field-label">{label}</span>
+              <input
+                className="ui-input"
+                value={(u[key] as string) ?? ""}
+                onChange={(e) => {
+                  setU({
+                    ...u,
+                    [key]: isReq ? e.target.value : e.target.value || null,
+                  });
+                  setError(null);
+                }}
+                maxLength={100}
+              />
+            </label>
+          );
+        })}
+      </div>
+
+      <label className="ui-field">
+        <span className="ui-field-label">Телефон</span>
+        <input
+          className="ui-input"
+          value={u.phone_number ?? ""}
+          onChange={(e) => {
+            setU({ ...u, phone_number: e.target.value || null });
+            setError(null);
+          }}
+          placeholder="+7..."
+          maxLength={100}
+        />
+      </label>
+
+      <label className="ui-field">
+        <span className="ui-field-label">О себе</span>
+        <textarea
+          className="ui-textarea"
+          value={u.about ?? ""}
+          onChange={(e) => {
+            setU({ ...u, about: e.target.value || null });
+            setError(null);
+          }}
+          rows={3}
+          maxLength={5000}
+        />
+      </label>
+
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+        <label className="ui-field">
+          <span className="ui-field-label">Дата рождения</span>
+          <input
+            className="ui-input"
+            type="date"
+            value={u.date_of_birth?.slice(0, 10) ?? ""}
+            onChange={(e) => {
+              setU({ ...u, date_of_birth: e.target.value || null });
+              setError(null);
+            }}
+          />
+        </label>
+        <label className="ui-field">
+          <span className="ui-field-label">Пол</span>
+          <select
+            className="ui-select"
+            value={u.gender ?? ""}
+            onChange={(e) => {
+              setU({
+                ...u,
+                gender: (e.target.value || null) as CurrentUser["gender"],
+              });
+              setError(null);
+            }}
+          >
+            <option value="">Не указан</option>
+            <option value="MALE">Мужской</option>
+            <option value="FEMALE">Женский</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="ui-card ui-card--muted" style={{ padding: 12 }}>
+        <div className="ui-field-label" style={{ marginBottom: 4 }}>
+          Дата регистрации
+        </div>
+        <div>{new Date(u.date_and_time_registered).toLocaleString()}</div>
+      </div>
+
+      <ValidationError message={error} />
+
+      <button
+        type="button"
+        className="ui-btn ui-btn--primary ui-btn--block"
+        disabled={saving}
+        onClick={onSave}
+      >
+        {saving ? <span className="ui-spinner" aria-hidden="true" /> : <IconCheck size={18} />}
+        {saving ? "Сохраняем…" : "Сохранить профиль"}
+      </button>
+
+      <hr className="ui-divider" />
+
+      <button
+        type="button"
+        className="ui-btn ui-btn--danger ui-btn--block"
+        onClick={onDelete}
+      >
+        <IconTrash size={18} />
+        Удалить аккаунт
+      </button>
+    </div>
+  );
+}
+
+/* =============================================================
+   Security section
+   ============================================================= */
+
+function SecuritySection({
+  currentLogin,
+  emailAddress,
+  onChangeLogin,
+  onChangePassword,
+  onChangeEmail,
+}: {
+  currentLogin: string;
+  emailAddress: string;
+  onChangeLogin: () => void;
+  onChangePassword: () => void;
+  onChangeEmail: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <SecurityCard
+        icon={<IconAtSign size={22} />}
+        title="Логин"
+        description={currentLogin || "Загрузка…"}
+        actionLabel="Сменить"
+        onAction={onChangeLogin}
+      />
+      <SecurityCard
+        icon={<IconKey size={22} />}
+        title="Пароль"
+        description="Используется для входа в аккаунт"
+        actionLabel="Сменить"
+        onAction={onChangePassword}
+      />
+      <SecurityCard
+        icon={<IconMail size={22} />}
+        title="Электронная почта"
+        description={emailAddress}
+        actionLabel="Сменить"
+        onAction={onChangeEmail}
+      />
+      <p
+        style={{
+          margin: 0,
+          padding: "10px 12px",
+          fontSize: "0.85rem",
+          color: "var(--text-muted)",
+          background: "var(--bg-muted)",
+          borderRadius: 10,
+        }}
+      >
+        Изменения каждого параметра подтверждаются вводом текущего пароля или
+        кода из письма. Это защищает аккаунт от несанкционированного доступа.
+      </p>
+    </div>
+  );
+}
+
+function SecurityCard({
+  icon,
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <div
+      className="ui-card"
+      style={{
+        padding: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+      }}
+    >
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 12,
+          background: "var(--accent-soft)",
+          color: "var(--accent)",
+          display: "grid",
+          placeItems: "center",
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 700 }}>{title}</div>
+        <div
+          style={{
+            fontSize: "0.85rem",
+            color: "var(--text-muted)",
+            wordBreak: "break-word",
+          }}
+        >
+          {description}
+        </div>
+      </div>
+      <button
+        type="button"
+        className="ui-btn ui-btn--soft"
+        onClick={onAction}
+        style={{ flexShrink: 0 }}
+      >
+        {actionLabel}
+        <IconChevronRight size={16} />
+      </button>
+    </div>
+  );
+}
+
+/* =============================================================
+   Change-login dialog
+   ============================================================= */
+
+function ChangeLoginDialog({
+  currentLogin,
+  onClose,
+  onSuccess,
+}: {
+  currentLogin: string;
+  onClose: () => void;
+  onSuccess: (newLogin: string) => void;
+}) {
+  const { alert } = useDialogs();
+  const [value, setValue] = useState(currentLogin);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    const e = validateLogin(value, "Новый логин");
+    if (e) {
+      setError(e);
+      return;
+    }
+    if (value.trim() === currentLogin) {
+      setError("Новый логин совпадает с текущим.");
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      await apiFetch("/users/me/login", {
+        method: "PUT",
+        body: JSON.stringify({ login: value.trim() }),
+      });
+      void alert("Логин обновлён");
+      onSuccess(value.trim());
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalChrome title="Сменить логин" onClose={onClose} narrow>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="ui-card ui-card--muted" style={{ padding: 12 }}>
+          <div className="ui-field-label" style={{ marginBottom: 4 }}>
+            Текущий логин
+          </div>
+          <div style={{ wordBreak: "break-word" }}>{currentLogin || "—"}</div>
+        </div>
+        <label className="ui-field">
+          <span className="ui-field-label">Новый логин</span>
+          <input
+            className="ui-input"
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setError(null);
+            }}
+            maxLength={100}
+            autoFocus
+          />
+        </label>
+        <ValidationError message={error} />
+        <div className="ui-modal-actions">
+          <button type="button" className="ui-btn ui-btn--ghost" onClick={onClose}>
+            <IconX size={16} />
+            Отмена
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn--primary"
+            disabled={saving}
+            onClick={() => void submit()}
+          >
+            {saving ? <span className="ui-spinner" aria-hidden="true" /> : <IconCheck size={16} />}
+            {saving ? "Сохраняем…" : "Сменить логин"}
+          </button>
+        </div>
+      </div>
+    </ModalChrome>
+  );
+}
+
+/* =============================================================
+   Change-password dialog
+   ============================================================= */
+
+function ChangePasswordDialog({
+  userId,
+  onClose,
+}: {
+  userId: number;
+  onClose: () => void;
+}) {
+  const { alert } = useDialogs();
+  const [oldP, setOldP] = useState("");
+  const [newP, setNewP] = useState("");
+  const [repP, setRepP] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    const e1 = validatePassword(oldP, "Текущий пароль");
+    const e2 = validatePassword(newP, "Новый пароль");
+    const e3 = validatePassword(repP, "Повтор пароля");
+    const e = e1 ?? e2 ?? e3;
+    if (e) {
+      setError(e);
+      return;
+    }
+    if (newP !== repP) {
+      setError("Новый пароль и повтор пароля не совпадают.");
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      await apiFetch("/users/me/password", {
+        method: "PUT",
+        body: JSON.stringify({ old_password: oldP, new_password: newP }),
+      });
+      void alert("Пароль обновлён");
+      onClose();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalChrome title="Сменить пароль" onClose={onClose} narrow>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <label className="ui-field">
+          <span className="ui-field-label">Текущий пароль</span>
+          <input
+            className="ui-input"
+            type="password"
+            name={`change-pwd-old-${userId}`}
+            value={oldP}
+            onChange={(e) => {
+              setOldP(e.target.value);
+              setError(null);
+            }}
+            autoComplete="new-password"
+            maxLength={100}
+            autoFocus
+          />
+        </label>
+        <label className="ui-field">
+          <span className="ui-field-label">Новый пароль</span>
+          <input
+            className="ui-input"
+            type="password"
+            name={`change-pwd-new-${userId}`}
+            value={newP}
+            onChange={(e) => {
+              setNewP(e.target.value);
+              setError(null);
+            }}
+            autoComplete="new-password"
+            placeholder="Минимум 5 символов"
+            maxLength={100}
+          />
+        </label>
+        <label className="ui-field">
+          <span className="ui-field-label">Повтор нового пароля</span>
+          <input
+            className="ui-input"
+            type="password"
+            name={`change-pwd-rep-${userId}`}
+            value={repP}
+            onChange={(e) => {
+              setRepP(e.target.value);
+              setError(null);
+            }}
+            autoComplete="new-password"
+            maxLength={100}
+          />
+        </label>
+        <ValidationError message={error} />
+        <div className="ui-modal-actions">
+          <button type="button" className="ui-btn ui-btn--ghost" onClick={onClose}>
+            <IconX size={16} />
+            Отмена
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn--primary"
+            disabled={saving}
+            onClick={() => void submit()}
+          >
+            {saving ? <span className="ui-spinner" aria-hidden="true" /> : <IconCheck size={16} />}
+            {saving ? "Сохраняем…" : "Сменить пароль"}
+          </button>
+        </div>
+      </div>
+    </ModalChrome>
+  );
+}
+
+/* =============================================================
+   Change-email dialog (with two steps)
+   ============================================================= */
+
+function ChangeEmailDialog({
+  userId,
+  currentEmail,
+  onClose,
+  onSuccess,
+}: {
+  userId: number;
+  currentEmail: string;
+  onClose: () => void;
+  onSuccess: () => void | Promise<void>;
+}) {
+  const { alert } = useDialogs();
+  const [step, setStep] = useState<"request" | "confirm">("request");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const requestCode = async () => {
+    const e1 = validateEmailAddress(email, "Новая почта");
+    if (e1) {
+      setError(e1);
+      return;
+    }
+    const e2 = validatePassword(password, "Пароль");
+    if (e2) {
+      setError(e2);
+      return;
+    }
+    if (email.trim() === currentEmail) {
+      setError("Новая почта совпадает с текущей.");
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await apiFetch("/users/me/email", {
+        method: "PATCH",
+        body: JSON.stringify({
+          email_address: email.trim(),
+          password,
+        }),
+      });
+      setStep("confirm");
+      void alert("Код отправлен на новую почту");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Не удалось отправить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmCode = async () => {
+    const e = validateCode(code, "Код");
+    if (e) {
+      setError(e);
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await apiFetch("/users/me/email/confirm", {
+        method: "PATCH",
+        body: JSON.stringify({ code: code.trim() }),
+      });
+      void alert("Почта обновлена");
+      await onSuccess();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Неверный код");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalChrome
+      title={step === "request" ? "Сменить почту" : "Подтверждение почты"}
+      onClose={onClose}
+      narrow
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {step === "request" ? (
+          <>
+            <div className="ui-card ui-card--muted" style={{ padding: 12 }}>
+              <div className="ui-field-label" style={{ marginBottom: 4 }}>
+                Текущая электронная почта
+              </div>
+              <div style={{ wordBreak: "break-word" }}>{currentEmail}</div>
+            </div>
+            <label className="ui-field">
+              <span className="ui-field-label">Новая почта</span>
+              <input
+                className="ui-input"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError(null);
+                }}
+                autoComplete="off"
+                maxLength={254}
+                autoFocus
+              />
+            </label>
+            <label className="ui-field">
+              <span className="ui-field-label">Пароль от аккаунта</span>
+              <input
+                className="ui-input"
+                type="password"
+                name={`change-email-password-${userId}`}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+                autoComplete="new-password"
+                maxLength={100}
+              />
+            </label>
+            <ValidationError message={error} />
+            <div className="ui-modal-actions">
+              <button type="button" className="ui-btn ui-btn--ghost" onClick={onClose}>
+                <IconX size={16} />
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn--primary"
+                disabled={busy}
+                onClick={() => void requestCode()}
+              >
+                {busy ? <span className="ui-spinner" aria-hidden="true" /> : null}
+                {busy ? "Отправляем…" : "Отправить код"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.92rem" }}>
+              Мы отправили 6-значный код на <strong>{email}</strong>. Введите его
+              ниже, чтобы завершить смену почты.
+            </p>
+            <label className="ui-field">
+              <span className="ui-field-label">Код из письма</span>
+              <input
+                className="ui-input"
+                value={code}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  setError(null);
+                }}
+                maxLength={6}
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                autoFocus
+                placeholder="6 цифр"
+              />
+            </label>
+            <ValidationError message={error} />
+            <div className="ui-modal-actions">
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost"
+                onClick={() => setStep("request")}
+              >
+                Назад
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn--primary"
+                disabled={busy}
+                onClick={() => void confirmCode()}
+              >
+                {busy ? <span className="ui-spinner" aria-hidden="true" /> : <IconCheck size={16} />}
+                {busy ? "Сохраняем…" : "Подтвердить"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </ModalChrome>
+  );
+}
+
+/* =============================================================
+   Search panels (used inside Users / Friends)
+   ============================================================= */
+
+function SearchPanel<
+  T extends { mode: "all" | "username" | "names"; q: string; n: string; s: string; o: string },
+>({
+  search,
+  setSearch,
+  searchError,
+  onClearSearchError,
+  onSearch,
+}: {
+  search: T;
+  setSearch: (s: T) => void;
+  searchError: string | null;
+  onClearSearchError: () => void;
+  onSearch: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {(
+          [
+            ["all", "Все"],
+            ["username", "По username"],
+            ["names", "По ФИО"],
+          ] as const
+        ).map(([mode, label]) => {
+          const active = search.mode === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              className={
+                active ? "ui-btn ui-btn--primary ui-btn--sm" : "ui-btn ui-btn--ghost ui-btn--sm"
+              }
+              onClick={() => {
+                setSearch({ ...search, mode });
+                onClearSearchError();
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {search.mode === "username" ? (
+        <label className="ui-field">
+          <span className="ui-field-label">Имя пользователя</span>
+          <input
+            className="ui-input"
+            value={search.q}
+            onChange={(e) => {
+              setSearch({ ...search, q: e.target.value });
+              onClearSearchError();
+            }}
+            maxLength={100}
+            placeholder="Введите username"
+          />
+        </label>
+      ) : null}
+      {search.mode === "names" ? (
+        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr 1fr" }}>
+          <label className="ui-field">
+            <span className="ui-field-label">Имя</span>
+            <input
+              className="ui-input"
+              value={search.n}
+              onChange={(e) => {
+                setSearch({ ...search, n: e.target.value });
+                onClearSearchError();
+              }}
+              maxLength={100}
+            />
+          </label>
+          <label className="ui-field">
+            <span className="ui-field-label">Фамилия</span>
+            <input
+              className="ui-input"
+              value={search.s}
+              onChange={(e) => {
+                setSearch({ ...search, s: e.target.value });
+                onClearSearchError();
+              }}
+              maxLength={100}
+            />
+          </label>
+          <label className="ui-field">
+            <span className="ui-field-label">Отчество</span>
+            <input
+              className="ui-input"
+              value={search.o}
+              onChange={(e) => {
+                setSearch({ ...search, o: e.target.value });
+                onClearSearchError();
+              }}
+              maxLength={100}
+            />
+          </label>
+        </div>
+      ) : null}
+      <ValidationError message={searchError} />
+      <button
+        type="button"
+        className="ui-btn ui-btn--primary ui-btn--block"
+        onClick={onSearch}
+      >
+        <IconSearch size={16} />
+        Показать
+      </button>
+    </div>
+  );
+}
+
+/* =============================================================
+   Users list section
+   ============================================================= */
+
+function UsersListSection({
+  items,
+  done,
+  search,
+  setSearch,
+  searchError,
+  onClearSearchError,
+  onSearch,
+  onMore,
+  onOpenProfile,
+  assetEpoch,
+}: {
+  items: UserInList[];
+  done: boolean;
+  search: { mode: "all" | "username" | "names"; q: string; n: string; s: string; o: string };
+  setSearch: (s: typeof search) => void;
+  searchError: string | null;
+  onClearSearchError: () => void;
+  onSearch: () => void;
+  onMore: () => void;
+  onOpenProfile: (uid: number) => void;
+  assetEpoch: number;
+}) {
+  return (
+    <div>
+      <SearchPanel
+        search={search}
+        setSearch={setSearch}
+        searchError={searchError}
+        onClearSearchError={onClearSearchError}
+        onSearch={onSearch}
+      />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          maxHeight: 480,
+          overflowY: "auto",
+          paddingRight: 4,
+        }}
+      >
+        {items.map((row) => (
+          <button
+            key={row.id}
+            type="button"
+            className="ui-row ui-row--button"
+            onClick={() => onOpenProfile(row.id)}
+          >
+            <Avatar
+              src={userAvatarUrl(row.id, assetEpoch)}
+              label={avatarLetterFromUser(row)}
+              size={42}
+            />
+            <span style={{ minWidth: 0, fontSize: "0.92rem", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {userListLabel(row)}
+            </span>
+          </button>
+        ))}
+        {items.length === 0 ? (
+          <EmptyHint text="Список пуст" />
+        ) : null}
+      </div>
+      {!done ? (
+        <button type="button" className="ui-btn ui-btn--ghost ui-btn--block" style={{ marginTop: 8 }} onClick={onMore}>
+          Загрузить ещё
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/* =============================================================
+   Friends list section
+   ============================================================= */
+
+function FriendsListSection({
+  items,
+  done,
+  search,
+  setSearch,
+  searchError,
+  onClearSearchError,
+  onSearch,
+  onMore,
+  onOpenProfile,
+  onRemoveFriend,
+  assetEpoch,
+}: {
+  items: FriendUser[];
+  done: boolean;
+  search: { mode: "all" | "username" | "names"; q: string; n: string; s: string; o: string };
+  setSearch: (s: typeof search) => void;
+  searchError: string | null;
+  onClearSearchError: () => void;
+  onSearch: () => void;
+  onMore: () => void;
+  onOpenProfile: (uid: number) => void;
+  onRemoveFriend: (friendshipId: number) => void;
+  assetEpoch: number;
+}) {
+  return (
+    <div>
+      <SearchPanel
+        search={search}
+        setSearch={setSearch}
+        searchError={searchError}
+        onClearSearchError={onClearSearchError}
+        onSearch={onSearch}
+      />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          maxHeight: 480,
+          overflowY: "auto",
+          paddingRight: 4,
+        }}
+      >
+        {items.map((row) => (
+          <div key={row.id} className="ui-row" style={{ gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => onOpenProfile(row.id)}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                border: "none",
+                background: "none",
+                padding: 0,
+                minWidth: 0,
+                cursor: "pointer",
+                color: "inherit",
+                textAlign: "left",
+              }}
+            >
+              <Avatar
+                src={userAvatarUrl(row.id, assetEpoch)}
+                label={avatarLetterFromUser(row)}
+                size={42}
+              />
+              <span style={{ fontSize: "0.92rem", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {userListLabel(row)}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="ui-icon-btn ui-icon-btn--danger"
+              title="Удалить из друзей"
+              aria-label="Удалить из друзей"
+              onClick={() => onRemoveFriend(row.friendship_id)}
+            >
+              <IconUserX size={18} />
+            </button>
+          </div>
+        ))}
+        {items.length === 0 ? <EmptyHint text="Список пуст" /> : null}
+      </div>
+      {!done ? (
+        <button
+          type="button"
+          className="ui-btn ui-btn--ghost ui-btn--block"
+          style={{ marginTop: 8 }}
+          onClick={onMore}
+        >
+          Загрузить ещё
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/* =============================================================
+   Incoming requests section
+   ============================================================= */
+
+function IncomingSection({
+  items,
+  done,
+  onMore,
+  onAccept,
+  onDecline,
+  onOpenProfile,
+  userMap,
+  assetEpoch,
+}: {
+  items: FriendRequest[];
+  done: boolean;
+  onMore: () => void;
+  onAccept: (id: number) => void;
+  onDecline: (id: number) => void;
+  onOpenProfile: (uid: number) => void;
+  userMap: Record<number, UserInList>;
+  assetEpoch: number;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 540, overflowY: "auto", paddingRight: 4 }}>
+      {items.map((r) => {
+        const u = userMap[r.sender_user_id];
+        return (
+          <div key={r.id} className="ui-row" style={{ gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => onOpenProfile(r.sender_user_id)}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                border: "none",
+                background: "none",
+                padding: 0,
+                minWidth: 160,
+                cursor: "pointer",
+                color: "inherit",
+                textAlign: "left",
+              }}
+            >
+              <Avatar
+                src={userAvatarUrl(r.sender_user_id, assetEpoch)}
+                label={u ? avatarLetterFromUser(u) : "?"}
+                size={42}
+              />
+              <span style={{ fontSize: "0.92rem", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {u ? userListLabel(u) : `Пользователь #${r.sender_user_id}`}
+              </span>
+            </button>
+            <button type="button" className="ui-btn ui-btn--primary ui-btn--sm" onClick={() => onAccept(r.id)}>
+              <IconCheck size={16} /> Принять
+            </button>
+            <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm" onClick={() => onDecline(r.id)}>
+              <IconX size={16} /> Отклонить
+            </button>
+          </div>
+        );
+      })}
+      {items.length === 0 ? <EmptyHint text="Заявок пока нет" /> : null}
+      {!done ? (
+        <button type="button" className="ui-btn ui-btn--ghost ui-btn--block" style={{ marginTop: 8 }} onClick={onMore}>
+          Загрузить ещё
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/* =============================================================
+   Outgoing requests section
+   ============================================================= */
+
+function OutgoingSection({
+  items,
+  done,
+  onMore,
+  onCancel,
+  onOpenProfile,
+  userMap,
+  assetEpoch,
+}: {
+  items: FriendRequest[];
+  done: boolean;
+  onMore: () => void;
+  onCancel: (id: number) => void;
+  onOpenProfile: (uid: number) => void;
+  userMap: Record<number, UserInList>;
+  assetEpoch: number;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 540, overflowY: "auto", paddingRight: 4 }}>
+      {items.map((r) => {
+        const u = userMap[r.receiver_user_id];
+        return (
+          <div key={r.id} className="ui-row" style={{ gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => onOpenProfile(r.receiver_user_id)}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                border: "none",
+                background: "none",
+                padding: 0,
+                minWidth: 0,
+                cursor: "pointer",
+                color: "inherit",
+                textAlign: "left",
+              }}
+            >
+              <Avatar
+                src={userAvatarUrl(r.receiver_user_id, assetEpoch)}
+                label={u ? avatarLetterFromUser(u) : "?"}
+                size={42}
+              />
+              <span style={{ fontSize: "0.92rem", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {u ? userListLabel(u) : `Пользователь #${r.receiver_user_id}`}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="ui-icon-btn ui-icon-btn--danger"
+              title="Отозвать заявку"
+              aria-label="Отозвать заявку"
+              onClick={() => onCancel(r.id)}
+            >
+              <IconTrash size={18} />
+            </button>
+          </div>
+        );
+      })}
+      {items.length === 0 ? <EmptyHint text="Исходящих заявок нет" /> : null}
+      {!done ? (
+        <button type="button" className="ui-btn ui-btn--ghost ui-btn--block" style={{ marginTop: 8 }} onClick={onMore}>
+          Загрузить ещё
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/* =============================================================
+   Blocks section
+   ============================================================= */
+
+function BlocksSection({
+  items,
+  done,
+  onMore,
+  onUnblock,
+  onOpenProfile,
+  userMap,
+  assetEpoch,
+}: {
+  items: UserBlockRow[];
+  done: boolean;
+  onMore: () => void;
+  onUnblock: (blockId: number) => void;
+  onOpenProfile: (uid: number) => void;
+  userMap: Record<number, UserInList>;
+  assetEpoch: number;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 540, overflowY: "auto", paddingRight: 4 }}>
+      {items.map((b) => {
+        const u = userMap[b.blocked_user_id];
+        return (
+          <div key={b.id} className="ui-row" style={{ gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => onOpenProfile(b.blocked_user_id)}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                border: "none",
+                background: "none",
+                padding: 0,
+                minWidth: 0,
+                cursor: "pointer",
+                color: "inherit",
+                textAlign: "left",
+              }}
+            >
+              <Avatar
+                src={userAvatarUrl(b.blocked_user_id, assetEpoch)}
+                label={u ? avatarLetterFromUser(u) : `#${b.blocked_user_id}`}
+                size={42}
+              />
+              <span style={{ fontSize: "0.92rem", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {u ? userListLabel(u) : `Пользователь #${b.blocked_user_id}`}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn--soft ui-btn--sm"
+              onClick={() => onUnblock(b.id)}
+            >
+              <IconUserPlus size={16} /> Разблокировать
+            </button>
+          </div>
+        );
+      })}
+      {items.length === 0 ? <EmptyHint text="Заблокированных пользователей нет" /> : null}
+      {!done ? (
+        <button type="button" className="ui-btn ui-btn--ghost ui-btn--block" style={{ marginTop: 8 }} onClick={onMore}>
+          Загрузить ещё
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/* =============================================================
+   Helpers
+   ============================================================= */
+
+function EmptyHint({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        padding: "24px 12px",
+        color: "var(--text-muted)",
+        textAlign: "center",
+        fontSize: "0.9rem",
+      }}
+    >
+      {text}
+    </div>
   );
 }

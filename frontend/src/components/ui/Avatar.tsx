@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { getCachedMediaUrl, peekCachedMediaUrl } from "../../media/mediaCache";
 
-const wrap = (size: number): CSSProperties => ({
+const wrap = (size: number, clickable: boolean): CSSProperties => ({
   width: size,
   height: size,
   borderRadius: "50%",
@@ -12,9 +12,11 @@ const wrap = (size: number): CSSProperties => ({
   display: "grid",
   placeItems: "center",
   fontWeight: 700,
-  fontSize: size * 0.38,
+  fontSize: size * 0.40,
   color: "var(--accent)",
   userSelect: "none",
+  cursor: clickable ? "pointer" : "default",
+  transition: clickable ? "transform 100ms ease, border-color 120ms ease" : undefined,
 });
 
 export function Avatar({
@@ -22,12 +24,14 @@ export function Avatar({
   label,
   size = 40,
   alt = "",
+  onClick,
 }: {
   src: string | null;
   /** Подпись и буква-заглушка (например ФИО или имя, не username) */
   label: string;
   size?: number;
   alt?: string;
+  onClick?: () => void;
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
@@ -57,9 +61,25 @@ export function Avatar({
 
   const letter = (label.trim()[0] ?? "?").toUpperCase();
 
+  const wrapperStyle = wrap(size, !!onClick);
+  const wrapperProps = onClick
+    ? {
+        role: "button" as const,
+        tabIndex: 0,
+        onClick,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        },
+        title: alt || label,
+      }
+    : { title: alt || label, "aria-hidden": (!alt) as boolean };
+
   if (blobUrl) {
     return (
-      <div style={wrap(size)} title={alt || label}>
+      <div style={wrapperStyle} {...(wrapperProps as object)}>
         <img
           src={blobUrl}
           alt={alt || label}
@@ -75,7 +95,7 @@ export function Avatar({
   }
 
   return (
-    <div style={wrap(size)} title={alt || label} aria-hidden={!alt}>
+    <div style={wrapperStyle} {...(wrapperProps as object)}>
       {letter}
     </div>
   );

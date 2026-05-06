@@ -2,9 +2,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
 import type { Chat, ChatRole, UserInList } from "../api/types";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
-import { ActionMenu, type ActionMenuItem } from "../components/ui/ActionMenu";
+import {
+  ActionMenu,
+  type ActionMenuItem,
+} from "../components/ui/ActionMenu";
 import { ModalChrome } from "../components/ui/ModalChrome";
 import { ValidationError } from "../components/ui/ValidationError";
+import {
+  IconCamera,
+  IconCheck,
+  IconCrown,
+  IconLogout,
+  IconShieldCheck,
+  IconTrash,
+  IconUser,
+  IconUserPlus,
+  IconUserX,
+  IconX,
+} from "../components/Icons";
 import { useDialogs } from "../context/DialogsContext";
 import { useBackendSocket } from "../hooks/useBackendSocket";
 import { validateChatName, validateImageFile } from "../validation";
@@ -19,6 +34,12 @@ export interface MembershipRow {
   chat_user_id: number;
   date_and_time_added: string;
   chat_role: ChatRole;
+}
+
+function roleIcon(role: ChatRole) {
+  if (role === "OWNER") return <IconCrown size={12} />;
+  if (role === "ADMIN") return <IconShieldCheck size={12} />;
+  return <IconUser size={12} />;
 }
 
 export function ChatInfoPanel({
@@ -51,6 +72,7 @@ export function ChatInfoPanel({
 
   const [nameEdit, setNameEdit] = useState(chat.name);
   const [chatProfileError, setChatProfileError] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
   const [friends, setFriends] = useState<UserInList[]>([]);
   const [fOff, setFOff] = useState(0);
   const [fDone, setFDone] = useState(false);
@@ -200,7 +222,9 @@ export function ChatInfoPanel({
         const mem = await apiJson<MembershipRow[]>(
           `/chats/id/${chat.id}/memberships?offset_multiplier=0`,
         );
-        const peer = mem.find((m) => m.chat_user_id !== currentUserId)?.chat_user_id ?? null;
+        const peer =
+          mem.find((m) => m.chat_user_id !== currentUserId)?.chat_user_id ??
+          null;
         setFetchedPrivatePeerId(peer);
       } catch {
         setFetchedPrivatePeerId(null);
@@ -273,6 +297,7 @@ export function ChatInfoPanel({
       return;
     }
     setChatProfileError(null);
+    setSavingName(true);
     try {
       await apiFetch(`/chats/id/${chat.id}/name`, {
         method: "PATCH",
@@ -282,6 +307,8 @@ export function ChatInfoPanel({
       void alert("Название обновлено");
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Не сохранено");
+    } finally {
+      setSavingName(false);
     }
   };
 
@@ -398,8 +425,8 @@ export function ChatInfoPanel({
           maxHeight: "100%",
         }
       : {
-          width: 300,
-          minWidth: 260,
+          width: 320,
+          minWidth: 280,
           borderLeft: "1px solid var(--border)",
           flex: undefined as undefined,
           minHeight: undefined as undefined,
@@ -412,43 +439,81 @@ export function ChatInfoPanel({
         ...shell,
         display: "flex",
         flexDirection: "column",
-        background: "var(--bg-muted)",
+        background: "var(--bg-elevated)",
       }}
     >
-      <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-          <Avatar src={chatAvatarSrc} label={chatTitle} size={72} />
-          <div style={{ textAlign: "center", fontWeight: 700 }}>{chatTitle}</div>
-          <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+      <div
+        style={{
+          padding: "16px 14px",
+          borderBottom: "1px solid var(--border)",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <Avatar src={chatAvatarSrc} label={chatTitle} size={80} />
+          <div
+            style={{
+              textAlign: "center",
+              fontWeight: 700,
+              wordBreak: "break-word",
+            }}
+          >
+            {chatTitle}
+          </div>
+          <div
+            className="ui-chip"
+            style={{ background: "var(--bg-muted)" }}
+          >
             {chatKindLabel(chat.chat_kind)}
           </div>
         </div>
       </div>
 
       {canEditChatProfile ? (
-        <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
-          <label className="sr-only" htmlFor="cn">Название</label>
-          <input
-            id="cn"
-            className="ui-input"
-            value={nameEdit}
-            onChange={(e) => {
-              setNameEdit(e.target.value);
-              setChatProfileError(null);
-            }}
-            style={{ marginBottom: 8 }}
-            maxLength={100}
-          />
+        <div
+          style={{
+            padding: 12,
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <label className="ui-field">
+            <span className="ui-field-label">Название</span>
+            <input
+              className="ui-input"
+              value={nameEdit}
+              onChange={(e) => {
+                setNameEdit(e.target.value);
+                setChatProfileError(null);
+              }}
+              maxLength={100}
+            />
+          </label>
           <ValidationError message={chatProfileError} />
           <button
             type="button"
-            className="ui-btn ui-btn--primary"
-            style={{ width: "100%", marginBottom: 8 }}
+            className="ui-btn ui-btn--primary ui-btn--block"
+            disabled={savingName}
             onClick={() => void saveName()}
           >
-            Сохранить название
+            {savingName ? <span className="ui-spinner" aria-hidden="true" /> : <IconCheck size={16} />}
+            {savingName ? "Сохраняем…" : "Сохранить название"}
           </button>
-          <label className="ui-btn ui-btn--ghost" style={{ width: "100%", cursor: "pointer" }}>
+          <label
+            className="ui-btn ui-btn--ghost ui-btn--block"
+            style={{ cursor: "pointer" }}
+          >
+            <IconCamera size={16} />
             Сменить фото
             <input
               type="file"
@@ -465,13 +530,19 @@ export function ChatInfoPanel({
       ) : null}
 
       {canAddMembers ? (
-        <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
+        <div
+          style={{
+            padding: 12,
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
           <button
             type="button"
-            className="ui-btn ui-btn--primary"
-            style={{ width: "100%" }}
+            className="ui-btn ui-btn--soft ui-btn--block"
             onClick={() => setAddMembersOpen(true)}
           >
+            <IconUserPlus size={16} />
             Добавить участников
           </button>
         </div>
@@ -479,7 +550,12 @@ export function ChatInfoPanel({
 
       <div
         ref={listRef}
-        style={{ flex: 1, overflowY: "auto", padding: 12 }}
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: 12,
+          minHeight: 0,
+        }}
         onScroll={(e) => {
           const el = e.currentTarget;
           if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24 && !done && !loading) {
@@ -487,179 +563,268 @@ export function ChatInfoPanel({
           }
         }}
       >
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>Участники</div>
-        {members.map((m) => {
-          const u = userMap[m.chat_user_id];
-          const label = u
-            ? userListLabel(u)
-            : `Пользователь #${m.chat_user_id}`;
-          const memberActions: ActionMenuItem[] = [
-            {
-              label: "Открыть профиль",
-              onSelect: () => onOpenProfile(m.chat_user_id),
-            },
-            ...(canPromoteToAdmin(m)
-              ? [
-                  {
-                    label: "Назначить администратором",
-                    onSelect: () => void makeAdmin(m.chat_user_id),
-                  },
-                ]
-              : []),
-            ...(canDemoteAdmin(m)
-              ? [
-                  {
-                    label: "Снять администратора",
-                    onSelect: () => void dropAdmin(m.chat_user_id),
-                  },
-                ]
-              : []),
-            ...(canRemoveMember(m)
-              ? [
-                  {
-                    label: "Удалить из чата",
-                    onSelect: () => void removeMember(m),
-                    danger: true,
-                  },
-                ]
-              : []),
-          ];
-          return (
-            <ActionMenu
-              key={m.id}
-              items={memberActions}
-              label="Действия с участником"
-            >
-              {({ button, onContextMenu }) => (
-                <div
-                  onContextMenu={onContextMenu}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginBottom: 10,
-                    padding: 8,
-                    borderRadius: 10,
-                    border: "1px solid var(--border)",
-                    background: "var(--bg)",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onOpenProfile(m.chat_user_id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      flex: 1,
-                      minWidth: 0,
-                      border: "none",
-                      background: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      color: "inherit",
-                    }}
+        <div
+          style={{
+            fontWeight: 600,
+            marginBottom: 8,
+            fontSize: "0.85rem",
+            color: "var(--text-muted)",
+          }}
+        >
+          Участники ({members.length})
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          {members.map((m) => {
+            const u = userMap[m.chat_user_id];
+            const label = u
+              ? userListLabel(u)
+              : `Пользователь #${m.chat_user_id}`;
+            const memberActions: ActionMenuItem[] = [
+              {
+                label: "Открыть профиль",
+                onSelect: () => onOpenProfile(m.chat_user_id),
+                icon: <IconUser size={16} />,
+              },
+              ...(canPromoteToAdmin(m)
+                ? [
+                    {
+                      label: "Назначить администратором",
+                      onSelect: () => void makeAdmin(m.chat_user_id),
+                      icon: <IconShieldCheck size={16} />,
+                    },
+                  ]
+                : []),
+              ...(canDemoteAdmin(m)
+                ? [
+                    {
+                      label: "Снять администратора",
+                      onSelect: () => void dropAdmin(m.chat_user_id),
+                      icon: <IconShieldCheck size={16} />,
+                    },
+                  ]
+                : []),
+              ...(canRemoveMember(m)
+                ? [
+                    {
+                      label: "Удалить из чата",
+                      onSelect: () => void removeMember(m),
+                      icon: <IconUserX size={16} />,
+                      danger: true,
+                    },
+                  ]
+                : []),
+            ];
+            return (
+              <ActionMenu
+                key={m.id}
+                items={memberActions}
+                label="Действия с участником"
+              >
+                {({ button, onContextMenu }) => (
+                  <div
+                    onContextMenu={onContextMenu}
+                    className="ui-row"
+                    style={{ padding: 8, gap: 10 }}
                   >
-                    <Avatar
-                      src={userAvatarUrl(m.chat_user_id, assetEpoch)}
-                      label={u ? avatarLetterFromUser(u) : `#${m.chat_user_id}`}
-                      size={36}
-                    />
-                    <div>
-                      <div style={{ fontSize: "0.9rem" }}>{label}</div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                        {chatRoleLabel(m.chat_role)}
+                    <button
+                      type="button"
+                      onClick={() => onOpenProfile(m.chat_user_id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flex: 1,
+                        minWidth: 0,
+                        border: "none",
+                        background: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        color: "inherit",
+                      }}
+                    >
+                      <Avatar
+                        src={userAvatarUrl(m.chat_user_id, assetEpoch)}
+                        label={u ? avatarLetterFromUser(u) : `#${m.chat_user_id}`}
+                        size={36}
+                      />
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: "0.9rem",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {label}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "var(--text-muted)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          {roleIcon(m.chat_role)}
+                          {chatRoleLabel(m.chat_role)}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                  {button}
-                </div>
-              )}
-            </ActionMenu>
-          );
-        })}
+                    </button>
+                    {button}
+                  </div>
+                )}
+              </ActionMenu>
+            );
+          })}
+          {loading && members.length === 0 ? (
+            <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+              <span className="ui-spinner" aria-hidden="true" /> Загружаем
+              участников…
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
+      <div
+        style={{
+          padding: 12,
+          borderTop: "1px solid var(--border)",
+          flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
         {!isOwner && (isPrivate || isGroupOrChannel || isProfile) ? (
           <button
             type="button"
-            className="ui-btn ui-btn--danger"
-            style={{ width: "100%", marginBottom: 8 }}
+            className="ui-btn ui-btn--danger ui-btn--block"
             onClick={() => void handleLeave()}
           >
+            <IconLogout size={16} />
             Покинуть чат
           </button>
         ) : null}
         {isGroupOrChannel && isOwner ? (
           <button
             type="button"
-            className="ui-btn ui-btn--danger"
-            style={{ width: "100%" }}
+            className="ui-btn ui-btn--danger ui-btn--block"
             onClick={() => void handleDeleteChat()}
           >
+            <IconTrash size={16} />
             Удалить чат
           </button>
         ) : null}
       </div>
 
       {canAddMembers && addMembersOpen ? (
-        <ModalChrome title="Добавить участников" onClose={() => setAddMembersOpen(false)} narrow>
+        <ModalChrome
+          title="Добавить участников"
+          onClose={() => setAddMembersOpen(false)}
+          narrow
+        >
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.9rem" }}>
               Выберите друзей, которых нужно добавить в чат.
             </p>
-            <div style={{ maxHeight: "55vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div
+              style={{
+                maxHeight: "55vh",
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
               {friends.map((f) => {
                 const already = members.some((m) => m.chat_user_id === f.id);
                 return (
                   <div
                     key={f.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: 8,
-                      borderRadius: 10,
-                      border: "1px solid var(--border)",
-                      background: "var(--bg-muted)",
-                    }}
+                    className="ui-row"
+                    style={{ gap: 10, padding: 8 }}
                   >
                     <Avatar
                       src={userAvatarUrl(f.id, assetEpoch)}
                       label={avatarLetterFromUser(f)}
                       size={36}
                     />
-                    <div style={{ flex: 1, minWidth: 0, fontSize: "0.9rem" }}>
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: "0.9rem",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       {userListLabel(f)}
                     </div>
                     <button
                       type="button"
-                      className="ui-btn ui-btn--ghost"
+                      className={
+                        already
+                          ? "ui-btn ui-btn--ghost ui-btn--sm"
+                          : "ui-btn ui-btn--soft ui-btn--sm"
+                      }
                       disabled={already}
                       onClick={() => void addMember(f.id)}
                     >
-                      {already ? "В чате" : "Добавить"}
+                      {already ? (
+                        <>
+                          <IconCheck size={14} />
+                          В чате
+                        </>
+                      ) : (
+                        <>
+                          <IconUserPlus size={14} />
+                          Добавить
+                        </>
+                      )}
                     </button>
                   </div>
                 );
               })}
               {friends.length === 0 && fDone ? (
-                <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                <div
+                  style={{
+                    padding: "16px 8px",
+                    color: "var(--text-muted)",
+                    fontSize: "0.9rem",
+                    textAlign: "center",
+                  }}
+                >
                   Список друзей пуст.
                 </div>
               ) : null}
               {!fDone ? (
                 <button
                   type="button"
-                  className="ui-btn ui-btn--ghost"
-                  style={{ width: "100%" }}
+                  className="ui-btn ui-btn--ghost ui-btn--block"
                   onClick={() => void loadFriends(false)}
                 >
-                  Ещё друзья...
+                  Ещё друзья…
                 </button>
               ) : null}
+            </div>
+            <div className="ui-modal-actions">
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost"
+                onClick={() => setAddMembersOpen(false)}
+              >
+                <IconX size={16} />
+                Закрыть
+              </button>
             </div>
           </div>
         </ModalChrome>

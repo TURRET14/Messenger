@@ -1,21 +1,22 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { IconX } from "../Icons";
 
 const overlay: CSSProperties = {
   position: "fixed",
   inset: 0,
-  background: "rgba(0,0,0,0.5)",
+  background: "var(--overlay)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   zIndex: 200,
   padding: 16,
+  animation: "overlay-in 160ms ease-out both",
 };
 
 const panel = (narrow: boolean): CSSProperties => ({
   position: "relative",
-  width: narrow ? "min(420px, 100%)" : "min(960px, 100%)",
-  maxHeight: "min(90vh, 900px)",
+  width: narrow ? "min(440px, 100%)" : "min(960px, 100%)",
+  maxHeight: "min(92dvh, 920px)",
   overflow: "hidden",
   display: "flex",
   flexDirection: "column",
@@ -23,7 +24,7 @@ const panel = (narrow: boolean): CSSProperties => ({
   color: "var(--text)",
   borderRadius: 16,
   border: "1px solid var(--border)",
-  boxShadow: "0 16px 48px var(--shadow)",
+  animation: "modal-in 220ms ease-out both",
 });
 
 const head: CSSProperties = {
@@ -36,63 +37,71 @@ const head: CSSProperties = {
   flexShrink: 0,
 };
 
-const closeBtn: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 40,
-  height: 40,
-  padding: 0,
-  border: "none",
-  borderRadius: "50%",
-  background: "var(--bg-muted)",
-  color: "var(--text)",
-  cursor: "pointer",
-};
-
 export function ModalChrome({
   title,
   onClose,
   children,
   narrow,
   bodyStyle,
+  hideHeader,
+  closeOnBackdrop = true,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   narrow?: boolean;
   bodyStyle?: CSSProperties;
+  hideHeader?: boolean;
+  closeOnBackdrop?: boolean;
 }) {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
-    <div style={overlay} role="presentation" onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      style={overlay}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (!closeOnBackdrop) return;
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
         style={panel(!!narrow)}
         role="dialog"
         aria-modal="true"
+        aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div style={head}>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "1.05rem",
-              fontWeight: 700,
-              flex: 1,
-              minWidth: 0,
-            }}
-          >
-            {title}
-          </h2>
-          <button
-            type="button"
-            style={closeBtn}
-            onClick={onClose}
-            aria-label="Закрыть"
-            title="Закрыть"
-          >
-            <IconX size={20} />
-          </button>
-        </div>
+        {!hideHeader ? (
+          <div style={head}>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "1.05rem",
+                fontWeight: 700,
+                flex: 1,
+                minWidth: 0,
+              }}
+            >
+              {title}
+            </h2>
+            <button
+              type="button"
+              className="ui-icon-btn"
+              onClick={onClose}
+              aria-label="Закрыть"
+              title="Закрыть"
+            >
+              <IconX size={20} />
+            </button>
+          </div>
+        ) : null}
         <div
           style={{
             padding: 18,
