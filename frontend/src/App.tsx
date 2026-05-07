@@ -500,7 +500,7 @@ function AuthShell({
                   type="button"
                   onClick={() => {
                     setScreen({ name: "reset-request" });
-                    setResetEmail(login.trim());
+                    setResetEmail("");
                     setError(null);
                   }}
                   style={subtleLink}

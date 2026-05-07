@@ -216,11 +216,12 @@ export function UserProfileModal({
         <Avatar
           src={userAvatarUrl(u.id, assetEpoch)}
           label={avatarLetterFromUser(u)}
-          size={92}
+          size={104}
         />
         <div
           style={{
             fontWeight: 700,
+            fontSize: "1.1rem",
             textAlign: "center",
             wordBreak: "break-word",
           }}
@@ -236,19 +237,89 @@ export function UserProfileModal({
         </div>
       </div>
 
+      {/* Основной набор действий — карточки */}
+      <div className="profile-action-grid" style={{ marginBottom: 16 }}>
+        {!isSelf ? (
+          <>
+            {friendship ? (
+              <button
+                type="button"
+                className="profile-action-card"
+                onClick={() => void openPrivate()}
+              >
+                <span className="icon-wrap">
+                  <IconMessageCircle size={18} />
+                </span>
+                Личный чат
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="profile-action-card"
+                onClick={() => void sendFriendRequest()}
+              >
+                <span className="icon-wrap">
+                  <IconUserPlus size={18} />
+                </span>
+                В друзья
+              </button>
+            )}
+            <button
+              type="button"
+              className="profile-action-card"
+              onClick={() => void openProfileChat()}
+            >
+              <span className="icon-wrap">
+                <IconChat size={18} />
+              </span>
+              Лента
+            </button>
+            {blockRow ? (
+              <button
+                type="button"
+                className="profile-action-card"
+                onClick={() => void unblockUser()}
+              >
+                <span className="icon-wrap">
+                  <IconUserCheck size={18} />
+                </span>
+                Разблокировать
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="profile-action-card profile-action-card--danger"
+                onClick={() => void blockUser()}
+              >
+                <span className="icon-wrap">
+                  <IconBan size={18} />
+                </span>
+                Заблокировать
+              </button>
+            )}
+          </>
+        ) : (
+          <button
+            type="button"
+            className="profile-action-card"
+            onClick={() => void openProfileChat()}
+          >
+            <span className="icon-wrap">
+              <IconChat size={18} />
+            </span>
+            Моя лента
+          </button>
+        )}
+      </div>
+
+      {/* Информация */}
       <div
         style={{
           display: "flex",
           flexDirection: "column",
           gap: 10,
-          marginBottom: 16,
         }}
       >
-        <ProfileInfoRow
-          icon={<IconUser size={16} />}
-          label="Имя пользователя"
-          value={`@${u.username}`}
-        />
         <ProfileInfoRow
           icon={<IconUser size={16} />}
           label="ФИО"
@@ -289,76 +360,37 @@ export function UserProfileModal({
         ) : null}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <button
-          type="button"
-          className="ui-btn ui-btn--soft ui-btn--block"
-          onClick={() => void openProfileChat()}
-        >
-          <IconChat size={16} /> Лента профиля
-        </button>
-
-        {!isSelf ? (
-          <>
-            {friendship ? (
-              <>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--primary ui-btn--block"
-                  onClick={() => void openPrivate()}
-                >
-                  <IconMessageCircle size={16} /> Личный чат
-                </button>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--ghost ui-btn--block"
-                  onClick={() => void removeFriend()}
-                >
-                  <IconUserX size={16} /> Удалить из друзей
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="ui-btn ui-btn--primary ui-btn--block"
-                onClick={() => void sendFriendRequest()}
-              >
-                <IconUserPlus size={16} /> Запрос в друзья
-              </button>
-            )}
-            {blockRow ? (
-              <button
-                type="button"
-                className="ui-btn ui-btn--ghost ui-btn--block"
-                onClick={() => void unblockUser()}
-              >
-                <IconUserCheck size={16} /> Разблокировать
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="ui-btn ui-btn--danger ui-btn--block"
-                onClick={() => void blockUser()}
-              >
-                <IconBan size={16} /> Заблокировать
-              </button>
-            )}
-          </>
-        ) : (
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.85rem",
-              color: "var(--text-muted)",
-              padding: "10px 12px",
-              background: "var(--bg-muted)",
-              borderRadius: 10,
-            }}
+      {/* Дополнительные действия для друзей */}
+      {!isSelf && friendship ? (
+        <>
+          <hr className="ui-divider" style={{ margin: "16px 0 12px" }} />
+          <button
+            type="button"
+            className="ui-btn ui-btn--block"
+            onClick={() => void removeFriend()}
+            style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
           >
-            Редактирование данных и смена фото — в разделе «Профиль» главного меню.
-          </p>
-        )}
-      </div>
+            <IconUserX size={16} />
+            Удалить из друзей
+          </button>
+        </>
+      ) : null}
+
+      {isSelf ? (
+        <p
+          style={{
+            margin: "16px 0 0",
+            fontSize: "0.85rem",
+            color: "var(--text-muted)",
+            padding: "10px 12px",
+            background: "var(--bg-muted)",
+            borderRadius: 10,
+            border: "1.5px solid var(--border)",
+          }}
+        >
+          Редактирование данных и смена фото — в разделе «Профиль» главного меню.
+        </p>
+      ) : null}
     </ModalChrome>
   );
 }

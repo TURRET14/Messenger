@@ -8,7 +8,7 @@ const wrap = (size: number, clickable: boolean): CSSProperties => ({
   overflow: "hidden",
   flexShrink: 0,
   background: "var(--bg-muted)",
-  border: "1px solid var(--border)",
+  border: `${size >= 64 ? 2 : 1.5}px solid var(--border-strong)`,
   display: "grid",
   placeItems: "center",
   fontWeight: 700,

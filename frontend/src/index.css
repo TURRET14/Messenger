@@ -5,62 +5,64 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f5f6fa;
+  --bg: #f3f4f8;
   --bg-elevated: #ffffff;
-  --bg-muted: #ecedf2;
+  --bg-muted: #e6e9f0;
+  --bg-subtle: #eef0f5;
   --bg-input: #ffffff;
-  --bg-hover: rgba(15, 23, 42, 0.06);
-  --bg-active: rgba(15, 23, 42, 0.10);
-  --bubble-mine: #e6efff;
+  --bg-hover: rgba(15, 23, 42, 0.07);
+  --bg-active: rgba(15, 23, 42, 0.12);
+  --bubble-mine: #dde7fb;
   --bubble-other: #ffffff;
-  --border: #d6dae5;
-  --border-strong: #b9c0d0;
+  --border: #b8bfd0;
+  --border-strong: #98a0b6;
   --text: #1a1d26;
-  --text-muted: #5c6478;
-  --text-subtle: #8087a0;
+  --text-muted: #545c70;
+  --text-subtle: #757d92;
   --accent: #3b5bdb;
   --accent-strong: #2f4ac4;
-  --accent-soft: rgba(59, 91, 219, 0.12);
+  --accent-soft: rgba(59, 91, 219, 0.16);
   --on-accent: #ffffff;
   --danger: #c92a2a;
   --danger-strong: #a52121;
-  --danger-soft: rgba(201, 42, 42, 0.10);
+  --danger-soft: rgba(201, 42, 42, 0.14);
   --on-danger: #ffffff;
   --success: #2b8a3e;
-  --success-soft: rgba(43, 138, 62, 0.12);
+  --success-soft: rgba(43, 138, 62, 0.14);
   --warning: #b97500;
   --overlay: rgba(15, 23, 42, 0.55);
-  --focus-ring: rgba(59, 91, 219, 0.35);
+  --focus-ring: rgba(59, 91, 219, 0.40);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #0f1218;
-  --bg-elevated: #181c25;
-  --bg-muted: #232733;
+  --bg-elevated: #1c2029;
+  --bg-muted: #2a2f3c;
+  --bg-subtle: #232733;
   --bg-input: #181c25;
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-active: rgba(255, 255, 255, 0.12);
-  --bubble-mine: #243454;
-  --bubble-other: #232733;
-  --border: #2c313e;
-  --border-strong: #3c4250;
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-active: rgba(255, 255, 255, 0.14);
+  --bubble-mine: #2b3a5e;
+  --bubble-other: #2a2f3c;
+  --border: #444b5d;
+  --border-strong: #5a6378;
   --text: #e8eaef;
-  --text-muted: #98a0b1;
-  --text-subtle: #6c7484;
+  --text-muted: #a8b0c1;
+  --text-subtle: #7a8294;
   --accent: #748ffc;
   --accent-strong: #91a7ff;
-  --accent-soft: rgba(116, 143, 252, 0.20);
+  --accent-soft: rgba(116, 143, 252, 0.24);
   --on-accent: #11131a;
   --danger: #ff6b6b;
   --danger-strong: #ff8787;
-  --danger-soft: rgba(255, 107, 107, 0.18);
+  --danger-soft: rgba(255, 107, 107, 0.22);
   --on-danger: #11131a;
   --success: #51cf66;
-  --success-soft: rgba(81, 207, 102, 0.18);
+  --success-soft: rgba(81, 207, 102, 0.22);
   --warning: #ffa94d;
   --overlay: rgba(0, 0, 0, 0.65);
-  --focus-ring: rgba(116, 143, 252, 0.45);
+  --focus-ring: rgba(116, 143, 252, 0.50);
 }
 
 *,
@@ -163,8 +165,8 @@ a:hover {
   gap: 8px;
   padding: 9px 16px;
   border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
+  border: 1.5px solid var(--border);
+  background: var(--bg-subtle);
   color: var(--text);
   font-weight: 600;
   font-size: 0.92rem;
@@ -182,6 +184,7 @@ a:hover {
 
 .ui-btn:hover:not(:disabled) {
   background: var(--bg-muted);
+  border-color: var(--border-strong);
 }
 
 .ui-btn:active:not(:disabled) {
@@ -227,17 +230,37 @@ a:hover {
 
 .ui-btn--ghost:hover:not(:disabled) {
   background: var(--bg-hover);
+  border-color: transparent;
 }
 
 .ui-btn--soft {
   background: var(--accent-soft);
   color: var(--accent);
-  border-color: transparent;
+  border-color: var(--accent-soft);
 }
 
 .ui-btn--soft:hover:not(:disabled) {
-  background: var(--accent-soft);
-  filter: brightness(0.96);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Кнопка-вкладка для переключателей режимов: всегда видна. */
+.ui-btn--tab {
+  background: var(--bg-subtle);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+}
+
+.ui-btn--tab:hover:not(:disabled) {
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
+}
+
+.ui-btn--tab.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 
 .ui-btn--block {
@@ -330,7 +353,7 @@ a:hover {
   width: 100%;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   background: var(--bg-input);
   color: var(--text);
   transition:
@@ -393,7 +416,7 @@ a:hover {
   padding: 4px 10px;
   border-radius: 999px;
   background: var(--bg-muted);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   font-size: 0.78rem;
   color: var(--text);
   white-space: nowrap;
@@ -421,7 +444,7 @@ a:hover {
 
 .ui-card {
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
 }
@@ -431,7 +454,7 @@ a:hover {
 }
 
 .ui-divider {
-  height: 1px;
+  height: 1.5px;
   background: var(--border);
   border: 0;
   margin: 4px 0;
@@ -445,7 +468,7 @@ a:hover {
   gap: 12px;
   padding: 10px 12px;
   border-radius: 12px;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   background: var(--bg-elevated);
   transition: background-color 120ms ease, border-color 120ms ease;
 }
@@ -459,6 +482,7 @@ a:hover {
 
 .ui-row--button:hover:not(:disabled) {
   background: var(--bg-muted);
+  border-color: var(--border-strong);
 }
 
 .ui-row--button:active:not(:disabled) {
@@ -466,6 +490,11 @@ a:hover {
 }
 
 .ui-row--selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.ui-row--selected:hover:not(:disabled) {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
@@ -569,9 +598,20 @@ a:hover {
 
 .ui-modal-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 10px;
-  justify-content: flex-end;
+  width: 100%;
+}
+
+.ui-modal-actions > .ui-btn,
+.ui-modal-actions > label.ui-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .ui-modal-actions {
+    flex-direction: column;
+  }
 }
 
 /* ============================ Контекстное меню ============================ */
@@ -580,7 +620,7 @@ a:hover {
   min-width: 220px;
   padding: 6px;
   border-radius: 12px;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border-strong);
   background: var(--bg-elevated);
 }
 
@@ -610,6 +650,86 @@ a:hover {
 
 .ui-menu-item--danger:hover:not(:disabled) {
   background: var(--danger-soft);
+}
+
+/* ============================ Карточки действий профиля ============================ */
+
+.profile-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.profile-action-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 10px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-subtle);
+  border-radius: 14px;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-align: center;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
+}
+
+.profile-action-card .icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--border);
+  color: var(--accent);
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.profile-action-card:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.profile-action-card:hover:not(:disabled) .icon-wrap {
+  background: var(--bg-elevated);
+  border-color: var(--bg-elevated);
+  color: var(--accent);
+}
+
+.profile-action-card:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.profile-action-card--danger {
+  color: var(--danger);
+}
+
+.profile-action-card--danger .icon-wrap {
+  color: var(--danger);
+}
+
+.profile-action-card--danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-danger);
+}
+
+.profile-action-card--danger:hover:not(:disabled) .icon-wrap {
+  background: var(--bg-elevated);
+  border-color: var(--bg-elevated);
+  color: var(--danger);
 }
 
 /* ============================ Адаптивность ============================ */

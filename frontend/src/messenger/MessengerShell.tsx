@@ -171,6 +171,7 @@ export function MessengerShell({
   const [assetEpoch, setAssetEpoch] = useState(0);
   const bumpAssets = useCallback(() => setAssetEpoch((x) => x + 1), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composeTextareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesBottomRef = useRef<HTMLDivElement>(null);
   const shouldScrollToBottomRef = useRef(false);
@@ -187,6 +188,17 @@ export function MessengerShell({
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   const replyInflightRef = useRef(new Set<number>());
+
+  // Авто-расширение поля ввода сообщения по содержимому до разумного предела
+  useLayoutEffect(() => {
+    const el = composeTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const maxHeight = 240;
+    const minHeight = 60;
+    const next = Math.min(maxHeight, Math.max(minHeight, el.scrollHeight));
+    el.style.height = `${next}px`;
+  }, [draft, editing?.id, replyTo?.id]);
 
   const ensureName = useCallback(async (uid: number) => {
     if (userNamesRef.current[uid]) return;
@@ -1705,6 +1717,7 @@ export function MessengerShell({
                         </>
                       ) : null}
                       <textarea
+                        ref={composeTextareaRef}
                         className="ui-textarea"
                         value={draft}
                         onChange={(e) => {
@@ -1719,8 +1732,15 @@ export function MessengerShell({
                           }
                         }}
                         placeholder="Сообщение…"
-                        rows={1}
-                        style={{ flex: 1, minHeight: 44, resize: "none" }}
+                        rows={2}
+                        style={{
+                          flex: 1,
+                          minHeight: 60,
+                          maxHeight: 240,
+                          resize: "vertical",
+                          overflowY: "auto",
+                          lineHeight: 1.4,
+                        }}
                       />
                       <button
                         type="button"
@@ -1793,8 +1813,8 @@ export function MessengerShell({
                 type="button"
                 className={
                   composeTab === k
-                    ? "ui-btn ui-btn--primary ui-btn--sm"
-                    : "ui-btn ui-btn--ghost ui-btn--sm"
+                    ? "ui-btn ui-btn--tab ui-btn--sm is-active"
+                    : "ui-btn ui-btn--tab ui-btn--sm"
                 }
                 onClick={() => {
                   setComposeTab(k);

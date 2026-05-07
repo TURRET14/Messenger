@@ -117,7 +117,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
           <div className="ui-modal-actions">
             <button
               type="button"
-              className="ui-btn ui-btn--ghost"
+              className="ui-btn"
               onClick={() => confirmState.onResult(false)}
             >
               <IconX size={16} />

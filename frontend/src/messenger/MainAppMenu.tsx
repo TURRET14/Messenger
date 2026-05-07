@@ -20,6 +20,7 @@ import {
   IconAtSign,
   IconBan,
   IconCamera,
+  IconChat,
   IconCheck,
   IconChevronRight,
   IconInbox,
@@ -597,7 +598,7 @@ export function MainAppMenu({
         flexDirection: "column",
         gap: 4,
         paddingRight: 12,
-        borderRight: "1px solid var(--border)",
+        borderRight: "1.5px solid var(--border)",
       }
     : {
         display: "flex",
@@ -605,7 +606,7 @@ export function MainAppMenu({
         overflowX: "auto",
         paddingBottom: 10,
         marginBottom: 8,
-        borderBottom: "1px solid var(--border)",
+        borderBottom: "1.5px solid var(--border)",
       };
 
   const renderNav = () => (
@@ -631,10 +632,12 @@ export function MainAppMenu({
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              padding: "8px 12px",
+              padding: "8px 14px",
               borderRadius: 999,
-              border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
-              background: active ? "var(--accent-soft)" : "transparent",
+              border: active
+                ? "1.5px solid var(--accent)"
+                : "1.5px solid var(--border)",
+              background: active ? "var(--accent-soft)" : "var(--bg-subtle)",
               color: active ? "var(--accent)" : "var(--text)",
               fontWeight: active ? 700 : 500,
               cursor: "pointer",
@@ -854,43 +857,48 @@ function ProfileSection({
         style={{
           display: "flex",
           alignItems: "center",
-          flexDirection: "column",
-          gap: 12,
-          padding: "12px 0",
+          gap: 16,
+          padding: "8px 4px",
         }}
       >
         <Avatar
           src={userAvatarUrl(u.id, assetEpoch)}
           label={u.name || u.username}
-          size={92}
+          size={120}
         />
-        <label
-          className="ui-btn ui-btn--ghost"
-          style={{ cursor: "pointer" }}
+        <div
+          className="profile-action-grid"
+          style={{ flex: 1, minWidth: 0 }}
         >
-          <IconCamera size={18} />
-          Сменить фото
-          <input
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) onUploadAvatar(f);
-            }}
-          />
-        </label>
-        {onOpenSelfChat ? (
-          <button
-            type="button"
-            className="ui-btn ui-btn--soft"
-            onClick={onOpenSelfChat}
-          >
-            <IconUser size={16} />
-            Моя лента профиля
-          </button>
-        ) : null}
+          <label className="profile-action-card" style={{ cursor: "pointer" }}>
+            <span className="icon-wrap">
+              <IconCamera size={18} />
+            </span>
+            Сменить фото
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) onUploadAvatar(f);
+              }}
+            />
+          </label>
+          {onOpenSelfChat ? (
+            <button
+              type="button"
+              className="profile-action-card"
+              onClick={onOpenSelfChat}
+            >
+              <span className="icon-wrap">
+                <IconChat size={18} />
+              </span>
+              Моя лента
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
@@ -1204,7 +1212,7 @@ function ChangeLoginDialog({
         </label>
         <ValidationError message={error} />
         <div className="ui-modal-actions">
-          <button type="button" className="ui-btn ui-btn--ghost" onClick={onClose}>
+          <button type="button" className="ui-btn" onClick={onClose}>
             <IconX size={16} />
             Отмена
           </button>
@@ -1322,7 +1330,7 @@ function ChangePasswordDialog({
         </label>
         <ValidationError message={error} />
         <div className="ui-modal-actions">
-          <button type="button" className="ui-btn ui-btn--ghost" onClick={onClose}>
+          <button type="button" className="ui-btn" onClick={onClose}>
             <IconX size={16} />
             Отмена
           </button>
@@ -1467,7 +1475,7 @@ function ChangeEmailDialog({
             </label>
             <ValidationError message={error} />
             <div className="ui-modal-actions">
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={onClose}>
+              <button type="button" className="ui-btn" onClick={onClose}>
                 <IconX size={16} />
                 Отмена
               </button>
@@ -1508,7 +1516,7 @@ function ChangeEmailDialog({
             <div className="ui-modal-actions">
               <button
                 type="button"
-                className="ui-btn ui-btn--ghost"
+                className="ui-btn"
                 onClick={() => setStep("request")}
               >
                 Назад
@@ -1565,7 +1573,9 @@ function SearchPanel<
               key={mode}
               type="button"
               className={
-                active ? "ui-btn ui-btn--primary ui-btn--sm" : "ui-btn ui-btn--ghost ui-btn--sm"
+                active
+                  ? "ui-btn ui-btn--tab ui-btn--sm is-active"
+                  : "ui-btn ui-btn--tab ui-btn--sm"
               }
               onClick={() => {
                 setSearch({ ...search, mode });

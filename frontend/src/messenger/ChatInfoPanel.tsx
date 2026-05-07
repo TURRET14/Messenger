@@ -208,6 +208,17 @@ export function ChatInfoPanel({
     if (isGroupOrChannel) void loadFriends(true);
   }, [isGroupOrChannel, chat.id]);
 
+  // При открытии модалки «Добавить участников» обновляем список друзей,
+  // чтобы недавно принятые/отправленные дружбы сразу отображались.
+  useEffect(() => {
+    if (addMembersOpen && isGroupOrChannel) {
+      setFriends([]);
+      setFOff(0);
+      setFDone(false);
+      void loadFriends(true);
+    }
+  }, [addMembersOpen, isGroupOrChannel]);
+
   useEffect(() => {
     if (chat.chat_kind !== "PRIVATE") {
       setFetchedPrivatePeerId(null);
@@ -251,6 +262,13 @@ export function ChatInfoPanel({
     if (!isGroupOrChannel || !isOwner) return false;
     if (target.chat_user_id === currentUserId) return false;
     return target.chat_role === "ADMIN";
+  };
+
+  const canTransferOwnership = (target: MembershipRow) => {
+    if (!isGroupOrChannel || !isOwner) return false;
+    if (target.chat_user_id === currentUserId) return false;
+    // Бэкенд требует, чтобы новый владелец уже состоял в чате (любая роль).
+    return true;
   };
 
   const handleLeave = async () => {
@@ -391,6 +409,51 @@ export function ChatInfoPanel({
     }
   };
 
+  const transferOwnership = async (target: MembershipRow) => {
+    const targetUser = userMap[target.chat_user_id];
+    const targetLabel = targetUser
+      ? userListLabel(targetUser)
+      : `Пользователь #${target.chat_user_id}`;
+    if (
+      !(await confirm({
+        message:
+          `Передать владение чатом пользователю ${targetLabel}? ` +
+          "Вы перестанете быть владельцем и станете обычным участником.",
+        danger: true,
+        confirmLabel: "Передать",
+      }))
+    ) {
+      return;
+    }
+    try {
+      await apiFetch(`/chats/id/${chat.id}/owner`, {
+        method: "PATCH",
+        body: JSON.stringify({ id: target.chat_user_id }),
+      });
+      // Оптимистично обновляем роли в локальном списке: новый владелец → OWNER,
+      // старый (текущий пользователь) → USER. refreshMembers() ниже подтвердит
+      // изменение, но UI обновится мгновенно даже если refresh будет отложен.
+      setMembers((prev) =>
+        prev.map((m) => {
+          if (m.chat_user_id === target.chat_user_id) {
+            return { ...m, chat_role: "OWNER" };
+          }
+          if (m.chat_user_id === currentUserId) {
+            return { ...m, chat_role: "USER" };
+          }
+          return m;
+        }),
+      );
+      await onRefreshChats();
+      // Снимаем lock от прошлых загрузок и запрашиваем актуальные данные.
+      loadingRef.current = false;
+      await refreshMembers();
+      void alert("Владелец чата изменён");
+    } catch (e) {
+      void alert(e instanceof ApiError ? e.message : "Не удалось передать владение");
+    }
+  };
+
   const membershipSocketEnabled = canAddMembers;
 
   useBackendSocket(`/chats/${chat.id}/memberships/post`, membershipSocketEnabled, () => {
@@ -457,12 +520,57 @@ export function ChatInfoPanel({
             gap: 10,
           }}
         >
-          <Avatar src={chatAvatarSrc} label={chatTitle} size={80} />
+          <div style={{ position: "relative" }}>
+            <Avatar src={chatAvatarSrc} label={chatTitle} size={88} />
+            {canEditChatProfile ? (
+              <label
+                title="Сменить фото чата"
+                aria-label="Сменить фото чата"
+                style={{
+                  position: "absolute",
+                  bottom: -2,
+                  right: -2,
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  background: "var(--accent)",
+                  color: "var(--on-accent)",
+                  display: "grid",
+                  placeItems: "center",
+                  cursor: "pointer",
+                  border: "2px solid var(--bg-elevated)",
+                  transition: "background-color 120ms ease, transform 80ms ease",
+                }}
+                onMouseDown={(e) => {
+                  (e.currentTarget as HTMLElement).style.transform = "scale(0.9)";
+                }}
+                onMouseUp={(e) => {
+                  (e.currentTarget as HTMLElement).style.transform = "";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.transform = "";
+                }}
+              >
+                <IconCamera size={16} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void uploadAvatar(f);
+                  }}
+                />
+              </label>
+            ) : null}
+          </div>
           <div
             style={{
               textAlign: "center",
               fontWeight: 700,
               wordBreak: "break-word",
+              fontSize: "1.05rem",
             }}
           >
             {chatTitle}
@@ -478,17 +586,30 @@ export function ChatInfoPanel({
 
       {canEditChatProfile ? (
         <div
+          className="ui-card"
           style={{
+            margin: 12,
             padding: 12,
-            borderBottom: "1px solid var(--border)",
-            flexShrink: 0,
+            background: "var(--bg-subtle)",
             display: "flex",
             flexDirection: "column",
             gap: 8,
+            flexShrink: 0,
           }}
         >
-          <label className="ui-field">
-            <span className="ui-field-label">Название</span>
+          <div
+            style={{
+              fontSize: "0.78rem",
+              color: "var(--text-muted)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              marginBottom: 2,
+            }}
+          >
+            Редактирование
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
             <input
               className="ui-input"
               value={nameEdit}
@@ -497,35 +618,35 @@ export function ChatInfoPanel({
                 setChatProfileError(null);
               }}
               maxLength={100}
+              placeholder="Название чата"
+              style={{ flex: 1, minWidth: 0 }}
             />
-          </label>
+            <button
+              type="button"
+              className="ui-btn ui-btn--primary"
+              disabled={savingName || nameEdit.trim() === chat.name}
+              onClick={() => void saveName()}
+              title="Сохранить название"
+              aria-label="Сохранить название"
+              style={{ flexShrink: 0, padding: "0 14px" }}
+            >
+              {savingName ? (
+                <span className="ui-spinner" aria-hidden="true" />
+              ) : (
+                <IconCheck size={18} />
+              )}
+            </button>
+          </div>
           <ValidationError message={chatProfileError} />
-          <button
-            type="button"
-            className="ui-btn ui-btn--primary ui-btn--block"
-            disabled={savingName}
-            onClick={() => void saveName()}
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.78rem",
+              color: "var(--text-subtle)",
+            }}
           >
-            {savingName ? <span className="ui-spinner" aria-hidden="true" /> : <IconCheck size={16} />}
-            {savingName ? "Сохраняем…" : "Сохранить название"}
-          </button>
-          <label
-            className="ui-btn ui-btn--ghost ui-btn--block"
-            style={{ cursor: "pointer" }}
-          >
-            <IconCamera size={16} />
-            Сменить фото
-            <input
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void uploadAvatar(f);
-              }}
-            />
-          </label>
+            Чтобы сменить фото, нажмите на иконку камеры на аватаре.
+          </p>
         </div>
       ) : null}
 
@@ -606,6 +727,16 @@ export function ChatInfoPanel({
                       label: "Снять администратора",
                       onSelect: () => void dropAdmin(m.chat_user_id),
                       icon: <IconShieldCheck size={16} />,
+                    },
+                  ]
+                : []),
+              ...(canTransferOwnership(m)
+                ? [
+                    {
+                      label: "Передать владение",
+                      onSelect: () => void transferOwnership(m),
+                      icon: <IconCrown size={16} />,
+                      danger: true,
                     },
                   ]
                 : []),
@@ -819,7 +950,7 @@ export function ChatInfoPanel({
             <div className="ui-modal-actions">
               <button
                 type="button"
-                className="ui-btn ui-btn--ghost"
+                className="ui-btn"
                 onClick={() => setAddMembersOpen(false)}
               >
                 <IconX size={16} />
