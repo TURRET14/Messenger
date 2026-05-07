@@ -178,6 +178,22 @@ export function ChatInfoPanel({
     void refreshMembers();
   }, [chat.id, refreshMembers]);
 
+  // Если внутри ОДНОГО и того же чата сменился владелец (например, через WebSocket
+  // /chats/put после передачи владения другим пользователем), бэкенд не присылает
+  // /memberships/put для затронутых участников — обновляем список вручную.
+  const prevChatStateRef = useRef<{ id: number; ownerUserId: number | null }>({
+    id: chat.id,
+    ownerUserId: chat.owner_user_id,
+  });
+  useEffect(() => {
+    const prev = prevChatStateRef.current;
+    if (prev.id === chat.id && prev.ownerUserId !== chat.owner_user_id) {
+      loadingRef.current = false;
+      void refreshMembers();
+    }
+    prevChatStateRef.current = { id: chat.id, ownerUserId: chat.owner_user_id };
+  }, [chat.id, chat.owner_user_id, refreshMembers]);
+
   const loadFriends = useCallback(
     async (reset: boolean) => {
       const mult = reset ? 0 : fOff + 1;
@@ -751,6 +767,7 @@ export function ChatInfoPanel({
                   ]
                 : []),
             ];
+            const isCurrentUser = m.chat_user_id === currentUserId;
             return (
               <ActionMenu
                 key={m.id}
@@ -760,7 +777,9 @@ export function ChatInfoPanel({
                 {({ button, onContextMenu }) => (
                   <div
                     onContextMenu={onContextMenu}
-                    className="ui-row"
+                    className={
+                      isCurrentUser ? "ui-row ui-row--selected" : "ui-row"
+                    }
                     style={{ padding: 8, gap: 10 }}
                   >
                     <button
@@ -785,16 +804,39 @@ export function ChatInfoPanel({
                         label={u ? avatarLetterFromUser(u) : `#${m.chat_user_id}`}
                         size={36}
                       />
-                      <div style={{ minWidth: 0 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <div
                           style={{
                             fontSize: "0.9rem",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            minWidth: 0,
                           }}
                         >
-                          {label}
+                          <span
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              minWidth: 0,
+                            }}
+                          >
+                            {label}
+                          </span>
+                          {isCurrentUser ? (
+                            <span
+                              className="ui-chip ui-chip--accent"
+                              style={{
+                                padding: "1px 8px",
+                                fontSize: "0.7rem",
+                                fontWeight: 700,
+                                flexShrink: 0,
+                              }}
+                            >
+                              Вы
+                            </span>
+                          ) : null}
                         </div>
                         <div
                           style={{

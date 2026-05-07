@@ -27,6 +27,7 @@ import {
   avatarLetterFromUser,
   formatUserFullName,
 } from "./userFormat";
+import { formatDate, formatDateTime } from "../dateFormat";
 
 const PAGE = 50;
 
@@ -328,7 +329,7 @@ export function UserProfileModal({
         <ProfileInfoRow
           icon={<IconCalendar size={16} />}
           label="Дата рождения"
-          value={u.date_of_birth?.slice(0, 10) ?? "—"}
+          value={formatDate(u.date_of_birth)}
         />
         <ProfileInfoRow
           icon={<IconUser size={16} />}
@@ -349,7 +350,7 @@ export function UserProfileModal({
         <ProfileInfoRow
           icon={<IconCalendar size={16} />}
           label="Дата регистрации"
-          value={new Date(u.date_and_time_registered).toLocaleString()}
+          value={formatDateTime(u.date_and_time_registered)}
         />
         {"email_address" in u ? (
           <ProfileInfoRow

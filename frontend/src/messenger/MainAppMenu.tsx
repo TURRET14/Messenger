@@ -51,6 +51,7 @@ import {
   validateUsernameSearch,
 } from "../validation";
 import { avatarLetterFromUser, userListLabel } from "./userFormat";
+import { formatDateTime } from "../dateFormat";
 
 const PAGE = 50;
 
@@ -996,7 +997,7 @@ function ProfileSection({
         <div className="ui-field-label" style={{ marginBottom: 4 }}>
           Дата регистрации
         </div>
-        <div>{new Date(u.date_and_time_registered).toLocaleString()}</div>
+        <div>{formatDateTime(u.date_and_time_registered)}</div>
       </div>
 
       <ValidationError message={error} />

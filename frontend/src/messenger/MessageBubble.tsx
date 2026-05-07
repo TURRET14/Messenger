@@ -20,6 +20,7 @@ import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
 import { useDialogs } from "../context/DialogsContext";
 import { getCachedMediaUrl, peekCachedMediaUrl } from "../media/mediaCache";
 import { previewKind } from "./attachmentUtils";
+import { formatDateTime, formatShortTime } from "../dateFormat";
 
 export interface AttachmentMeta {
   id: number;
@@ -58,18 +59,6 @@ async function getCachedAttachmentList(chatId: number, messageId: number): Promi
   }
 }
 
-function shortTime(iso: string): string {
-  const d = new Date(iso);
-  const today = new Date();
-  const sameDay =
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate();
-  if (sameDay) {
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
-  return d.toLocaleDateString([], { day: "2-digit", month: "2-digit", year: "2-digit" });
-}
 
 export function MessageBubble({
   m,
@@ -282,14 +271,14 @@ export function MessageBubble({
             )}
             <time
               dateTime={m.date_and_time_sent}
-              title={new Date(m.date_and_time_sent).toLocaleString()}
+              title={formatDateTime(m.date_and_time_sent)}
               style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
             >
               <IconClock size={12} />
-              {shortTime(m.date_and_time_sent)}
+              {formatShortTime(m.date_and_time_sent)}
             </time>
             {edited ? (
-              <span title={`Изменено: ${new Date(m.date_and_time_edited!).toLocaleString()}`}>
+              <span title={`Изменено: ${formatDateTime(m.date_and_time_edited)}`}>
                 · изм.
               </span>
             ) : null}
