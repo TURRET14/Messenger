@@ -550,40 +550,77 @@ export function MainAppMenu({
   };
 
   const declineReq = async (id: number) => {
+    if (
+      !(await confirm({
+        message: "Отклонить заявку в друзья?",
+        confirmLabel: "Отклонить",
+      }))
+    ) {
+      return;
+    }
     try {
       await apiFetch(`/users/me/friends/requests/received/id/${id}`, {
         method: "DELETE",
       });
-      void loadIncoming(true);
+      // Оптимистично убираем из списка, не дёргая lazy-load заново.
+      setIncoming((prev) => prev.filter((r) => r.id !== id));
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
     }
   };
 
   const cancelSent = async (id: number) => {
+    if (
+      !(await confirm({
+        message: "Отозвать отправленную заявку в друзья?",
+        confirmLabel: "Отозвать",
+      }))
+    ) {
+      return;
+    }
     try {
       await apiFetch(`/users/me/friends/requests/sent/id/${id}`, {
         method: "DELETE",
       });
-      void loadOutgoing(true);
+      setOutgoing((prev) => prev.filter((r) => r.id !== id));
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
     }
   };
 
   const removeFriend = async (fid: number) => {
+    if (
+      !(await confirm({
+        message: "Удалить пользователя из друзей?",
+        danger: true,
+        confirmLabel: "Удалить",
+      }))
+    ) {
+      return;
+    }
     try {
       await apiFetch(`/users/me/friends/${fid}`, { method: "DELETE" });
-      void loadFriends(true);
+      // Оптимистично удаляем из локального списка, чтобы не передёргивать
+      // активный поиск (он мог требовать заполнения полей).
+      setFriends((prev) => prev.filter((f) => f.friendship_id !== fid));
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
     }
   };
 
   const unblock = async (blockId: number) => {
+    if (
+      !(await confirm({
+        message: "Разблокировать пользователя?",
+        confirmLabel: "Разблокировать",
+      }))
+    ) {
+      return;
+    }
     try {
       await apiFetch(`/users/me/blocks/id/${blockId}`, { method: "DELETE" });
-      void loadBlocks(true);
+      // Оптимистично убираем блокировку из локального списка.
+      setBlocks((prev) => prev.filter((b) => b.id !== blockId));
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
     }
@@ -862,20 +899,43 @@ function ProfileSection({
           padding: "8px 4px",
         }}
       >
-        <Avatar
-          src={userAvatarUrl(u.id, assetEpoch)}
-          label={u.name || u.username}
-          size={120}
-        />
-        <div
-          className="profile-action-grid"
-          style={{ flex: 1, minWidth: 0 }}
-        >
-          <label className="profile-action-card" style={{ cursor: "pointer" }}>
-            <span className="icon-wrap">
-              <IconCamera size={18} />
-            </span>
-            Сменить фото
+        {/* Аватар с camera-overlay — единый элемент управления фото,
+            аналогично интерфейсу смены аватара чата в ChatInfoPanel. */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <Avatar
+            src={userAvatarUrl(u.id, assetEpoch)}
+            label={u.name || u.username}
+            size={120}
+          />
+          <label
+            title="Сменить фото"
+            aria-label="Сменить фото"
+            style={{
+              position: "absolute",
+              bottom: -2,
+              right: -2,
+              width: 38,
+              height: 38,
+              borderRadius: "50%",
+              background: "var(--accent)",
+              color: "var(--on-accent)",
+              display: "grid",
+              placeItems: "center",
+              cursor: "pointer",
+              border: "2.5px solid var(--bg-elevated)",
+              transition: "background-color 120ms ease, transform 80ms ease",
+            }}
+            onMouseDown={(e) => {
+              (e.currentTarget as HTMLElement).style.transform = "scale(0.92)";
+            }}
+            onMouseUp={(e) => {
+              (e.currentTarget as HTMLElement).style.transform = "";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.transform = "";
+            }}
+          >
+            <IconCamera size={18} />
             <input
               type="file"
               accept="image/*"
@@ -887,19 +947,25 @@ function ProfileSection({
               }}
             />
           </label>
-          {onOpenSelfChat ? (
+        </div>
+
+        {/* Справа от аватара — единственное основное действие.
+            Если открытие ленты не передано, блок справа просто отсутствует. */}
+        {onOpenSelfChat ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
             <button
               type="button"
               className="profile-action-card"
               onClick={onOpenSelfChat}
+              style={{ width: "100%" }}
             >
               <span className="icon-wrap">
                 <IconChat size={18} />
               </span>
-              Моя лента
+              Моя лента профиля
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
 
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
@@ -1598,6 +1664,15 @@ function SearchPanel<
               setSearch({ ...search, q: e.target.value });
               onClearSearchError();
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.currentTarget as HTMLInputElement).blur();
+                onSearch();
+              }
+            }}
+            enterKeyHint="search"
+            type="search"
             maxLength={100}
             placeholder="Введите username"
           />
@@ -1605,42 +1680,35 @@ function SearchPanel<
       ) : null}
       {search.mode === "names" ? (
         <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr 1fr" }}>
-          <label className="ui-field">
-            <span className="ui-field-label">Имя</span>
-            <input
-              className="ui-input"
-              value={search.n}
-              onChange={(e) => {
-                setSearch({ ...search, n: e.target.value });
-                onClearSearchError();
-              }}
-              maxLength={100}
-            />
-          </label>
-          <label className="ui-field">
-            <span className="ui-field-label">Фамилия</span>
-            <input
-              className="ui-input"
-              value={search.s}
-              onChange={(e) => {
-                setSearch({ ...search, s: e.target.value });
-                onClearSearchError();
-              }}
-              maxLength={100}
-            />
-          </label>
-          <label className="ui-field">
-            <span className="ui-field-label">Отчество</span>
-            <input
-              className="ui-input"
-              value={search.o}
-              onChange={(e) => {
-                setSearch({ ...search, o: e.target.value });
-                onClearSearchError();
-              }}
-              maxLength={100}
-            />
-          </label>
+          {(
+            [
+              ["n", "Имя"],
+              ["s", "Фамилия"],
+              ["o", "Отчество"],
+            ] as const
+          ).map(([key, lab]) => (
+            <label key={key} className="ui-field">
+              <span className="ui-field-label">{lab}</span>
+              <input
+                className="ui-input"
+                value={search[key]}
+                onChange={(e) => {
+                  setSearch({ ...search, [key]: e.target.value });
+                  onClearSearchError();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLInputElement).blur();
+                    onSearch();
+                  }
+                }}
+                enterKeyHint="search"
+                type="search"
+                maxLength={100}
+              />
+            </label>
+          ))}
         </div>
       ) : null}
       <ValidationError message={searchError} />

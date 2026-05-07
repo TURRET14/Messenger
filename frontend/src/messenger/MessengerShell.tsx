@@ -1373,12 +1373,19 @@ export function MessengerShell({
                     className="ui-input"
                     placeholder="Поиск в чате…"
                     value={hdrSearch}
+                    enterKeyHint="search"
+                    type="search"
                     onChange={(e) => {
                       setHdrSearch(e.target.value);
                       setChatSearchError(null);
                     }}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") void runHdrSearch();
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        (e.currentTarget as HTMLInputElement).blur();
+                        void runHdrSearch();
+                      }
                     }}
                     style={{ flex: 1, minWidth: 0, width: "100%" }}
                   />

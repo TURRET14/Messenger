@@ -401,6 +401,14 @@ export function ChatInfoPanel({
   };
 
   const makeAdmin = async (userId: number) => {
+    if (
+      !(await confirm({
+        message: "Назначить пользователя администратором чата?",
+        confirmLabel: "Назначить",
+      }))
+    ) {
+      return;
+    }
     try {
       await apiFetch(`/chats/id/${chat.id}/admins`, {
         method: "POST",
@@ -414,6 +422,14 @@ export function ChatInfoPanel({
   };
 
   const dropAdmin = async (userId: number) => {
+    if (
+      !(await confirm({
+        message: "Снять роль администратора у пользователя?",
+        confirmLabel: "Снять",
+      }))
+    ) {
+      return;
+    }
     try {
       await apiFetch(`/chats/id/${chat.id}/admins/id/${userId}`, {
         method: "DELETE",
@@ -521,11 +537,32 @@ export function ChatInfoPanel({
         background: "var(--bg-elevated)",
       }}
     >
+      {/* Единая прокручиваемая область: hero, форма редактирования, кнопка
+          добавления и список участников. Так на маленьких экранах, когда
+          верхняя часть занимает много места, можно проскроллить всё целиком —
+          вместо застревания в крошечной зоне списка участников. */}
+      <div
+        ref={listRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+        }}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          if (
+            el.scrollTop + el.clientHeight >= el.scrollHeight - 24 &&
+            !done &&
+            !loading
+          ) {
+            void loadMembers(false);
+          }
+        }}
+      >
       <div
         style={{
           padding: "16px 14px",
           borderBottom: "1px solid var(--border)",
-          flexShrink: 0,
         }}
       >
         <div
@@ -610,7 +647,6 @@ export function ChatInfoPanel({
             display: "flex",
             flexDirection: "column",
             gap: 8,
-            flexShrink: 0,
           }}
         >
           <div
@@ -671,7 +707,6 @@ export function ChatInfoPanel({
           style={{
             padding: 12,
             borderBottom: "1px solid var(--border)",
-            flexShrink: 0,
           }}
         >
           <button
@@ -685,21 +720,7 @@ export function ChatInfoPanel({
         </div>
       ) : null}
 
-      <div
-        ref={listRef}
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: 12,
-          minHeight: 0,
-        }}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24 && !done && !loading) {
-            void loadMembers(false);
-          }
-        }}
-      >
+      <div style={{ padding: 12 }}>
         <div
           style={{
             fontWeight: 600,
@@ -866,6 +887,7 @@ export function ChatInfoPanel({
           ) : null}
         </div>
       </div>
+      </div>{/* /scroll-контейнер */}
 
       <div
         style={{
