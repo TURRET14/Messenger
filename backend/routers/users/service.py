@@ -44,7 +44,7 @@ from backend.routers.users.response_models import (
     LoginResponseModel,
     SessionResponseModel,
     CurrentUserResponseModel,
-    FriendUserInListResponseModel, UserBlockResponseModel)
+    FriendUserInListResponseModel, UserBlockResponseModel, FriendshipResponseModel)
 
 from backend.routers.common_models import (IDModel)
 from backend.email_service import EmailService
@@ -884,3 +884,27 @@ async def get_blocks(
         date_and_time_blocked = block.date_and_time_blocked))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(blocks_list), status_code = fastapi.status.HTTP_200_OK)
+
+
+async def get_friendship(
+    current_user: User,
+    friend_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+
+    friendship_raw: Friendship = await validators.validate_get_friendship(current_user, friend_user, db)
+
+    friendship: FriendshipResponseModel = FriendshipResponseModel(friendship_id = friendship_raw.id, date_and_time_added = friendship_raw.date_and_time_added)
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(friendship), status_code = fastapi.status.HTTP_200_OK)
+
+
+async def get_user_block(
+    current_user: User,
+    blocked_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+
+    user_block_raw: UserBlock = await validators.validate_get_user_block(current_user, blocked_user, db)
+
+    user_block: UserBlockResponseModel = UserBlockResponseModel(id = user_block_raw.id, user_id = user_block_raw.user_id, blocked_user_id = user_block_raw.blocked_user_id, date_and_time_blocked = user_block_raw.date_and_time_blocked)
+
+    return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_block), status_code = fastapi.status.HTTP_200_OK)

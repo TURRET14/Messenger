@@ -160,3 +160,29 @@ async def validate_is_user_block_creator(
 
     if user_block.user_id != selected_user.id:
         raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.forbidden_error.error_status_code, detail = ErrorRegistry.forbidden_error)
+
+
+async def validate_get_friendship(
+    current_user: User,
+    friend_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> Friendship:
+
+    friendship: Friendship | None = await utils.get_friendship(current_user, friend_user, db)
+
+    if not friendship:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.friendship_not_found_error.error_status_code, detail = ErrorRegistry.friendship_not_found_error)
+    else:
+        return friendship
+
+
+async def validate_get_user_block(
+    current_user: User,
+    blocked_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> UserBlock:
+
+    user_block: UserBlock | None = await utils.get_user_block(current_user, blocked_user, db)
+
+    if not user_block:
+        raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.user_block_not_found_error.error_status_code, detail = ErrorRegistry.user_block_not_found_error)
+    else:
+        return user_block

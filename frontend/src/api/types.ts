@@ -24,10 +24,12 @@ export interface UserInList {
   second_name: string | null;
 }
 
-export interface FriendUser extends UserInList {
+export interface FriendshipInfo {
   friendship_id: number;
   date_and_time_added: string;
 }
+
+export interface FriendUser extends UserInList, FriendshipInfo {}
 
 export interface UserPublic extends UserInList {
   date_of_birth: string | null;

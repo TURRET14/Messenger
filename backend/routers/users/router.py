@@ -3,7 +3,8 @@ import sqlalchemy.ext.asyncio
 
 from backend.routers.users import service
 import backend.routers.dependencies
-from backend.routers.users.response_models import CurrentUserResponseModel, FriendUserInListResponseModel
+from backend.routers.users.response_models import CurrentUserResponseModel, FriendUserInListResponseModel, \
+    FriendshipResponseModel, UserBlockResponseModel
 from backend.storage import *
 
 from backend.routers.users.request_models import (
@@ -510,3 +511,29 @@ async def get_blocks(
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
 
     return await service.get_blocks(offset_multiplier, current_user, db)
+
+
+@users_router.get("/users/me/friends/users/id/{user_id}", response_class = fastapi.responses.JSONResponse, response_model = FriendshipResponseModel,
+description =
+"""
+Маршрут получения дружбы с указанным пользователем по его ID.
+""")
+async def get_friendship(
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    friend_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_path_user_id),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await service.get_friendship(current_user, friend_user, db)
+
+
+@users_router.get("/users/me/blocks/users/id/{user_id}", response_class = fastapi.responses.JSONResponse, response_model = UserBlockResponseModel,
+description =
+"""
+Маршрут получения блокировки указанного пользователя по его ID.
+""")
+async def get_user_block(
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    blocked_user: User = fastapi.Depends(backend.routers.dependencies.get_user_by_path_user_id),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await service.get_user_block(current_user, blocked_user, db)

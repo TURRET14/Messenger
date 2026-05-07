@@ -3,7 +3,7 @@ import { ApiError, apiFetch, apiJson } from "../api/client";
 import type {
   Chat,
   CurrentUser,
-  FriendUser,
+  FriendshipInfo,
   UserBlockRow,
   UserPublic,
 } from "../api/types";
@@ -29,7 +29,25 @@ import {
 } from "./userFormat";
 import { formatDate, formatDateTime } from "../dateFormat";
 
-const PAGE = 50;
+/**
+ * Возвращает результат GET-запроса либо null, если сервер ответил
+ * 404 с ожидаемым error_code «отсутствие связи». Любые другие
+ * ошибки пробрасываются дальше.
+ */
+async function fetchOrNullOn404<T>(
+  path: string,
+  expectedErrorCode: string,
+): Promise<T | null> {
+  try {
+    return await apiJson<T>(path);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      const body = e.body as { error_code?: string } | undefined;
+      if (body?.error_code === expectedErrorCode) return null;
+    }
+    throw e;
+  }
+}
 
 async function openOrCreatePrivateChat(userId: number): Promise<number> {
   try {
@@ -68,7 +86,7 @@ export function UserProfileModal({
   const { alert, confirm } = useDialogs();
   const isSelf = userId === currentUser.id;
   const [u, setU] = useState<UserPublic | CurrentUser | null>(null);
-  const [friendship, setFriendship] = useState<FriendUser | null>(null);
+  const [friendship, setFriendship] = useState<FriendshipInfo | null>(null);
   const [blockRow, setBlockRow] = useState<UserBlockRow | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -80,23 +98,21 @@ export function UserProfileModal({
         : await apiJson<UserPublic>(`/users/id/${userId}`);
       setU(profile);
       if (!isSelf) {
-        const uname = encodeURIComponent(profile.username);
-        const hits = await apiJson<FriendUser[]>(
-          `/users/me/friends/search/by-username?username=${uname}&offset_multiplier=0`,
-        );
-        setFriendship(hits.find((h) => h.id === userId) ?? null);
-        let off = 0;
-        let found: UserBlockRow | null = null;
-        for (;;) {
-          const batch = await apiJson<UserBlockRow[]>(
-            `/users/me/blocks?offset_multiplier=${off}`,
-          );
-          found =
-            batch.find((b) => b.blocked_user_id === userId) ?? null;
-          if (found || batch.length < PAGE) break;
-          off += 1;
-        }
-        setBlockRow(found);
+        // Параллельно запрашиваем дружбу и блокировку конкретно с этим
+        // пользователем — оба эндпоинта возвращают 404 с известным error_code
+        // если связи нет (см. backend ErrorRegistry).
+        const [friendshipResult, blockResult] = await Promise.all([
+          fetchOrNullOn404<FriendshipInfo>(
+            `/users/me/friends/users/id/${userId}`,
+            "FRIENDSHIP_NOT_FOUND_ERROR",
+          ),
+          fetchOrNullOn404<UserBlockRow>(
+            `/users/me/blocks/users/id/${userId}`,
+            "USER_BLOCK_NOT_FOUND_ERROR",
+          ),
+        ]);
+        setFriendship(friendshipResult);
+        setBlockRow(blockResult);
       }
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Профиль не загружен");

@@ -4,9 +4,15 @@
 }
 
 {$SSL_SERVER_NAME} {
-	@backend path /login /users* /chats*
+	# Маршруты, которые должен обрабатывать бэкенд (FastAPI):
+	#   /login, /users*, /chats*       — основные API-эндпоинты
+	#   /docs*                          — Swagger UI (включая /docs/oauth2-redirect)
+	#   /redoc*                         — альтернативный ReDoc UI
+	#   /openapi.json                   — спецификация OpenAPI, нужная Swagger/ReDoc
+	@backend path /login /users* /chats* /docs* /redoc* /openapi.json
 	reverse_proxy @backend backend:8000
 
+	# Остальное — статический фронтенд (раздаёт SPA index.html и ассеты).
 	reverse_proxy frontend:8080
 
 	tls {

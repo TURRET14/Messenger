@@ -70,7 +70,7 @@ class ErrorRegistry:
     data_conflict_error = ErrorInfo(error_code = Error.data_conflict_error, error_message = "Произошел конфликт данных!", error_status_code = fastapi.status.HTTP_409_CONFLICT)
     incorrect_login_error = ErrorInfo(error_code = Error.incorrect_login_error, error_message = "Неверный логин!", error_status_code = fastapi.status.HTTP_401_UNAUTHORIZED)
     incorrect_password_error = ErrorInfo(error_code = Error.incorrect_password_error, error_message = "Неверный пароль!", error_status_code = fastapi.status.HTTP_401_UNAUTHORIZED)
-    invalid_session_error = ErrorInfo(error_code = Error.invalid_session_error, error_message ="Указанная сессия не является действительной!", error_status_code = fastapi.status.HTTP_404_NOT_FOUND)
+    invalid_session_error = ErrorInfo(error_code = Error.invalid_session_error, error_message ="Токен сессии истек или является недействительным! Пожалуйста, авторизуйтесь заново.", error_status_code = fastapi.status.HTTP_401_UNAUTHORIZED)
     unauthorized_error = ErrorInfo(error_code = Error.unauthorized_error, error_message = "Вы не авторизованы!", error_status_code = fastapi.status.HTTP_401_UNAUTHORIZED)
     forbidden_error = ErrorInfo(error_code = Error.forbidden_error, error_message = "Вам не хватает прав!", error_status_code = fastapi.status.HTTP_403_FORBIDDEN)
     file_type_not_allowed_error = ErrorInfo(error_code = Error.file_type_not_allowed_error, error_message = "Этот тип файла не поддерживается!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)

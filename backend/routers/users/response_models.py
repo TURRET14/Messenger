@@ -12,9 +12,13 @@ class UserInListResponseModel(pydantic.BaseModel):
     second_name: str | None = pydantic.Field()
 
 
-class FriendUserInListResponseModel(UserInListResponseModel):
+class FriendshipResponseModel(pydantic.BaseModel):
     friendship_id: int = pydantic.Field()
     date_and_time_added: datetime.datetime = pydantic.Field()
+
+
+class FriendUserInListResponseModel(UserInListResponseModel, FriendshipResponseModel):
+    pass
 
 
 class FriendRequestResponseModel(pydantic.BaseModel):
@@ -39,6 +43,7 @@ class UserResponseModel(pydantic.BaseModel):
 
 class CurrentUserResponseModel(UserResponseModel):
     email_address: str = pydantic.Field()
+
 
 class LoginResponseModel(pydantic.BaseModel):
     login: str = pydantic.Field()
