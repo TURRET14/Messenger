@@ -26,6 +26,19 @@ function buildUrl(path: string): string {
   return `${API_BASE_URL}${p}`;
 }
 
+/**
+ * Возвращает абсолютный URL для прямого использования в `<img src>`,
+ * `<video src>`, `<audio src>` и `<a href>`. Учитывает VITE_API_BASE_URL,
+ * если фронтенд и бэкенд развёрнуты на разных origin'ах.
+ *
+ * Cookie сессии браузер отправит автоматически: same-origin без вопросов,
+ * для cross-origin нужны корректные CORS-заголовки и атрибут
+ * crossorigin="use-credentials" на теге.
+ */
+export function apiUrl(path: string): string {
+  return buildUrl(path);
+}
+
 export class ApiError extends Error {
   status: number;
   body: unknown;

@@ -17,6 +17,7 @@ from backend.routers.chats.response_models import (
 )
 import backend.routers.errors
 import backend.routers.dependencies
+import backend.routers.media_streaming
 import backend.routers.parameters
 import backend.routers.chats.utils
 import backend.routers.users.utils
@@ -286,16 +287,11 @@ async def get_chat_members(
 
 
 async def get_chat_avatar(
+    request: fastapi.Request,
     avatar_photo_path: str,
     minio_client: MinioClient) -> fastapi.responses.StreamingResponse:
 
-    file = await minio_client.get_file(MinioBucket.chats_avatars, avatar_photo_path)
-    file_stat = await minio_client.get_file_stat(MinioBucket.chats_avatars, avatar_photo_path)
-
-    background_tasks = fastapi.BackgroundTasks()
-    background_tasks.add_task(minio_client.close_file_stream, file)
-
-    return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
+    return await backend.routers.media_streaming.serve_minio_file(request, MinioBucket.chats_avatars, avatar_photo_path, minio_client)
 
 
 async def get_chat_avatar_path(

@@ -28,6 +28,7 @@ description =
 Маршрут для получения файла указанного вложения к указанному сообщению в указанном чате.
 """)
 async def get_message_attachment_file(
+    request: fastapi.Request,
     chat_id: int = fastapi.Path(ge = 0),
     message_id: int = fastapi.Path(ge = 0),
     attachment_id: int = fastapi.Path(ge = 0),
@@ -42,4 +43,4 @@ async def get_message_attachment_file(
         selected_user: User = await backend.routers.dependencies.require_session_user(session_id, db, redis_client)
         attachment_file_path: str = await service.get_message_attachment_path(selected_chat, selected_message, selected_attachment, selected_user, db)
 
-    return await service.get_message_attachment_file(attachment_file_path, minio_client)
+    return await service.get_message_attachment_file(request, attachment_file_path, minio_client)

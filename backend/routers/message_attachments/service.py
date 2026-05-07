@@ -12,6 +12,7 @@ from backend.storage import *
 from backend.routers.message_attachments.response_models import (MessageAttachmentResponseModel)
 from backend.routers.message_attachments.validation import validators
 import backend.routers.common_validators.validators as common_validators
+import backend.routers.media_streaming
 
 
 async def get_message_attachments_list(
@@ -41,16 +42,13 @@ async def get_message_attachments_list(
 
 
 async def get_message_attachment_file(
+    request: fastapi.Request,
     attachment_file_path: str,
     minio_client: MinioClient) -> fastapi.responses.StreamingResponse:
 
-    file: urllib3.BaseHTTPResponse = await minio_client.get_file(MinioBucket.messages_attachments, attachment_file_path)
-    file_stat: minio.datatypes.Object = await minio_client.get_file_stat(MinioBucket.messages_attachments, attachment_file_path)
-
-    background_tasks = fastapi.BackgroundTasks()
-    background_tasks.add_task(minio_client.close_file_stream, file)
-
-    return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
+    return await backend.routers.media_streaming.serve_minio_file(
+        request, MinioBucket.messages_attachments, attachment_file_path, minio_client,
+    )
 
 
 async def get_message_attachment_path(

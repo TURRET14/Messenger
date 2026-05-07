@@ -13,6 +13,7 @@ from starlette.status import HTTP_204_NO_CONTENT
 import backend.environment as environment
 import backend.routers.dependencies
 import backend.routers.security
+import backend.routers.media_streaming
 import backend.routers.parameters as parameters
 from backend.routers.chats.websockets.models import ChatPubsubModel
 from backend.routers.errors import ErrorRegistry
@@ -365,18 +366,14 @@ async def update_user_password(
 
 
 async def get_user_avatar(
+    request: fastapi.Request,
     selected_user: User,
     minio_client: MinioClient) -> fastapi.responses.StreamingResponse:
 
     avatar_photo_path: str = await validators.validate_user_avatar(selected_user.avatar_photo_path)
-
-    file: urllib3.BaseHTTPResponse = await minio_client.get_file(MinioBucket.users_avatars, avatar_photo_path)
-    file_stat: minio.datatypes.Object = await minio_client.get_file_stat(MinioBucket.users_avatars, avatar_photo_path)
-
-    background_tasks = fastapi.BackgroundTasks()
-    background_tasks.add_task(minio_client.close_file_stream, file)
-
-    return fastapi.responses.StreamingResponse(file.stream(), media_type = file_stat.content_type, headers = {"Content-Disposition": "inline"}, status_code = fastapi.status.HTTP_200_OK, background = background_tasks)
+    return await backend.routers.media_streaming.serve_minio_file(
+        request, MinioBucket.users_avatars, avatar_photo_path, minio_client,
+    )
 
 
 async def update_user_avatar(

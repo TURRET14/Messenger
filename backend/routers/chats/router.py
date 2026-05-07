@@ -57,6 +57,7 @@ description =
 Только для групповых чатов и каналов.
 """)
 async def get_chat_avatar(
+    request: fastapi.Request,
     chat_id: int = fastapi.Path(ge = 0),
     session_id: str | None = fastapi.Cookie(default = None),
     redis_client: RedisClient = fastapi.Depends(get_redis_client),
@@ -67,7 +68,7 @@ async def get_chat_avatar(
         current_user: User = await backend.routers.dependencies.require_session_user(session_id, db, redis_client)
         avatar_photo_path: str = await service.get_chat_avatar_path(selected_chat, current_user, db)
 
-    return await service.get_chat_avatar(avatar_photo_path, minio_client)
+    return await service.get_chat_avatar(request, avatar_photo_path, minio_client)
 
 
 @chats_router.post("/chats/private", response_class = fastapi.responses.JSONResponse,

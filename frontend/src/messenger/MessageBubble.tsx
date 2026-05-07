@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ApiError, apiJson } from "../api/client";
+import { apiJson, apiUrl } from "../api/client";
 import type { Message } from "../api/types";
 import {
   IconCheck,
@@ -17,8 +17,6 @@ import {
 } from "../components/Icons";
 import { ActionMenu, type ActionMenuItem } from "../components/ui/ActionMenu";
 import { Avatar, userAvatarUrl } from "../components/ui/Avatar";
-import { useDialogs } from "../context/DialogsContext";
-import { getCachedMediaUrl, peekCachedMediaUrl } from "../media/mediaCache";
 import { previewKind } from "./attachmentUtils";
 import { formatDateTime, formatShortTime } from "../dateFormat";
 
@@ -96,10 +94,8 @@ export function MessageBubble({
   avatarEpoch?: number;
   onOpenAuthorProfile?: (userId: number) => void;
 }) {
-  const { alert } = useDialogs();
   const cid = m.chat_id;
   const [atts, setAtts] = useState<AttachmentMeta[] | null>(null);
-  const [blobMap, setBlobMap] = useState<Record<number, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -116,35 +112,16 @@ export function MessageBubble({
     };
   }, [cid, m.id]);
 
-  useEffect(() => {
-    setBlobMap({});
-  }, [cid, m.id]);
+  /**
+   * Прямой URL до файла-вложения. Используется в src у <img>/<video>/<audio>
+   * и href у кнопки «Открыть». Браузер сам обрабатывает HTTP Range,
+   * прогрессивную загрузку и кеширование (см. backend/routers/media_streaming.py).
+   */
+  const attachmentUrl = (att: AttachmentMeta): string =>
+    apiUrl(`/chats/id/${cid}/messages/id/${m.id}/attachments/id/${att.id}`);
 
-  const ensureBlob = async (att: AttachmentMeta) => {
-    const path = `/chats/id/${cid}/messages/id/${m.id}/attachments/id/${att.id}`;
-    const cachedBlob = peekCachedMediaUrl(path);
-    if (cachedBlob) return cachedBlob;
-    return await getCachedMediaUrl(path);
-  };
-
-  useEffect(() => {
-    if (!atts) return;
-
-    for (const att of atts) {
-      if (previewKind(att.file_extension || "") === "file") continue;
-      void ensureBlob(att).then((url) => {
-        setBlobMap((prev) => (prev[att.id] === url ? prev : { ...prev, [att.id]: url }));
-      });
-    }
-  }, [atts]);
-
-  const openBlob = async (att: AttachmentMeta) => {
-    try {
-      const url = await ensureBlob(att);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (e) {
-      void alert(e instanceof ApiError ? e.message : "Не удалось открыть файл");
-    }
+  const openInNewTab = (att: AttachmentMeta) => {
+    window.open(attachmentUrl(att), "_blank", "noopener,noreferrer");
   };
 
   const mine = m.sender_user_id === currentUserId;
@@ -325,8 +302,8 @@ export function MessageBubble({
                 <AttachmentPreview
                   key={att.id}
                   att={att}
-                  url={blobMap[att.id] ?? null}
-                  onOpen={() => void openBlob(att)}
+                  url={attachmentUrl(att)}
+                  onOpen={() => openInNewTab(att)}
                 />
               ))}
             </div>
@@ -343,7 +320,10 @@ function AttachmentPreview({
   onOpen,
 }: {
   att: AttachmentMeta;
-  url: string | null;
+  /** Прямой URL до файла-вложения. Браузер сам обрабатывает HTTP Range для
+   *  видео/аудио (мгновенный старт + перемотка) и прогрессивную декодировку
+   *  для изображений. См. backend/routers/media_streaming.py. */
+  url: string;
   onOpen: () => void;
 }) {
   const kind = previewKind(att.file_extension || "");
@@ -365,7 +345,7 @@ function AttachmentPreview({
         background: "var(--bg-muted)",
       }}
     >
-      {kind === "image" && url ? (
+      {kind === "image" ? (
         <button
           type="button"
           onClick={onOpen}
@@ -381,15 +361,27 @@ function AttachmentPreview({
           <img
             src={url}
             alt=""
+            loading="lazy"
+            decoding="async"
+            draggable={false}
             style={{ maxHeight: 240, width: "100%", objectFit: "contain" }}
           />
         </button>
       ) : null}
-      {kind === "video" && url ? (
-        <video src={url} controls style={{ maxHeight: 240, width: "100%" }} />
+      {kind === "video" ? (
+        // preload="metadata" — браузер скачает только заголовки видео
+        // (несколько КБ): длительность, разрешение, кодеки. Сам поток
+        // начнётся по нажатию play, перемотка через HTTP Range мгновенна.
+        <video
+          src={url}
+          controls
+          preload="metadata"
+          playsInline
+          style={{ maxHeight: 240, width: "100%" }}
+        />
       ) : null}
-      {kind === "audio" && url ? (
-        <audio src={url} controls style={{ width: "100%" }} />
+      {kind === "audio" ? (
+        <audio src={url} controls preload="metadata" style={{ width: "100%" }} />
       ) : null}
       <div
         style={{

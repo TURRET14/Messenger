@@ -45,6 +45,29 @@ class MinioClient:
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_does_not_exist_error.error_status_code, detail = ErrorRegistry.file_does_not_exist_error)
 
 
+    async def get_file_range(
+        self,
+        bucket_name: MinioBucket,
+        object_name: str,
+        offset: int,
+        length: int) -> urllib3.BaseHTTPResponse:
+        """Чтение байт-диапазона объекта из MinIO. MinIO нативно поддерживает
+        Range через параметры offset/length в get_object и сам возвращает
+        нужный кусок объекта без прокачки всего тела через сервер."""
+        try:
+            return await fastapi.concurrency.run_in_threadpool(
+                self.client.get_object,
+                bucket_name.value,
+                object_name,
+                offset,
+                length,
+            )
+        except minio.S3Error:
+            raise fastapi.exceptions.HTTPException(
+                status_code = ErrorRegistry.file_does_not_exist_error.error_status_code,
+                detail = ErrorRegistry.file_does_not_exist_error)
+
+
     async def get_file_stat(self, bucket_name: MinioBucket, object_name: str) -> minio.datatypes.Object:
         try:
             return await fastapi.concurrency.run_in_threadpool(self.client.stat_object, bucket_name.value, object_name)

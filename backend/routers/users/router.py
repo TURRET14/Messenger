@@ -244,6 +244,7 @@ description =
 Маршрут получения фотографии профиля указанного пользователя.
 """)
 async def get_user_avatar(
+    request: fastapi.Request,
     user_id: int = fastapi.Path(ge = 0),
     session_id: str | None = fastapi.Cookie(default = None),
     redis_client: RedisClient = fastapi.Depends(get_redis_client),
@@ -253,7 +254,7 @@ async def get_user_avatar(
         await backend.routers.dependencies.require_session_user(session_id, db, redis_client)
         selected_user: User = await backend.routers.dependencies.require_user_by_id(user_id, db)
 
-    return await service.get_user_avatar(selected_user, minio_client)
+    return await service.get_user_avatar(request, selected_user, minio_client)
 
 
 @users_router.get("/users/me/avatar", response_class = fastapi.responses.StreamingResponse,
@@ -262,6 +263,7 @@ description =
 Маршрут получения фотографии профиля текущего пользователя.
 """)
 async def get_current_user_avatar(
+    request: fastapi.Request,
     session_id: str | None = fastapi.Cookie(default = None),
     redis_client: RedisClient = fastapi.Depends(get_redis_client),
     minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client)) -> fastapi.responses.StreamingResponse:
@@ -269,7 +271,7 @@ async def get_current_user_avatar(
     async with async_session_maker() as db:
         current_user: User = await backend.routers.dependencies.require_session_user(session_id, db, redis_client)
 
-    return await service.get_user_avatar(current_user, minio_client)
+    return await service.get_user_avatar(request, current_user, minio_client)
 
 
 @users_router.put("/users/me/avatar", response_class = fastapi.responses.Response,

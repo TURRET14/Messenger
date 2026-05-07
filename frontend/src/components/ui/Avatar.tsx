@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties } from "react";
-import { getCachedMediaUrl, peekCachedMediaUrl } from "../../media/mediaCache";
+import { useState, type CSSProperties } from "react";
+import { apiUrl } from "../../api/client";
 
 const wrap = (size: number, clickable: boolean): CSSProperties => ({
   width: size,
@@ -19,6 +19,12 @@ const wrap = (size: number, clickable: boolean): CSSProperties => ({
   transition: clickable ? "transform 100ms ease, border-color 120ms ease" : undefined,
 });
 
+/**
+ * Аватар с буквой-заглушкой. Картинка загружается напрямую браузером через
+ * <img src=...>: HTTP-кеш используется автоматически, прогрессивное
+ * декодирование работает (для progressive JPEG/WebP), память не дублируется
+ * в JS-куче.
+ */
 export function Avatar({
   src,
   label,
@@ -33,32 +39,7 @@ export function Avatar({
   alt?: string;
   onClick?: () => void;
 }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!src) {
-      setBlobUrl(null);
-      return;
-    }
-    const cached = peekCachedMediaUrl(src);
-    if (cached) {
-      setBlobUrl(cached);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const url = await getCachedMediaUrl(src);
-        if (!cancelled) setBlobUrl(url);
-      } catch {
-        if (!cancelled) setBlobUrl(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [src]);
-
+  const [failed, setFailed] = useState(false);
   const letter = (label.trim()[0] ?? "?").toUpperCase();
 
   const wrapperStyle = wrap(size, !!onClick);
@@ -77,12 +58,18 @@ export function Avatar({
       }
     : { title: alt || label, "aria-hidden": (!alt) as boolean };
 
-  if (blobUrl) {
-    return (
-      <div style={wrapperStyle} {...(wrapperProps as object)}>
+  const showImage = src && !failed;
+
+  return (
+    <div style={wrapperStyle} {...(wrapperProps as object)}>
+      {showImage ? (
         <img
-          src={blobUrl}
+          src={apiUrl(src)}
           alt={alt || label}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onError={() => setFailed(true)}
           style={{
             width: "100%",
             height: "100%",
@@ -90,13 +77,9 @@ export function Avatar({
             display: "block",
           }}
         />
-      </div>
-    );
-  }
-
-  return (
-    <div style={wrapperStyle} {...(wrapperProps as object)}>
-      {letter}
+      ) : (
+        letter
+      )}
     </div>
   );
 }
