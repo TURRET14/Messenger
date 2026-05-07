@@ -98,3 +98,97 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
+
+/* ============================================================
+ * Загрузка файлов с индикатором прогресса.
+ *
+ * Fetch API не даёт upload-progress events (только download через ReadableStream
+ * без точного %), поэтому для загрузки файлов используем XMLHttpRequest —
+ * он умеет XMLHttpRequestUpload.onprogress с loaded/total в байтах.
+ * ============================================================ */
+
+export interface UploadProgress {
+  /** Сколько байт уже отправлено */
+  loaded: number;
+  /** Общий размер тела запроса в байтах */
+  total: number;
+}
+
+export interface UploadOptions {
+  /** Колбек прогресса. Вызывается во время отправки многократно. */
+  onProgress?: (progress: UploadProgress) => void;
+  /** Сигнал отмены. abort() прервёт загрузку и резолвнёт промис ошибкой. */
+  signal?: AbortSignal;
+  /** HTTP-метод. По умолчанию POST. */
+  method?: "POST" | "PUT" | "PATCH";
+}
+
+/**
+ * Отправляет multipart/form-data с прогрессом и возможностью отмены.
+ * Cookie сессии передаётся автоматически (withCredentials = true).
+ * При HTTP-ошибке кидает ApiError, при отмене — AbortError.
+ */
+export function apiUpload(
+  path: string,
+  body: FormData,
+  options: UploadOptions = {},
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const method = options.method ?? "POST";
+    xhr.open(method, buildUrl(path));
+    xhr.withCredentials = true;
+    xhr.responseType = "text";
+
+    if (options.onProgress) {
+      const cb = options.onProgress;
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+          cb({ loaded: e.loaded, total: e.total });
+        }
+      });
+    }
+
+    xhr.addEventListener("load", () => {
+      const status = xhr.status;
+      const text = xhr.responseText;
+      const ct = xhr.getResponseHeader("content-type") ?? "";
+      let parsed: unknown = null;
+      if (text) {
+        if (ct.includes("application/json")) {
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = text;
+          }
+        } else {
+          parsed = text;
+        }
+      }
+      if (status >= 200 && status < 300) {
+        resolve(parsed);
+      } else {
+        reject(new ApiError(parseErrorMessage(parsed, status), status, parsed));
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new ApiError("Сетевая ошибка при загрузке", 0, null));
+    });
+
+    xhr.addEventListener("abort", () => {
+      reject(new DOMException("Загрузка отменена", "AbortError"));
+    });
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        // Уже отменён до отправки — отменяем сразу.
+        reject(new DOMException("Загрузка отменена", "AbortError"));
+        return;
+      }
+      options.signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+
+    xhr.send(body);
+  });
+}

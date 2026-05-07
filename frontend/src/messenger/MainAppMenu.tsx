@@ -6,7 +6,13 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { ApiError, apiFetch, apiJson } from "../api/client";
+import {
+  ApiError,
+  apiFetch,
+  apiJson,
+  apiUpload,
+  type UploadProgress,
+} from "../api/client";
 import { fetchUsers, primeUser } from "../api/userCache";
 import type {
   Chat,
@@ -111,6 +117,8 @@ export function MainAppMenu({
   const [u, setU] = useState<CurrentUser>(currentUser);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
+  /** Прогресс отправки фото профиля (null когда загрузка не идёт) */
+  const [avatarUploadProgress, setAvatarUploadProgress] = useState<UploadProgress | null>(null);
 
   useEffect(() => {
     setU(currentUser);
@@ -242,16 +250,23 @@ export function MainAppMenu({
     setProfileError(null);
     const fd = new FormData();
     fd.append("file", file);
+    setAvatarUploadProgress({ loaded: 0, total: file.size });
     try {
-      await apiFetch("/users/me/avatar", { method: "PUT", body: fd });
+      await apiUpload("/users/me/avatar", fd, {
+        method: "PUT",
+        onProgress: (p) => setAvatarUploadProgress(p),
+      });
       await onRefreshUser();
       onMediaInvalidate?.();
       void alert("Фото обновлено");
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       const message =
         e instanceof ApiError ? e.message : "Не удалось загрузить фото";
       setProfileError(message);
       void alert(message, "Ошибка загрузки");
+    } finally {
+      setAvatarUploadProgress(null);
     }
   };
 
@@ -740,6 +755,7 @@ export function MainAppMenu({
           >
             {section === "profile" ? (
               <ProfileSection
+                avatarUploadProgress={avatarUploadProgress}
                 u={u}
                 setU={setU}
                 error={profileError}
@@ -895,6 +911,7 @@ function ProfileSection({
   onDelete,
   onOpenSelfChat,
   assetEpoch,
+  avatarUploadProgress,
 }: {
   u: CurrentUser;
   setU: (u: CurrentUser) => void;
@@ -906,7 +923,9 @@ function ProfileSection({
   onDelete: () => void;
   onOpenSelfChat?: () => void;
   assetEpoch: number;
+  avatarUploadProgress: UploadProgress | null;
 }) {
+  const uploading = avatarUploadProgress !== null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div
@@ -926,8 +945,8 @@ function ProfileSection({
             size={120}
           />
           <label
-            title="Сменить фото"
-            aria-label="Сменить фото"
+            title={uploading ? "Идёт загрузка…" : "Сменить фото"}
+            aria-label={uploading ? "Идёт загрузка фото" : "Сменить фото"}
             style={{
               position: "absolute",
               bottom: -2,
@@ -939,9 +958,11 @@ function ProfileSection({
               color: "var(--on-accent)",
               display: "grid",
               placeItems: "center",
-              cursor: "pointer",
+              cursor: uploading ? "wait" : "pointer",
               border: "2.5px solid var(--bg-elevated)",
               transition: "background-color 120ms ease, transform 80ms ease",
+              pointerEvents: uploading ? "none" : "auto",
+              opacity: uploading ? 0.85 : 1,
             }}
             onMouseDown={(e) => {
               (e.currentTarget as HTMLElement).style.transform = "scale(0.92)";
@@ -953,11 +974,16 @@ function ProfileSection({
               (e.currentTarget as HTMLElement).style.transform = "";
             }}
           >
-            <IconCamera size={18} />
+            {uploading ? (
+              <span className="ui-spinner" aria-hidden="true" />
+            ) : (
+              <IconCamera size={18} />
+            )}
             <input
               type="file"
               accept="image/*"
               className="sr-only"
+              disabled={uploading}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 e.target.value = "";
@@ -985,6 +1011,10 @@ function ProfileSection({
           </div>
         ) : null}
       </div>
+
+      {avatarUploadProgress ? (
+        <AvatarUploadProgress progress={avatarUploadProgress} />
+      ) : null}
 
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
         {(
@@ -2146,6 +2176,78 @@ function BlocksSection({
 /* =============================================================
    Helpers
    ============================================================= */
+
+/**
+ * Полоска прогресса для загрузки аватара. Показывает % и абсолютные байты,
+ * чтобы пользователь видел, что файл реально отправляется.
+ */
+function AvatarUploadProgress({ progress }: { progress: UploadProgress }) {
+  const percent =
+    progress.total > 0
+      ? Math.min(100, Math.round((progress.loaded / progress.total) * 100))
+      : 0;
+  const isUnknownTotal = progress.total === 0;
+  const isFinalizing = !isUnknownTotal && progress.loaded >= progress.total;
+  const fmt = (b: number) => {
+    if (b < 1024) return `${b} Б`;
+    const kb = b / 1024;
+    if (kb < 1024) return `${kb.toFixed(0)} КБ`;
+    const mb = kb / 1024;
+    return `${mb.toFixed(mb < 10 ? 1 : 0)} МБ`;
+  };
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        padding: "8px 10px",
+        background: "var(--bg-muted)",
+        border: "1.5px solid var(--border)",
+        borderRadius: 10,
+      }}
+      aria-live="polite"
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          fontSize: "0.85rem",
+          color: "var(--text-muted)",
+        }}
+      >
+        <span>
+          {isFinalizing
+            ? "Обработка фото на сервере…"
+            : isUnknownTotal
+              ? "Загрузка фото…"
+              : `Загрузка фото: ${percent}% · ${fmt(progress.loaded)} / ${fmt(progress.total)}`}
+        </span>
+      </div>
+      <div
+        style={{
+          width: "100%",
+          height: 6,
+          background: "var(--bg-subtle)",
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: isUnknownTotal ? "30%" : `${percent}%`,
+            height: "100%",
+            background: "var(--accent)",
+            borderRadius: 999,
+            transition: "width 120ms linear",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function EmptyHint({ text }: { text: string }) {
   return (

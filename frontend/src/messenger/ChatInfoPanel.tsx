@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, apiFetch, apiJson } from "../api/client";
+import {
+  ApiError,
+  apiFetch,
+  apiJson,
+  apiUpload,
+  type UploadProgress,
+} from "../api/client";
 import { fetchUsers, primeUser } from "../api/userCache";
 import type { Chat, ChatRole, UserInList } from "../api/types";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
@@ -74,6 +80,7 @@ export function ChatInfoPanel({
   const [nameEdit, setNameEdit] = useState(chat.name);
   const [chatProfileError, setChatProfileError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
+  const [avatarUploadProgress, setAvatarUploadProgress] = useState<UploadProgress | null>(null);
   const [friends, setFriends] = useState<UserInList[]>([]);
   const [fOff, setFOff] = useState(0);
   const [fDone, setFDone] = useState(false);
@@ -370,15 +377,19 @@ export function ChatInfoPanel({
     setChatProfileError(null);
     const fd = new FormData();
     fd.append("file", file);
+    setAvatarUploadProgress({ loaded: 0, total: file.size });
     try {
-      await apiFetch(`/chats/id/${chat.id}/avatar`, {
+      await apiUpload(`/chats/id/${chat.id}/avatar`, fd, {
         method: "PUT",
-        body: fd,
+        onProgress: (p) => setAvatarUploadProgress(p),
       });
       await onRefreshChats();
       void alert("Фото чата обновлено");
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       void alert(e instanceof ApiError ? e.message : "Не загружено");
+    } finally {
+      setAvatarUploadProgress(null);
     }
   };
 
@@ -592,8 +603,16 @@ export function ChatInfoPanel({
             <Avatar src={chatAvatarSrc} label={chatTitle} size={88} />
             {canEditChatProfile ? (
               <label
-                title="Сменить фото чата"
-                aria-label="Сменить фото чата"
+                title={
+                  avatarUploadProgress
+                    ? "Идёт загрузка…"
+                    : "Сменить фото чата"
+                }
+                aria-label={
+                  avatarUploadProgress
+                    ? "Идёт загрузка фото"
+                    : "Сменить фото чата"
+                }
                 style={{
                   position: "absolute",
                   bottom: -2,
@@ -605,9 +624,11 @@ export function ChatInfoPanel({
                   color: "var(--on-accent)",
                   display: "grid",
                   placeItems: "center",
-                  cursor: "pointer",
+                  cursor: avatarUploadProgress ? "wait" : "pointer",
                   border: "2px solid var(--bg-elevated)",
                   transition: "background-color 120ms ease, transform 80ms ease",
+                  pointerEvents: avatarUploadProgress ? "none" : "auto",
+                  opacity: avatarUploadProgress ? 0.85 : 1,
                 }}
                 onMouseDown={(e) => {
                   (e.currentTarget as HTMLElement).style.transform = "scale(0.9)";
@@ -619,11 +640,16 @@ export function ChatInfoPanel({
                   (e.currentTarget as HTMLElement).style.transform = "";
                 }}
               >
-                <IconCamera size={16} />
+                {avatarUploadProgress ? (
+                  <span className="ui-spinner" aria-hidden="true" />
+                ) : (
+                  <IconCamera size={16} />
+                )}
                 <input
                   type="file"
                   accept="image/*"
                   className="sr-only"
+                  disabled={!!avatarUploadProgress}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     e.target.value = "";
@@ -705,6 +731,9 @@ export function ChatInfoPanel({
             </button>
           </div>
           <ValidationError message={chatProfileError} />
+          {avatarUploadProgress ? (
+            <ChatAvatarUploadProgress progress={avatarUploadProgress} />
+          ) : null}
           <p
             style={{
               margin: 0,
@@ -1039,6 +1068,71 @@ export function ChatInfoPanel({
           </div>
         </ModalChrome>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Прогресс-бар загрузки аватара чата с процентом и абсолютными байтами.
+ */
+function ChatAvatarUploadProgress({ progress }: { progress: UploadProgress }) {
+  const percent =
+    progress.total > 0
+      ? Math.min(100, Math.round((progress.loaded / progress.total) * 100))
+      : 0;
+  const isUnknownTotal = progress.total === 0;
+  const isFinalizing = !isUnknownTotal && progress.loaded >= progress.total;
+  const fmt = (b: number) => {
+    if (b < 1024) return `${b} Б`;
+    const kb = b / 1024;
+    if (kb < 1024) return `${kb.toFixed(0)} КБ`;
+    const mb = kb / 1024;
+    return `${mb.toFixed(mb < 10 ? 1 : 0)} МБ`;
+  };
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        padding: "8px 10px",
+        background: "var(--bg-elevated)",
+        border: "1.5px solid var(--border)",
+        borderRadius: 10,
+      }}
+      aria-live="polite"
+    >
+      <div
+        style={{
+          fontSize: "0.85rem",
+          color: "var(--text-muted)",
+        }}
+      >
+        {isFinalizing
+          ? "Обработка фото на сервере…"
+          : isUnknownTotal
+            ? "Загрузка фото…"
+            : `Загрузка фото: ${percent}% · ${fmt(progress.loaded)} / ${fmt(progress.total)}`}
+      </div>
+      <div
+        style={{
+          width: "100%",
+          height: 6,
+          background: "var(--bg-subtle)",
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: isUnknownTotal ? "30%" : `${percent}%`,
+            height: "100%",
+            background: "var(--accent)",
+            borderRadius: 999,
+            transition: "width 120ms linear",
+          }}
+        />
+      </div>
     </div>
   );
 }

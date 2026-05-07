@@ -7,7 +7,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { ApiError, apiFetch, apiJson } from "../api/client";
+import { ApiError, apiFetch, apiJson, apiUpload, type UploadProgress } from "../api/client";
 import type {
   Chat,
   ChatRole,
@@ -188,6 +188,11 @@ export function MessengerShell({
   const [privatePeerByChat, setPrivatePeerByChat] = useState<Record<number, number>>({});
   const [composeError, setComposeError] = useState<string | null>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+
+  /** Прогресс отправки вложений (null когда идёт загрузка без вложений или ничего не отправляется). */
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  /** Контроллер для отмены текущей загрузки вложений по кнопке. */
+  const uploadAbortRef = useRef<AbortController | null>(null);
 
   const replyInflightRef = useRef(new Set<number>());
 
@@ -791,19 +796,43 @@ export function MessengerShell({
     for (const item of pickedFiles) {
       fd.append("file_attachments_list", item.file, item.file.name);
     }
+    const hasFiles = pickedFiles.length > 0;
     try {
-      await apiFetch(`/chats/id/${selectedId}/messages`, {
-        method: "POST",
-        body: fd,
-      });
+      if (hasFiles) {
+        // С вложениями шлём через XHR для отображения прогресса и поддержки отмены.
+        const ctrl = new AbortController();
+        uploadAbortRef.current = ctrl;
+        setUploadProgress({ loaded: 0, total: 0 });
+        try {
+          await apiUpload(`/chats/id/${selectedId}/messages`, fd, {
+            onProgress: (p) => setUploadProgress(p),
+            signal: ctrl.signal,
+          });
+        } finally {
+          uploadAbortRef.current = null;
+          setUploadProgress(null);
+        }
+      } else {
+        await apiFetch(`/chats/id/${selectedId}/messages`, {
+          method: "POST",
+          body: fd,
+        });
+      }
       setDraft("");
       clearPickedFiles();
       setReplyTo(null);
       shouldScrollToBottomRef.current = true;
       reloadMsgs();
     } catch (e) {
+      // Отмена пользователем — не считаем за ошибку и не показываем алерт.
+      if (e instanceof DOMException && e.name === "AbortError") return;
       void alert(e instanceof ApiError ? e.message : "Не отправлено");
     }
+  };
+
+  /** Прерывает текущую загрузку вложения. Если загрузка не идёт — no-op. */
+  const cancelUpload = () => {
+    uploadAbortRef.current?.abort();
   };
 
   const handleDelete = async (m: Message) => {
@@ -1715,6 +1744,12 @@ export function MessengerShell({
                         resetAttachmentInput();
                       }}
                     />
+                    {uploadProgress ? (
+                      <UploadProgressBar
+                        progress={uploadProgress}
+                        onCancel={cancelUpload}
+                      />
+                    ) : null}
                     <ValidationError message={composeError} />
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                       {!editing ? (
@@ -1734,6 +1769,7 @@ export function MessengerShell({
                             onClick={openAttachmentPicker}
                             className="ui-icon-btn"
                             style={{ flexShrink: 0 }}
+                            disabled={!!uploadProgress}
                           >
                             <IconPaperclip size={20} />
                           </button>
@@ -1756,6 +1792,7 @@ export function MessengerShell({
                         }}
                         placeholder="Сообщение…"
                         rows={2}
+                        disabled={!!uploadProgress}
                         style={{
                           flex: 1,
                           minHeight: 60,
@@ -1773,8 +1810,13 @@ export function MessengerShell({
                         }
                         title={editing ? "Сохранить" : "Отправить"}
                         aria-label={editing ? "Сохранить" : "Отправить"}
+                        disabled={!!uploadProgress}
                       >
-                        <IconSend size={20} />
+                        {uploadProgress ? (
+                          <span className="ui-spinner" aria-hidden="true" />
+                        ) : (
+                          <IconSend size={20} />
+                        )}
                       </button>
                     </div>
                   </>
@@ -2066,4 +2108,96 @@ function kindIcon(kind: Chat["chat_kind"]) {
   if (kind === "GROUP") return <IconUsers size={12} />;
   if (kind === "CHANNEL") return <IconHash size={12} />;
   return <IconUser size={12} />;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(0)} КБ`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} МБ`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} ГБ`;
+}
+
+/**
+ * Прогресс-бар отправки вложений с возможностью отмены.
+ * Показывает процент, абсолютные байты и кнопку отмены текущей загрузки.
+ */
+function UploadProgressBar({
+  progress,
+  onCancel,
+}: {
+  progress: UploadProgress;
+  onCancel: () => void;
+}) {
+  const percent =
+    progress.total > 0
+      ? Math.min(100, Math.round((progress.loaded / progress.total) * 100))
+      : 0;
+  const isUnknownTotal = progress.total === 0;
+  const isFinalizing = !isUnknownTotal && progress.loaded >= progress.total;
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        padding: "8px 10px",
+        marginBottom: 8,
+        background: "var(--bg-muted)",
+        border: "1.5px solid var(--border)",
+        borderRadius: 10,
+      }}
+      aria-live="polite"
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          fontSize: "0.85rem",
+          color: "var(--text-muted)",
+        }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <IconPaperclip size={14} />
+          {isFinalizing
+            ? "Обработка на сервере…"
+            : isUnknownTotal
+              ? "Загрузка вложения…"
+              : `Загрузка вложения: ${percent}% · ${formatBytes(progress.loaded)} / ${formatBytes(progress.total)}`}
+        </span>
+        <button
+          type="button"
+          className="ui-btn ui-btn--ghost ui-btn--sm"
+          onClick={onCancel}
+          title="Отменить загрузку"
+        >
+          <IconX size={14} /> Отмена
+        </button>
+      </div>
+      {/* Полоса прогресса. Если total неизвестен — показываем «бегущую» */}
+      <div
+        style={{
+          width: "100%",
+          height: 6,
+          background: "var(--bg-subtle)",
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: isUnknownTotal ? "30%" : `${percent}%`,
+            height: "100%",
+            background: "var(--accent)",
+            borderRadius: 999,
+            transition: "width 120ms linear",
+          }}
+        />
+      </div>
+    </div>
+  );
 }
