@@ -14,6 +14,8 @@ export interface Chat {
   date_and_time_created: string;
   has_avatar?: boolean;
   last_message?: ChatLastMessage | null;
+  /** Для PRIVATE-чатов содержит ID собеседника (берётся прямо с сервера). */
+  peer_user_id?: number | null;
 }
 
 export interface UserInList {

@@ -18,6 +18,10 @@ class ChatResponseModel(pydantic.BaseModel):
     date_and_time_created: datetime.datetime = pydantic.Field()
     has_avatar: bool = pydantic.Field(default=False)
     last_message: ChatLastMessagePreviewModel | None = pydantic.Field(default=None)
+    # Для PRIVATE-чатов содержит ID собеседника (того, кто не равен текущему
+    # пользователю). Для остальных типов чатов — null. Позволяет клиенту
+    # построить аватар собеседника без дополнительного запроса к /memberships.
+    peer_user_id: int | None = pydantic.Field(default=None)
 
 
 class ChatMembershipResponseModel(pydantic.BaseModel):

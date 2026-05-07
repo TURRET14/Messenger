@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
+import { fetchUsers, primeUser } from "../api/userCache";
 import type { Chat, ChatRole, UserInList } from "../api/types";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
 import {
@@ -113,12 +114,18 @@ export function ChatInfoPanel({
           });
           if (batch.length < PAGE) setDone(true);
         }
-        for (const row of batch) {
-          const uid = row.chat_user_id;
-          void apiJson<UserInList>(`/users/id/${uid}`)
-            .then((u) => setUserMap((p) => (p[uid] ? p : { ...p, [uid]: u })))
-            .catch(() => {});
-        }
+        // Bulk-загрузка пользователей-участников одним запросом.
+        const uids = batch.map((row) => row.chat_user_id);
+        void fetchUsers(uids).then((map) => {
+          if (map.size === 0) return;
+          setUserMap((prev) => {
+            const next = { ...prev };
+            for (const [uid, u] of map) {
+              if (!next[uid]) next[uid] = u;
+            }
+            return next;
+          });
+        });
       } catch (e) {
         void alert(e instanceof ApiError ? e.message : "Участники не загружены");
       } finally {
@@ -146,12 +153,18 @@ export function ChatInfoPanel({
         lastLoadedPage = mult;
         const ids = new Set(merged.map((item) => item.id));
         merged.push(...batch.filter((item) => !ids.has(item.id)));
-        for (const row of batch) {
-          const uid = row.chat_user_id;
-          void apiJson<UserInList>(`/users/id/${uid}`)
-            .then((u) => setUserMap((p) => (p[uid] ? p : { ...p, [uid]: u })))
-            .catch(() => {});
-        }
+        // Bulk-загрузка пользователей-участников одним запросом.
+        const uids = batch.map((row) => row.chat_user_id);
+        void fetchUsers(uids).then((map) => {
+          if (map.size === 0) return;
+          setUserMap((prev) => {
+            const next = { ...prev };
+            for (const [uid, u] of map) {
+              if (!next[uid]) next[uid] = u;
+            }
+            return next;
+          });
+        });
         if (batch.length < PAGE) {
           nextDone = true;
           break;
@@ -201,6 +214,8 @@ export function ChatInfoPanel({
         const batch = await apiJson<(UserInList & { date_and_time_added?: string })[]>(
           `/users/me/friends?offset_multiplier=${reset ? 0 : mult}`,
         );
+        // Кешируем для ensureName и других экранов.
+        batch.forEach(primeUser);
         if (reset) {
           setFriends(batch);
           setFOff(0);

@@ -16,6 +16,7 @@ import type {
   MessageReadMark,
   UserInList,
 } from "../api/types";
+import { fetchUser, primeUser } from "../api/userCache";
 import { SERVICE_DISPLAY_NAME } from "../config";
 import {
   IconChat,
@@ -78,16 +79,17 @@ function mergeByIdAsc(existing: Message[], incoming: Message): Message[] {
   return next;
 }
 
-async function fetchMyRole(chatId: number, userId: number): Promise<ChatRole | null> {
-  let off = 0;
-  for (;;) {
-    const batch = await apiJson<MembershipRow[]>(
-      `/chats/id/${chatId}/memberships?offset_multiplier=${off}`,
+async function fetchMyRole(chatId: number): Promise<ChatRole | null> {
+  // Один запрос вместо постраничного перебора всех memberships.
+  // Бэкенд вернёт 404 (CHAT_MEMBERSHIP_NOT_FOUND_ERROR) если пользователь не участник.
+  try {
+    const m = await apiJson<MembershipRow>(
+      `/chats/id/${chatId}/memberships/me`,
     );
-    const mine = batch.find((r) => r.chat_user_id === userId);
-    if (mine) return mine.chat_role;
-    if (batch.length < PAGE) return null;
-    off += 1;
+    return m.chat_role;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
   }
 }
 
@@ -205,10 +207,11 @@ export function MessengerShell({
     if (nameInflightRef.current.has(uid)) return;
     nameInflightRef.current.add(uid);
     try {
-      const u = await apiJson<UserInList>(`/users/id/${uid}`);
-      setUserNames((p) => (p[uid] ? p : { ...p, [uid]: userListLabel(u) }));
-    } catch {
-      setUserNames((p) => (p[uid] ? p : { ...p, [uid]: `#${uid}` }));
+      // fetchUser автоматически батчит несколько одновременных запросов
+      // в один POST /users/by-ids — N запросов превращаются в 1.
+      const u = await fetchUser(uid);
+      const label = u ? userListLabel(u) : `#${uid}`;
+      setUserNames((p) => (p[uid] ? p : { ...p, [uid]: label }));
     } finally {
       nameInflightRef.current.delete(uid);
     }
@@ -428,6 +431,17 @@ export function MessengerShell({
   const ensurePrivatePeer = useCallback(
     async (chatId: number) => {
       if (privatePeerByChat[chatId]) return privatePeerByChat[chatId];
+      // Пытаемся взять peer прямо из загруженного объекта чата —
+      // backend теперь отдаёт peer_user_id для PRIVATE-чатов.
+      const fromList = chats.find((c) => c.id === chatId);
+      const fromSelected = selectedChatData?.id === chatId ? selectedChatData : null;
+      const peerFromChat = fromList?.peer_user_id ?? fromSelected?.peer_user_id ?? null;
+      if (peerFromChat != null) {
+        setPrivatePeerByChat((p) => ({ ...p, [chatId]: peerFromChat }));
+        return peerFromChat;
+      }
+      // Fallback на старую логику — нужен только если чат был создан до того,
+      // как стал доступен peer_user_id (для надёжности при WebSocket-обновлениях).
       const mem = await apiJson<MembershipRow[]>(
         `/chats/id/${chatId}/memberships?offset_multiplier=0`,
       );
@@ -438,7 +452,7 @@ export function MessengerShell({
       }
       return null;
     },
-    [privatePeerByChat, currentUser.id],
+    [privatePeerByChat, currentUser.id, chats, selectedChatData],
   );
 
   useEffect(() => {
@@ -490,7 +504,7 @@ export function MessengerShell({
               : c,
           ),
         );
-        const role = await fetchMyRole(selectedId, currentUser.id);
+        const role = await fetchMyRole(selectedId);
         setMyRole(role);
       } catch {
         setMyRole(null);
@@ -938,6 +952,8 @@ export function MessengerShell({
       const hits = await apiJson<UserInList[]>(
         `/users/search/by-username?username=${encodeURIComponent(q)}&offset_multiplier=0`,
       );
+      // Кешируем найденных пользователей, чтобы ensureName не делал лишних запросов.
+      hits.forEach(primeUser);
       setSearchHits(hits);
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Поиск не выполнен");

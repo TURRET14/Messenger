@@ -285,6 +285,20 @@ async def get_user_profile(
     return await backend.routers.chats.service.get_user_profile(profile_user, db)
 
 
+@chats_router.get("/chats/id/{chat_id}/memberships/me", response_class = fastapi.responses.JSONResponse, response_model = ChatMembershipResponseModel,
+description =
+"""
+Маршрут получения членства текущего пользователя в указанном чате.
+Возвращает 404 (CHAT_MEMBERSHIP_NOT_FOUND_ERROR) если пользователь не участник.
+""")
+async def get_my_chat_membership(
+    selected_chat: Chat = fastapi.Depends(backend.routers.dependencies.get_chat_by_path_id),
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await backend.routers.chats.service.get_my_chat_membership(selected_chat, current_user, db)
+
+
 @chats_router.get("/chats/id/{chat_id}/memberships/id/{chat_membership_id}",
 description =
 """

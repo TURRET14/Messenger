@@ -311,6 +311,23 @@ async def get_users(
 
     return await service.get_users(offset_multiplier, db)
 
+@users_router.get("/users/by-ids", response_class = fastapi.responses.JSONResponse, response_model = list[UserInListResponseModel], dependencies = [fastapi.Depends(backend.routers.dependencies.get_session_user)],
+description =
+"""
+Bulk-маршрут получения нескольких пользователей одним запросом по списку их ID.
+Заменяет N+1 запросов на /users/id/{id} при подгрузке имён авторов сообщений,
+отправителей заявок и т.п. Несуществующие ID просто отсутствуют в ответе.
+Максимум 200 ID за запрос.
+
+Использование: GET /users/by-ids?ids=1&ids=2&ids=3
+""")
+async def get_users_by_ids(
+    ids: list[int] = fastapi.Query(min_length = 1, max_length = 200),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.JSONResponse:
+
+    return await service.get_users_by_ids(ids, db)
+
+
 @users_router.get("/users/search/by-username", response_class = fastapi.responses.JSONResponse, response_model = list[UserInListResponseModel], dependencies = [fastapi.Depends(backend.routers.dependencies.get_session_user)],
 description =
 """

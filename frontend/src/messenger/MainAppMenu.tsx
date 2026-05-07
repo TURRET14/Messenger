@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, apiFetch, apiJson } from "../api/client";
+import { fetchUsers, primeUser } from "../api/userCache";
 import type {
   Chat,
   CurrentUser,
@@ -319,6 +320,8 @@ export function MainAppMenu({
             `/users/search/by-names?${p.toString()}`,
           );
         }
+        // Кешируем найденных пользователей для других экранов (профиль и т.п.).
+        batch.forEach(primeUser);
         if (reset) {
           uPageRef.current = 0;
           setUsers(batch);
@@ -385,6 +388,8 @@ export function MainAppMenu({
             `/users/me/friends/search/by-names?${p.toString()}`,
           );
         }
+        // Кешируем найденных друзей для других экранов.
+        batch.forEach(primeUser);
         if (reset) {
           fPageRef.current = 0;
           setFriends(batch);
@@ -425,14 +430,18 @@ export function MainAppMenu({
         });
         if (batch.length < PAGE) setIDone(true);
       }
-      for (const r of batch) {
-        const sid = r.sender_user_id;
-        void apiJson<UserInList>(`/users/id/${sid}`)
-          .then((usr) =>
-            setIncomingUsers((p) => (p[sid] ? p : { ...p, [sid]: usr })),
-          )
-          .catch(() => {});
-      }
+      // Bulk-загрузка отправителей одним POST /users/by-ids вместо N запросов.
+      const senderIds = batch.map((r) => r.sender_user_id);
+      void fetchUsers(senderIds).then((map) => {
+        if (map.size === 0) return;
+        setIncomingUsers((prev) => {
+          const next = { ...prev };
+          for (const [uid, usr] of map) {
+            if (!next[uid]) next[uid] = usr;
+          }
+          return next;
+        });
+      });
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
     }
@@ -457,14 +466,18 @@ export function MainAppMenu({
         });
         if (batch.length < PAGE) setODone(true);
       }
-      for (const r of batch) {
-        const rid = r.receiver_user_id;
-        void apiJson<UserInList>(`/users/id/${rid}`)
-          .then((usr) =>
-            setOutgoingUsers((p) => (p[rid] ? p : { ...p, [rid]: usr })),
-          )
-          .catch(() => {});
-      }
+      // Bulk-загрузка получателей одним запросом.
+      const receiverIds = batch.map((r) => r.receiver_user_id);
+      void fetchUsers(receiverIds).then((map) => {
+        if (map.size === 0) return;
+        setOutgoingUsers((prev) => {
+          const next = { ...prev };
+          for (const [uid, usr] of map) {
+            if (!next[uid]) next[uid] = usr;
+          }
+          return next;
+        });
+      });
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
     }
@@ -488,15 +501,20 @@ export function MainAppMenu({
         });
         if (batch.length < PAGE) setBDone(true);
       }
-      for (const b of batch) {
-        const uid = b.blocked_user_id;
-        if (blockUsers[uid]) continue;
-        void apiJson<UserInList>(`/users/id/${uid}`)
-          .then((usr) =>
-            setBlockUsers((p) => (p[uid] ? p : { ...p, [uid]: usr })),
-          )
-          .catch(() => {});
-      }
+      // Bulk-загрузка заблокированных одним запросом.
+      const needIds = batch
+        .map((b) => b.blocked_user_id)
+        .filter((uid) => !blockUsers[uid]);
+      void fetchUsers(needIds).then((map) => {
+        if (map.size === 0) return;
+        setBlockUsers((prev) => {
+          const next = { ...prev };
+          for (const [uid, usr] of map) {
+            if (!next[uid]) next[uid] = usr;
+          }
+          return next;
+        });
+      });
     } catch (e) {
       void alert(e instanceof ApiError ? e.message : "Ошибка");
     }

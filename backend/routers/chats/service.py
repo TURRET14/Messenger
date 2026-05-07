@@ -123,13 +123,66 @@ async def get_all_chats(
         .subquery()
     )
 
+    # Для PRIVATE-чатов вычисляем ID собеседника прямо в SQL — иначе клиенту
+    # пришлось бы делать дополнительный запрос на каждый личный чат.
+    peer_user_id_subquery = (
+        sqlalchemy.select(ChatMembership.chat_user_id)
+        .where(sqlalchemy.and_(
+            ChatMembership.chat_id == Chat.id,
+            ChatMembership.chat_user_id != selected_user.id))
+        .limit(1)
+        .correlate(Chat)
+        .scalar_subquery()
+    )
+
+    # avatar_photo_path собеседника — нужен, чтобы определить has_avatar
+    # для PRIVATE-чатов прямо в SQL (без дополнительного запроса в Python).
+    peer_avatar_subquery = (
+        sqlalchemy.select(User.avatar_photo_path)
+        .select_from(ChatMembership)
+        .join(User, User.id == ChatMembership.chat_user_id)
+        .where(sqlalchemy.and_(
+            ChatMembership.chat_id == Chat.id,
+            ChatMembership.chat_user_id != selected_user.id))
+        .limit(1)
+        .correlate(Chat)
+        .scalar_subquery()
+    )
+
+    # avatar_photo_path владельца профиля — для PROFILE-чатов.
+    profile_owner_avatar_subquery = (
+        sqlalchemy.select(User.avatar_photo_path)
+        .where(User.id == Chat.owner_user_id)
+        .limit(1)
+        .correlate(Chat)
+        .scalar_subquery()
+    )
+
+    # Единое выражение has_avatar — выбирает источник аватара по типу чата.
+    # Для GROUP/CHANNEL — собственное поле чата, для PROFILE — владелец,
+    # для PRIVATE — собеседник. Если всё NULL → False.
+    has_avatar_expr = sqlalchemy.case(
+        (Chat.chat_kind.in_([ChatKind.GROUP, ChatKind.CHANNEL]),
+         Chat.avatar_photo_path.is_not(None)),
+        (Chat.chat_kind == ChatKind.PROFILE,
+         profile_owner_avatar_subquery.is_not(None)),
+        (Chat.chat_kind == ChatKind.PRIVATE,
+         peer_avatar_subquery.is_not(None)),
+        else_ = sqlalchemy.false(),
+    ).label("has_avatar")
+
     chats_list_raw: Sequence[tuple] = ((await db.execute(
     sqlalchemy.select(
     Chat,
     sqlalchemy.func.coalesce(Chat.name, sqlalchemy.select(sqlalchemy.func.concat_ws(" ", User.surname, User.name, User.second_name)).select_from(ChatMembership).where(sqlalchemy.and_(ChatMembership.chat_id == Chat.id, ChatMembership.chat_user_id != selected_user.id)).join(User, User.id == ChatMembership.chat_user_id).limit(1).scalar_subquery()).label("chat_name"),
     last_root_messages.c.message_text,
     last_root_messages.c.sender_user_id,
-    last_root_messages.c.date_and_time_sent)
+    last_root_messages.c.date_and_time_sent,
+    sqlalchemy.case(
+        (Chat.chat_kind == ChatKind.PRIVATE, peer_user_id_subquery),
+        else_ = None,
+    ).label("peer_user_id"),
+    has_avatar_expr)
     .select_from(ChatMembership)
     .where(sqlalchemy.and_(ChatMembership.chat_user_id == selected_user.id))
     .join(Chat, Chat.id == ChatMembership.chat_id)
@@ -148,6 +201,8 @@ async def get_all_chats(
         last_text: str | None = row[2]
         last_sender: int | None = row[3]
         last_sent: datetime.datetime | None = row[4]
+        peer_user_id: int | None = row[5]
+        has_avatar: bool = bool(row[6])
         last_preview: ChatLastMessagePreviewModel | None = None
         if last_sent is not None or last_text is not None or last_sender is not None:
             last_preview = ChatLastMessagePreviewModel(
@@ -155,7 +210,6 @@ async def get_all_chats(
                 sender_user_id = last_sender,
                 date_and_time_sent = last_sent,
             )
-        has_avatar: bool = await _chat_has_avatar_for_user(chat, selected_user, db)
         chats_list.append(ChatResponseModel(
         id = chat.id,
         chat_kind = chat.chat_kind,
@@ -163,7 +217,8 @@ async def get_all_chats(
         owner_user_id = chat.owner_user_id,
         date_and_time_created = chat.date_and_time_created,
         has_avatar = has_avatar,
-        last_message = last_preview))
+        last_message = last_preview,
+        peer_user_id = peer_user_id))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chats_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -179,6 +234,12 @@ async def get_chat(
 
     has_avatar: bool = await _chat_has_avatar_for_user(selected_chat, selected_user, db)
 
+    peer_user_id: int | None = None
+    if selected_chat.chat_kind == ChatKind.PRIVATE:
+        other_user = await backend.routers.chats.utils.get_other_chat_user(selected_chat, selected_user, db)
+        if other_user is not None:
+            peer_user_id = other_user.id
+
     chat_response = ChatResponseModel(
         id = selected_chat.id,
         chat_kind = selected_chat.chat_kind,
@@ -186,7 +247,8 @@ async def get_chat(
         owner_user_id = selected_chat.owner_user_id,
         date_and_time_created = selected_chat.date_and_time_created,
         has_avatar = has_avatar,
-        last_message = last_preview)
+        last_message = last_preview,
+        peer_user_id = peer_user_id)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chat_response), status_code = fastapi.status.HTTP_200_OK)
 
@@ -702,3 +764,28 @@ async def get_chat_membership(
     chat_role = selected_membership.chat_role)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(chat_user), status_code = fastapi.status.HTTP_200_OK)
+
+
+async def get_my_chat_membership(
+    selected_chat: Chat,
+    current_user: User,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+
+    membership: ChatMembership | None = await backend.routers.chats.utils.get_chat_user_membership(
+        selected_chat, current_user, db)
+
+    if not membership:
+        raise fastapi.exceptions.HTTPException(
+            status_code = backend.routers.errors.ErrorRegistry.chat_membership_not_found_error.error_status_code,
+            detail = backend.routers.errors.ErrorRegistry.chat_membership_not_found_error)
+
+    membership_response = ChatMembershipResponseModel(
+        id = membership.id,
+        chat_id = membership.chat_id,
+        chat_user_id = membership.chat_user_id,
+        date_and_time_added = membership.date_and_time_added,
+        chat_role = membership.chat_role)
+
+    return fastapi.responses.JSONResponse(
+        fastapi.encoders.jsonable_encoder(membership_response),
+        status_code = fastapi.status.HTTP_200_OK)

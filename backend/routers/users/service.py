@@ -467,6 +467,40 @@ async def get_users(
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(users_list), status_code = fastapi.status.HTTP_200_OK)
 
 
+async def get_users_by_ids(
+    ids: list[int],
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.JSONResponse:
+    """Bulk-загрузка пользователей по списку ID одним SQL-запросом.
+    Несуществующие ID просто отсутствуют в ответе (без ошибок).
+    Используется клиентом для подгрузки имён авторов сообщений, отправителей
+    заявок, заблокированных и т.п. — заменяет N+1 запросов на /users/id/{id}."""
+
+    # Дедуп ID на случай, если клиент прислал дубликаты — нагрузка на БД ниже.
+    unique_ids: list[int] = list({uid for uid in ids if uid >= 0})
+    if not unique_ids:
+        return fastapi.responses.JSONResponse([], status_code = fastapi.status.HTTP_200_OK)
+
+    users_list_raw: Sequence[User] = ((await db.execute(
+    sqlalchemy.select(User)
+    .where(User.id.in_(unique_ids))))
+    .scalars().all())
+
+    users_list: list[UserInListResponseModel] = [
+        UserInListResponseModel(
+            id = user.id,
+            username = user.username,
+            name = user.name,
+            surname = user.surname,
+            second_name = user.second_name,
+        )
+        for user in users_list_raw
+    ]
+
+    return fastapi.responses.JSONResponse(
+        fastapi.encoders.jsonable_encoder(users_list),
+        status_code = fastapi.status.HTTP_200_OK)
+
+
 async def search_users_by_username(
     offset_multiplier: int,
     search_username: str,
