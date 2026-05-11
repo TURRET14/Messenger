@@ -177,10 +177,25 @@ export function MessengerShell({
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesBottomRef = useRef<HTMLDivElement>(null);
   const shouldScrollToBottomRef = useRef(false);
-  const prependScrollRestoreRef = useRef<{
-    scrollHeight: number;
-    scrollTop: number;
+  /**
+   * Якорь для удержания позиции прокрутки при подгрузке старых сообщений.
+   * Вместо «прибавить дельту scrollHeight» (которая не работает, если
+   * новое содержимое позже меняет высоту — например, видео получает
+   * metadata, картинка декодируется) мы запоминаем DOM-узел сообщения,
+   * которое было первым видимым ДО prepend, и его смещение от верха
+   * viewport. Затем восстанавливаем scrollTop = node.offsetTop - offset
+   * и удерживаем эту позицию через ResizeObserver на короткое время,
+   * пока медиа не догрузится и layout не стабилизируется.
+   */
+  const scrollAnchorRef = useRef<{
+    messageId: number;
+    offsetFromViewportTop: number;
   } | null>(null);
+  /** Активное удержание якоря через ResizeObserver. cleanup останавливает его. */
+  const anchorHoldRef = useRef<{ cleanup: () => void } | null>(null);
+  /** Синхронные флаги защиты от параллельных пагинационных вызовов. */
+  const messagesLoadRef = useRef(false);
+  const searchChatLoadRef = useRef(false);
   const detachedSelectionRef = useRef(false);
   const readAllInFlightRef = useRef(false);
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -355,7 +370,12 @@ export function MessengerShell({
   }, [alert, ensureName]);
 
   const loadMoreChats = async () => {
-    if (loadingChats || chatsDone) return;
+    // chatLoadRef.current — синхронный флаг защиты от параллельных вызовов.
+    // React state (loadingChats) обновляется асинхронно, поэтому при быстром
+    // скролле onScroll успевает дёрнуть loadMoreChats несколько раз подряд
+    // ДО того как React перерисует. Без ref-защиты получим дубликаты страниц.
+    if (chatLoadRef.current || chatsDone) return;
+    chatLoadRef.current = true;
     setLoadingChats(true);
     try {
       const mult = chatPageRef.current + 1;
@@ -374,6 +394,7 @@ export function MessengerShell({
       void alert(e instanceof ApiError ? e.message : "Ошибка");
     } finally {
       setLoadingChats(false);
+      chatLoadRef.current = false;
     }
   };
 
@@ -520,13 +541,17 @@ export function MessengerShell({
   const loadMessages = useCallback(
     async (reset: boolean) => {
       if (!selectedId) return;
+      // ref-защита от параллельных вызовов: для reset перезаписываем
+      // (новый чат — старый load неактуален), для пагинации просто игнорируем.
+      if (messagesLoadRef.current && !reset) return;
+      messagesLoadRef.current = true;
       setLoadingMsg(true);
-      const scrollRestore =
+      // Захватываем якорь для удержания позиции прокрутки. Берём первое
+      // сообщение из текущего DOM как «опорное» — оно останется видимым
+      // на той же экранной позиции после prepend.
+      const anchor =
         !reset && !searchModeRef.current && messagesScrollRef.current
-          ? {
-              scrollHeight: messagesScrollRef.current.scrollHeight,
-              scrollTop: messagesScrollRef.current.scrollTop,
-            }
+          ? captureScrollAnchor(messagesScrollRef.current)
           : null;
       try {
         const mult = reset ? 0 : msgPageRef.current + 1;
@@ -542,13 +567,14 @@ export function MessengerShell({
         }
         const reversed = [...batch].reverse();
         if (reset) {
-          prependScrollRestoreRef.current = null;
+          scrollAnchorRef.current = null;
+          anchorHoldRef.current?.cleanup();
           shouldScrollToBottomRef.current = true;
           msgPageRef.current = 0;
           setMessages(reversed);
           setMsgDone(batch.length < PAGE);
         } else {
-          prependScrollRestoreRef.current = scrollRestore;
+          scrollAnchorRef.current = anchor;
           msgPageRef.current = mult;
           setMessages((prev) => [...reversed, ...prev]);
           if (batch.length < PAGE) setMsgDone(true);
@@ -578,6 +604,7 @@ export function MessengerShell({
         void alert(e instanceof ApiError ? e.message : "Сообщения не загружены");
       } finally {
         setLoadingMsg(false);
+        messagesLoadRef.current = false;
       }
     },
     [selectedId, commentRoot, alert, ensureName],
@@ -596,19 +623,24 @@ export function MessengerShell({
 
   const reloadMsgs = () => {
     if (selectedId) {
-      prependScrollRestoreRef.current = null;
+      scrollAnchorRef.current = null;
+      anchorHoldRef.current?.cleanup();
       shouldScrollToBottomRef.current = true;
       void loadMessages(true);
     }
   };
 
   useLayoutEffect(() => {
-    const restore = prependScrollRestoreRef.current;
-    if (restore) {
-      prependScrollRestoreRef.current = null;
+    const anchor = scrollAnchorRef.current;
+    if (anchor) {
+      scrollAnchorRef.current = null;
       const el = messagesScrollRef.current;
-      if (el) {
-        el.scrollTop = restore.scrollTop + (el.scrollHeight - restore.scrollHeight);
+      if (el && restoreScrollAnchor(el, anchor)) {
+        // После моментального восстановления — удерживаем якорь ещё короткое
+        // время через ResizeObserver, чтобы поздняя догрузка медиа
+        // (картинки, видео-metadata, аватары) не сместила вид.
+        anchorHoldRef.current?.cleanup();
+        anchorHoldRef.current = startAnchorHold(el, anchor);
       }
       updateJumpToBottomVisibility();
       return;
@@ -624,6 +656,14 @@ export function MessengerShell({
     forceScrollMessagesToBottom,
     updateJumpToBottomVisibility,
   ]);
+
+  // При размонтировании — отменяем удержание, чтобы не было утечек.
+  useEffect(() => {
+    return () => {
+      anchorHoldRef.current?.cleanup();
+      anchorHoldRef.current = null;
+    };
+  }, []);
 
   useLayoutEffect(() => {
     updateJumpToBottomVisibility();
@@ -908,9 +948,11 @@ export function MessengerShell({
       return;
     }
     setChatSearchError(null);
+    searchChatLoadRef.current = true;
     setLoadingSearchChat(true);
     try {
-      prependScrollRestoreRef.current = null;
+      scrollAnchorRef.current = null;
+      anchorHoldRef.current?.cleanup();
       const enc = encodeURIComponent(q);
       const path = commentRoot
         ? `/chats/id/${selectedId}/messages/id/${commentRoot.id}/comments/search?message_text=${enc}&offset_multiplier=0`
@@ -929,19 +971,19 @@ export function MessengerShell({
       void alert(e instanceof ApiError ? e.message : "Поиск не выполнен");
     } finally {
       setLoadingSearchChat(false);
+      searchChatLoadRef.current = false;
     }
   };
 
   const loadMoreSearchChat = async () => {
-    if (!selectedId || !searchMode || loadingSearchChat || searchChatDone) return;
+    if (!selectedId || !searchMode || searchChatDone) return;
+    if (searchChatLoadRef.current) return;
     const q = hdrSearch.trim();
     if (!q) return;
+    searchChatLoadRef.current = true;
     setLoadingSearchChat(true);
-    const scrollRestore = messagesScrollRef.current
-      ? {
-          scrollHeight: messagesScrollRef.current.scrollHeight,
-          scrollTop: messagesScrollRef.current.scrollTop,
-        }
+    const anchor = messagesScrollRef.current
+      ? captureScrollAnchor(messagesScrollRef.current)
       : null;
     try {
       const mult = searchChatPageRef.current + 1;
@@ -952,7 +994,7 @@ export function MessengerShell({
       const batch = await apiJson<Message[]>(path);
       searchChatPageRef.current = mult;
       const reversed = [...batch].reverse();
-      prependScrollRestoreRef.current = scrollRestore;
+      scrollAnchorRef.current = anchor;
       setSearchHitsChat((prev) => {
         const ids = new Set(prev.map((x) => x.id));
         const add = reversed.filter((x) => !ids.has(x.id));
@@ -966,6 +1008,7 @@ export function MessengerShell({
       void alert(e instanceof ApiError ? e.message : "Поиск не выполнен");
     } finally {
       setLoadingSearchChat(false);
+      searchChatLoadRef.current = false;
     }
   };
 
@@ -1530,11 +1573,13 @@ export function MessengerShell({
                   onScroll={(e) => {
                     const el = e.currentTarget;
                     updateJumpToBottomVisibility();
+                    // Защита от параллельных вызовов внутри самих loader-функций
+                    // (через messagesLoadRef / searchChatLoadRef) — здесь
+                    // достаточно проверки done и режима.
                     if (el.scrollTop < 60 && selectedChat) {
                       if (searchMode) {
-                        if (!loadingSearchChat && !searchChatDone)
-                          void loadMoreSearchChat();
-                      } else if (!loadingMsg && !msgDone) {
+                        if (!searchChatDone) void loadMoreSearchChat();
+                      } else if (!msgDone) {
                         void loadMessages(false);
                       }
                     }
@@ -2108,6 +2153,109 @@ function kindIcon(kind: Chat["chat_kind"]) {
   if (kind === "GROUP") return <IconUsers size={12} />;
   if (kind === "CHANNEL") return <IconHash size={12} />;
   return <IconUser size={12} />;
+}
+
+/* ============================================================
+ * Якорь прокрутки для сохранения позиции при подгрузке старых сообщений.
+ *
+ * Проблема: при prepend сообщений (scroll up → подгрузка) нельзя просто
+ * прибавить дельту scrollHeight, т.к. media (картинки, видео-metadata)
+ * догружаются асинхронно после рендера и меняют высоту.
+ *
+ * Решение: запоминаем DOM-узел первого видимого сообщения и его смещение
+ * от верха scroll-viewport. Восстанавливаем scrollTop = node.offsetTop -
+ * offset. Затем удерживаем якорь через ResizeObserver на короткое время,
+ * пока медиа не догрузится и layout не стабилизируется.
+ * ============================================================ */
+
+interface ScrollAnchor {
+  messageId: number;
+  /** На сколько пикселей якорь был смещён вниз от верха scroll viewport. */
+  offsetFromViewportTop: number;
+}
+
+function captureScrollAnchor(el: HTMLElement): ScrollAnchor | null {
+  const firstMsgEl = el.querySelector<HTMLElement>("[data-msg-id]");
+  if (!firstMsgEl) return null;
+  const messageId = Number(firstMsgEl.dataset.msgId);
+  if (!Number.isFinite(messageId)) return null;
+  return {
+    messageId,
+    offsetFromViewportTop: firstMsgEl.offsetTop - el.scrollTop,
+  };
+}
+
+function restoreScrollAnchor(el: HTMLElement, anchor: ScrollAnchor): boolean {
+  const target = el.querySelector<HTMLElement>(
+    `[data-msg-id="${anchor.messageId}"]`,
+  );
+  if (!target) return false;
+  el.scrollTop = target.offsetTop - anchor.offsetFromViewportTop;
+  return true;
+}
+
+/**
+ * Удерживает якорное сообщение на той же экранной позиции через
+ * ResizeObserver. Запускается после prepend и работает до тех пор, пока
+ * пользователь сам не начнёт скроллить — или пока не пройдёт ANCHOR_HOLD_MS.
+ */
+const ANCHOR_HOLD_MS = 2000;
+
+function startAnchorHold(
+  el: HTMLElement,
+  anchor: ScrollAnchor,
+): { cleanup: () => void } {
+  let active = true;
+
+  const recalibrate = () => {
+    if (!active) return;
+    const target = el.querySelector<HTMLElement>(
+      `[data-msg-id="${anchor.messageId}"]`,
+    );
+    if (!target) return;
+    const desiredScrollTop = target.offsetTop - anchor.offsetFromViewportTop;
+    // Игнорируем суб-пиксельные расхождения — иначе можем уйти в цикл.
+    if (Math.abs(el.scrollTop - desiredScrollTop) > 0.5) {
+      el.scrollTop = desiredScrollTop;
+    }
+  };
+
+  const onUserInteract = () => {
+    cleanup();
+  };
+
+  // wheel/touchmove/keydown — признаки того, что юзер сам начал скроллить.
+  // Не используем scroll event, потому что наш recalibrate сам его триггерит.
+  const opts: AddEventListenerOptions = { passive: true };
+  el.addEventListener("wheel", onUserInteract, opts);
+  el.addEventListener("touchmove", onUserInteract, opts);
+  el.addEventListener("pointerdown", onUserInteract, opts);
+
+  const observer = new ResizeObserver(() => {
+    // requestAnimationFrame даёт браузеру применить layout-изменения
+    // перед нашим recalibrate.
+    requestAnimationFrame(recalibrate);
+  });
+  observer.observe(el);
+  // Наблюдаем и за каждым прямым потомком — это поймает изменение
+  // высоты конкретного message bubble (когда подгружается картинка/видео).
+  for (const child of Array.from(el.children)) {
+    observer.observe(child);
+  }
+
+  const timeoutId = setTimeout(cleanup, ANCHOR_HOLD_MS);
+
+  function cleanup() {
+    if (!active) return;
+    active = false;
+    observer.disconnect();
+    el.removeEventListener("wheel", onUserInteract);
+    el.removeEventListener("touchmove", onUserInteract);
+    el.removeEventListener("pointerdown", onUserInteract);
+    clearTimeout(timeoutId);
+  }
+
+  return { cleanup };
 }
 
 function formatBytes(bytes: number): string {

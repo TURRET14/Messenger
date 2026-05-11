@@ -170,6 +170,7 @@ export function MessageBubble({
         <article
           onContextMenu={onContextMenu}
           className="anim-message-pop"
+          data-msg-id={m.id}
           style={{
             alignSelf: mine ? "flex-end" : "flex-start",
             maxWidth: "min(560px, 94%)",
