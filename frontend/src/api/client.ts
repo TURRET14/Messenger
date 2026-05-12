@@ -51,6 +51,45 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Имя глобального CustomEvent, отправляемого при 401 от API. App.tsx
+ * слушает его и инициирует выход из системы — после того, как любой
+ * вызов получает «недействительный токен», пользователь автоматически
+ * возвращается на экран входа (без необходимости перезагружать страницу).
+ */
+export const AUTH_EXPIRED_EVENT = "messenger:auth-expired";
+
+let authExpiredFired = false;
+
+/**
+ * Срабатывает только на «настоящий» 401 — истёкшую/удалённую сессию.
+ * Бэкенд использует 401 и для бизнес-ошибок («Неверный пароль» при
+ * подтверждении смены пароля/почты): такие ошибки автологаут вызывать
+ * не должны.
+ */
+function isAuthSessionFailure(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  const code = (body as ApiErrorBody).error_code;
+  return code === "UNAUTHORIZED_ERROR";
+}
+
+function notifyAuthExpired(body: unknown): void {
+  if (!isAuthSessionFailure(body)) return;
+  // Один 401 может породить десятки параллельных запросов — событие
+  // отправляем ровно один раз, пока пользователь не перелогинится.
+  if (authExpiredFired) return;
+  authExpiredFired = true;
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+}
+
+/**
+ * Сбрасывает «защёлку» однократной отправки события — вызывается App.tsx
+ * после успешного логина, чтобы следующая истёкшая сессия снова стрельнула.
+ */
+export function resetAuthExpiredLatch(): void {
+  authExpiredFired = false;
+}
+
 function parseErrorMessage(body: unknown, status: number): string {
   if (body && typeof body === "object") {
     const b = body as ApiErrorBody;
@@ -87,6 +126,7 @@ export async function apiFetch(
     } catch {
       body = null;
     }
+    if (res.status === 401) notifyAuthExpired(body);
     throw new ApiError(parseErrorMessage(body, res.status), res.status, body);
   }
 
@@ -168,6 +208,7 @@ export function apiUpload(
       if (status >= 200 && status < 300) {
         resolve(parsed);
       } else {
+        if (status === 401) notifyAuthExpired(parsed);
         reject(new ApiError(parseErrorMessage(parsed, status), status, parsed));
       }
     });

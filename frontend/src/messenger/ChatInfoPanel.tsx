@@ -6,7 +6,7 @@ import {
   apiUpload,
   type UploadProgress,
 } from "../api/client";
-import { fetchUsers, primeUser } from "../api/userCache";
+import { fetchUser, fetchUsers, peekUser, primeUser } from "../api/userCache";
 import type { Chat, ChatRole, UserInList } from "../api/types";
 import { Avatar, chatAvatarUrl, userAvatarUrl } from "../components/ui/Avatar";
 import {
@@ -393,6 +393,28 @@ export function ChatInfoPanel({
     }
   };
 
+  const resetAvatar = async () => {
+    if (
+      !(await confirm({
+        message: "Сбросить фото чата?",
+        danger: true,
+        confirmLabel: "Сбросить",
+      }))
+    ) {
+      return;
+    }
+    setChatProfileError(null);
+    try {
+      await apiFetch(`/chats/id/${chat.id}/avatar`, { method: "DELETE" });
+      await onRefreshChats();
+    } catch (e) {
+      const message =
+        e instanceof ApiError ? e.message : "Не удалось сбросить фото";
+      setChatProfileError(message);
+      void alert(message, "Ошибка");
+    }
+  };
+
   const addMember = async (userId: number) => {
     try {
       await apiFetch(`/chats/id/${chat.id}/users`, {
@@ -535,6 +557,40 @@ export function ChatInfoPanel({
           ? chatAvatarUrl(chat.id, assetEpoch)
           : null;
 
+  // Для PRIVATE/PROFILE буква-заглушка должна совпадать с username
+  // собеседника/владельца, а не с первой буквой ФИО из chat.name.
+  const headerUserId =
+    chat.chat_kind === "PROFILE"
+      ? chat.owner_user_id
+      : chat.chat_kind === "PRIVATE"
+        ? privatePeerId
+        : null;
+  const [headerUserLetter, setHeaderUserLetter] = useState<string | undefined>(
+    () => {
+      if (headerUserId == null) return undefined;
+      const cached = peekUser(headerUserId);
+      return cached?.username.trim()[0];
+    },
+  );
+  useEffect(() => {
+    if (headerUserId == null) {
+      setHeaderUserLetter(undefined);
+      return;
+    }
+    const cached = peekUser(headerUserId);
+    if (cached) {
+      setHeaderUserLetter(cached.username.trim()[0]);
+      return;
+    }
+    let cancelled = false;
+    void fetchUser(headerUserId).then((u) => {
+      if (!cancelled && u) setHeaderUserLetter(u.username.trim()[0]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [headerUserId]);
+
   const shell =
     variant === "sheet"
       ? {
@@ -600,7 +656,12 @@ export function ChatInfoPanel({
           }}
         >
           <div style={{ position: "relative" }}>
-            <Avatar src={chatAvatarSrc} label={chatTitle} size={88} />
+            <Avatar
+              src={chatAvatarSrc}
+              label={chatTitle}
+              letter={headerUserLetter}
+              size={88}
+            />
             {canEditChatProfile ? (
               <label
                 title={
@@ -658,6 +719,31 @@ export function ChatInfoPanel({
                 />
               </label>
             ) : null}
+            {canEditChatProfile && chat.has_avatar && !avatarUploadProgress ? (
+              <button
+                type="button"
+                onClick={() => void resetAvatar()}
+                title="Сбросить фото"
+                aria-label="Сбросить фото"
+                style={{
+                  position: "absolute",
+                  bottom: -2,
+                  left: -2,
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  background: "var(--danger)",
+                  color: "var(--on-danger)",
+                  display: "grid",
+                  placeItems: "center",
+                  cursor: "pointer",
+                  border: "2px solid var(--bg-elevated)",
+                  padding: 0,
+                }}
+              >
+                <IconTrash size={16} />
+              </button>
+            ) : null}
           </div>
           <div
             style={{
@@ -692,11 +778,9 @@ export function ChatInfoPanel({
         >
           <div
             style={{
-              fontSize: "0.78rem",
+              fontSize: "0.85rem",
               color: "var(--text-muted)",
               fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
               marginBottom: 2,
             }}
           >
@@ -924,9 +1008,8 @@ export function ChatInfoPanel({
             );
           })}
           {loading && members.length === 0 ? (
-            <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
-              <span className="ui-spinner" aria-hidden="true" /> Загружаем
-              участников…
+            <div className="ui-loader-center">
+              <span className="ui-spinner ui-spinner--xl" aria-hidden="true" />
             </div>
           ) : null}
         </div>

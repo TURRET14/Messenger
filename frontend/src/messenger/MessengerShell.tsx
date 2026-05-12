@@ -40,6 +40,7 @@ import { ValidationError } from "../components/ui/ValidationError";
 import { ThemeSwitcher } from "../components/ThemeSwitcher";
 import { useDialogs } from "../context/DialogsContext";
 import { useBackendSocket } from "../hooks/useBackendSocket";
+import { useBackButton } from "../hooks/useBackButton";
 import {
   validateAttachmentFiles,
   validateChatName,
@@ -142,6 +143,8 @@ export function MessengerShell({
   const [editing, setEditing] = useState<Message | null>(null);
 
   const [replyCache, setReplyCache] = useState<Record<number, Message>>({});
+  const replyCacheRef = useRef(replyCache);
+  replyCacheRef.current = replyCache;
   const [userNames, setUserNames] = useState<Record<number, string>>({});
   const userNamesRef = useRef(userNames);
   userNamesRef.current = userNames;
@@ -237,6 +240,33 @@ export function MessengerShell({
     }
   }, []);
 
+  // Подгружает исходное сообщение reply_message_id в replyCache, если его ещё
+  // нет. Нужно как при первичной загрузке списка, так и при получении нового
+  // сообщения через WebSocket — иначе у пришедшего в реальном времени ответа
+  // блок-цитата не отрисуется до перезагрузки.
+  const ensureReply = useCallback(
+    (chatId: number, rid: number) => {
+      if (replyCacheRef.current[rid] || replyInflightRef.current.has(rid)) {
+        return;
+      }
+      replyInflightRef.current.add(rid);
+      void (async () => {
+        try {
+          const rm = await apiJson<Message>(
+            `/chats/id/${chatId}/messages/id/${rid}`,
+          );
+          setReplyCache((p) => (p[rm.id] ? p : { ...p, [rm.id]: rm }));
+          if (rm.sender_user_id) void ensureName(rm.sender_user_id);
+        } catch {
+          /* skip */
+        } finally {
+          replyInflightRef.current.delete(rid);
+        }
+      })();
+    },
+    [ensureName],
+  );
+
   const resetAttachmentInput = useCallback(() => {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -305,18 +335,19 @@ export function MessengerShell({
   }, [scrollMessagesToBottom]);
 
   const appendPickedFiles = useCallback(
-    (picked: FileList | null) => {
-      if (!picked?.length) {
+    (picked: FileList | File[] | null) => {
+      const arr = picked ? Array.from(picked) : [];
+      if (!arr.length) {
         resetAttachmentInput();
         return;
       }
-      const validationError = validateAttachmentFiles(picked);
+      const validationError = validateAttachmentFiles(arr);
       if (validationError) {
         setComposeError(validationError);
         resetAttachmentInput();
         return;
       }
-      const nextItems = Array.from(picked, (file) => ({
+      const nextItems = arr.map((file) => ({
         id: nextPickedFileIdRef.current++,
         file,
       }));
@@ -500,15 +531,41 @@ export function MessengerShell({
 
   useEffect(() => {
     for (const c of chats) {
-      if (c.chat_kind === "PRIVATE") void ensurePrivatePeer(c.id);
+      if (c.chat_kind === "PRIVATE") {
+        void ensurePrivatePeer(c.id);
+        // Подгружаем username собеседника, чтобы буква-заглушка для
+        // аватарки PRIVATE-чата соответствовала его username, а не первой
+        // букве ФИО, которое сервер кладёт в chat.name.
+        if (c.peer_user_id != null) void ensureName(c.peer_user_id);
+      } else if (c.chat_kind === "PROFILE" && c.owner_user_id != null) {
+        void ensureName(c.owner_user_id);
+      }
     }
-  }, [chats, ensurePrivatePeer]);
+  }, [chats, ensurePrivatePeer, ensureName]);
+
+  useEffect(() => {
+    // privatePeerByChat обновляется асинхронно после ensurePrivatePeer:
+    // дополнительно подтягиваем username, когда peer_user_id появился в
+    // мапе позже, чем загрузился сам чат.
+    for (const [, peerId] of Object.entries(privatePeerByChat)) {
+      void ensureName(peerId);
+    }
+  }, [privatePeerByChat, ensureName]);
 
   useEffect(() => {
     if (selectedChatData?.chat_kind === "PRIVATE") {
       void ensurePrivatePeer(selectedChatData.id);
     }
   }, [selectedChatData?.id, selectedChatData?.chat_kind, ensurePrivatePeer]);
+
+  const refreshMyRole = useCallback(async (chatId: number) => {
+    try {
+      const role = await fetchMyRole(chatId);
+      setMyRole(role);
+    } catch {
+      setMyRole(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedId) {
@@ -530,13 +587,31 @@ export function MessengerShell({
               : c,
           ),
         );
-        const role = await fetchMyRole(selectedId);
-        setMyRole(role);
+        await refreshMyRole(selectedId);
       } catch {
         setMyRole(null);
       }
     })();
-  }, [selectedId, currentUser.id]);
+  }, [selectedId, currentUser.id, refreshMyRole]);
+
+  // Назначение/снятие админки и смена владельца приходят как
+  // memberships/put — пере-запрашиваем роль текущего пользователя, чтобы
+  // право писать в канал (canPostRoot) обновилось без перезагрузки страницы.
+  useBackendSocket(
+    selectedId ? `/chats/${selectedId}/memberships/put` : "",
+    !!selectedId,
+    () => {
+      if (selectedId) void refreshMyRole(selectedId);
+    },
+  );
+  // Если меня исключили из чата — myRole должен обнулиться.
+  useBackendSocket(
+    selectedId ? `/chats/${selectedId}/memberships/delete` : "",
+    !!selectedId,
+    () => {
+      if (selectedId) void refreshMyRole(selectedId);
+    },
+  );
 
   const loadMessages = useCallback(
     async (reset: boolean) => {
@@ -582,22 +657,7 @@ export function MessengerShell({
         for (const m of batch) {
           if (m.sender_user_id) void ensureName(m.sender_user_id);
           if (m.reply_message_id) {
-            const rid = m.reply_message_id;
-            if (replyCache[rid] || replyInflightRef.current.has(rid)) continue;
-            replyInflightRef.current.add(rid);
-            void (async () => {
-              try {
-                const rm = await apiJson<Message>(
-                  `/chats/id/${selectedId}/messages/id/${rid}`,
-                );
-                setReplyCache((p) => (p[rm.id] ? p : { ...p, [rm.id]: rm }));
-                if (rm.sender_user_id) void ensureName(rm.sender_user_id);
-              } catch {
-                /* skip */
-              } finally {
-                replyInflightRef.current.delete(rid);
-              }
-            })();
+            ensureReply(selectedId, m.reply_message_id);
           }
         }
       } catch (e) {
@@ -607,7 +667,7 @@ export function MessengerShell({
         messagesLoadRef.current = false;
       }
     },
-    [selectedId, commentRoot, alert, ensureName],
+    [selectedId, commentRoot, alert, ensureName, ensureReply],
   );
 
   useEffect(() => {
@@ -687,11 +747,12 @@ export function MessengerShell({
         }
         setMessages((prev) => mergeByIdAsc(prev, data));
         if (data.sender_user_id) void ensureName(data.sender_user_id);
+        if (data.reply_message_id) ensureReply(data.chat_id, data.reply_message_id);
       } catch {
         reloadMsgs();
       }
     },
-    [selectedId, parentKey, currentUser.id, ensureName, isNearMessagesBottom],
+    [selectedId, parentKey, currentUser.id, ensureName, ensureReply, isNearMessagesBottom],
   );
 
   const onWsDel = useCallback(
@@ -818,6 +879,34 @@ export function MessengerShell({
     if (uid == null) return "Система";
     if (uid === currentUser.id) return "Вы";
     return userNames[uid] ?? `…${uid}`;
+  };
+
+  /** Первая буква username отправителя для аватара-заглушки. */
+  const avatarLetterFor = (uid: number | null): string | undefined => {
+    if (uid == null) return undefined;
+    if (uid === currentUser.id) return currentUser.username?.trim()[0];
+    // userNames кеширует userListLabel = "<username> — <ФИО>", т.е. первый
+    // символ всегда совпадает с первой буквой username.
+    const cached = userNames[uid];
+    return cached ? cached.trim()[0] : undefined;
+  };
+
+  /**
+   * Первая буква username для аватарки чата. PRIVATE и PROFILE по сути
+   * представляют конкретного пользователя — у них буква должна совпадать
+   * с username собеседника/владельца, а не с первой буквой ФИО (которое
+   * сервер кладёт в chat.name). Для групп/каналов возвращает undefined —
+   * пусть Avatar возьмёт первый символ названия чата.
+   */
+  const chatAvatarLetter = (c: Chat): string | undefined => {
+    if (c.chat_kind === "PRIVATE") {
+      const peer = c.peer_user_id ?? privatePeerByChat[c.id] ?? null;
+      return peer != null ? avatarLetterFor(peer) : undefined;
+    }
+    if (c.chat_kind === "PROFILE" && c.owner_user_id != null) {
+      return avatarLetterFor(c.owner_user_id);
+    }
+    return undefined;
   };
 
   const handleSend = async () => {
@@ -1118,6 +1207,22 @@ export function MessengerShell({
   const showChatList = wide || !selectedId;
   const showThread = wide || !!selectedId;
 
+  // Системная кнопка «Назад» закрывает соответствующий слой UI вместо того,
+  // чтобы выкидывать пользователя из приложения. Хук поддерживает стек:
+  // слои регистрируются в порядке открытия, Back снимает верхний.
+  useBackButton(!wide && !!selectedId, () => {
+    // На мобильном клик по чату — это смена «маршрута». Возврат закрывает
+    // открытый чат и возвращает к списку, а не закрывает страницу.
+    detachedSelectionRef.current = true;
+    setSelectedId(null);
+    setSelectedChatData(null);
+  });
+  useBackButton(!!commentRoot, () => setCommentRoot(null));
+  useBackButton(!wide && infoOpen, () => setInfoOpen(false));
+  useBackButton(composeOpen, () => setComposeOpen(false));
+  useBackButton(menuOpen, () => setMenuOpen(false));
+  useBackButton(profileUserId != null, () => setProfileUserId(null));
+
   const sidebar: CSSProperties = {
     width: wide ? 320 : "100%",
     maxWidth: "100%",
@@ -1231,8 +1336,8 @@ export function MessengerShell({
             }}
           >
             {loadingChats && chats.length === 0 ? (
-              <div style={{ padding: 12, color: "var(--text-muted)" }}>
-                <span className="ui-spinner" aria-hidden="true" /> Загружаем чаты…
+              <div className="ui-loader-center">
+                <span className="ui-spinner ui-spinner--xl" aria-hidden="true" />
               </div>
             ) : null}
             {sortedChats.map((c) => {
@@ -1263,7 +1368,12 @@ export function MessengerShell({
                     textAlign: "left",
                   }}
                 >
-                  <Avatar src={chatAvatarSrc(c)} label={chatLabel(c)} size={48} />
+                  <Avatar
+                    src={chatAvatarSrc(c)}
+                    label={chatLabel(c)}
+                    letter={chatAvatarLetter(c)}
+                    size={48}
+                  />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div
                       style={{
@@ -1416,6 +1526,7 @@ export function MessengerShell({
                 <Avatar
                   src={chatAvatarSrc(selectedChat)}
                   label={chatLabel(selectedChat)}
+                  letter={chatAvatarLetter(selectedChat)}
                   size={42}
                 />
                 <div
@@ -1598,6 +1709,7 @@ export function MessengerShell({
                         chatId={selectedChat.id}
                         currentUserId={currentUser.id}
                         displaySender={displayName(commentRoot.sender_user_id)}
+                        senderAvatarLetter={avatarLetterFor(commentRoot.sender_user_id)}
                         replySnippet={null}
                         replySenderLabel={null}
                         interactive={false}
@@ -1607,14 +1719,14 @@ export function MessengerShell({
                     </div>
                   ) : null}
                   {searchMode && loadingSearchChat && searchHitsChat.length === 0 ? (
-                    <span style={{ color: "var(--text-muted)" }}>
-                      <span className="ui-spinner" aria-hidden="true" /> Поиск…
-                    </span>
+                    <div className="ui-loader-center">
+                      <span className="ui-spinner ui-spinner--xl" aria-hidden="true" />
+                    </div>
                   ) : null}
                   {!searchMode && loadingMsg && messages.length === 0 ? (
-                    <span style={{ color: "var(--text-muted)" }}>
-                      <span className="ui-spinner" aria-hidden="true" /> Загрузка…
-                    </span>
+                    <div className="ui-loader-center">
+                      <span className="ui-spinner ui-spinner--xl" aria-hidden="true" />
+                    </div>
                   ) : null}
                   {(searchMode ? searchHitsChat : messages).map((m) => {
                     const rm = m.reply_message_id
@@ -1627,14 +1739,19 @@ export function MessengerShell({
                         chatId={selectedChat.id}
                         currentUserId={currentUser.id}
                         displaySender={displayName(m.sender_user_id)}
+                        senderAvatarLetter={avatarLetterFor(m.sender_user_id)}
                         replySnippet={rm?.message_text ?? null}
                         replySenderLabel={
                           rm ? displayName(rm.sender_user_id) : null
                         }
-                        onReply={() => {
-                          setReplyTo(m);
-                          setEditing(null);
-                        }}
+                        onReply={
+                          canPostHere
+                            ? () => {
+                                setReplyTo(m);
+                                setEditing(null);
+                              }
+                            : undefined
+                        }
                         onEdit={
                           m.sender_user_id === currentUser.id
                             ? () => {
@@ -1834,6 +1951,17 @@ export function MessengerShell({
                             if (editing) void handleSaveEdit();
                             else void handleSend();
                           }
+                        }}
+                        onPaste={(e) => {
+                          // Если в буфере обмена есть файл (скриншот,
+                          // картинка, документ) — прикрепляем его как
+                          // вложение и подавляем стандартную вставку
+                          // (иначе путь до файла попал бы в текст).
+                          if (editing || uploadProgress) return;
+                          const items = e.clipboardData?.files;
+                          if (!items || items.length === 0) return;
+                          e.preventDefault();
+                          appendPickedFiles(items);
                         }}
                         placeholder="Сообщение…"
                         rows={2}
@@ -2051,7 +2179,8 @@ export function MessengerShell({
           assetEpoch={assetEpoch}
           onClose={() => setMenuOpen(false)}
           onOpenProfile={(id) => {
-            setMenuOpen(false);
+            // Меню оставляем открытым: оно закроется только при переходе в ленту
+            // пользователя (onOpenChat) — карточка профиля рисуется поверх него.
             setProfileUserId(id);
           }}
           onOpenChat={(id, options) => {

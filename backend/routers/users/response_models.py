@@ -39,6 +39,7 @@ class UserResponseModel(pydantic.BaseModel):
     phone_number: str | None = pydantic.Field()
     about: str | None = pydantic.Field()
     date_and_time_registered: datetime.datetime = pydantic.Field()
+    has_avatar: bool = pydantic.Field()
 
 
 class CurrentUserResponseModel(UserResponseModel):
@@ -55,6 +56,7 @@ class SessionResponseModel(pydantic.BaseModel):
     user_agent: str = pydantic.Field()
     creation_datetime: int = pydantic.Field()
     expiration_datetime: int = pydantic.Field()
+    is_current: bool = pydantic.Field()
 
 
 class UserBlockResponseModel(pydantic.BaseModel):

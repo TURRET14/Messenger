@@ -39,6 +39,7 @@ export interface UserPublic extends UserInList {
   phone_number: string | null;
   about: string | null;
   date_and_time_registered: string;
+  has_avatar: boolean;
 }
 
 export interface CurrentUser extends UserPublic {

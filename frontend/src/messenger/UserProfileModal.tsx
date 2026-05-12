@@ -200,17 +200,8 @@ export function UserProfileModal({
   if (loading || !u) {
     return (
       <ModalChrome title="Профиль" onClose={onClose} narrow>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            padding: 24,
-            color: "var(--text-muted)",
-          }}
-        >
-          <span className="ui-spinner" aria-hidden="true" /> Загружаем профиль…
+        <div className="ui-loader-center">
+          <span className="ui-spinner ui-spinner--xl" aria-hidden="true" />
         </div>
       </ModalChrome>
     );
@@ -258,18 +249,19 @@ export function UserProfileModal({
       <div className="profile-action-grid" style={{ marginBottom: 16 }}>
         {!isSelf ? (
           <>
-            {friendship ? (
-              <button
-                type="button"
-                className="profile-action-card"
-                onClick={() => void openPrivate()}
-              >
-                <span className="icon-wrap">
-                  <IconMessageCircle size={18} />
-                </span>
-                Личный чат
-              </button>
-            ) : (
+            {/* Личный чат можно открыть с любым пользователем, включая
+                не-друзей — кнопка показывается всегда. */}
+            <button
+              type="button"
+              className="profile-action-card"
+              onClick={() => void openPrivate()}
+            >
+              <span className="icon-wrap">
+                <IconMessageCircle size={18} />
+              </span>
+              Личный чат
+            </button>
+            {!friendship ? (
               <button
                 type="button"
                 className="profile-action-card"
@@ -280,7 +272,7 @@ export function UserProfileModal({
                 </span>
                 В друзья
               </button>
-            )}
+            ) : null}
             <button
               type="button"
               className="profile-action-card"

@@ -24,7 +24,6 @@ import type {
 } from "../api/types";
 import {
   IconArrowUp,
-  IconAtSign,
   IconBan,
   IconCamera,
   IconChat,
@@ -33,6 +32,8 @@ import {
   IconInbox,
   IconKey,
   IconMail,
+  IconMonitor,
+  IconRefresh,
   IconSearch,
   IconShield,
   IconTrash,
@@ -267,6 +268,27 @@ export function MainAppMenu({
       void alert(message, "Ошибка загрузки");
     } finally {
       setAvatarUploadProgress(null);
+    }
+  };
+
+  const resetAvatar = async () => {
+    if (
+      !(await confirm({
+        message: "Сбросить фото профиля?",
+        danger: true,
+        confirmLabel: "Сбросить",
+      }))
+    ) {
+      return;
+    }
+    try {
+      await apiFetch("/users/me/avatar", { method: "DELETE" });
+      await onRefreshUser();
+      onMediaInvalidate?.();
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : "Не удалось сбросить фото";
+      setProfileError(message);
+      void alert(message, "Ошибка");
     }
   };
 
@@ -763,6 +785,7 @@ export function MainAppMenu({
                 saving={profileSaving}
                 onSave={() => void saveProfile()}
                 onUploadAvatar={(file) => void uploadAvatar(file)}
+                onResetAvatar={() => void resetAvatar()}
                 onDelete={() => void deleteCurrentUser()}
                 onOpenSelfChat={
                   onOpenChat
@@ -794,6 +817,7 @@ export function MainAppMenu({
                 onChangeLogin={() => setLoginDialogOpen(true)}
                 onChangePassword={() => setPasswordDialogOpen(true)}
                 onChangeEmail={() => setEmailDialogOpen(true)}
+                onLogout={onUserDeleted}
               />
             ) : null}
             {section === "users" ? (
@@ -908,6 +932,7 @@ function ProfileSection({
   saving,
   onSave,
   onUploadAvatar,
+  onResetAvatar,
   onDelete,
   onOpenSelfChat,
   assetEpoch,
@@ -920,6 +945,7 @@ function ProfileSection({
   saving: boolean;
   onSave: () => void;
   onUploadAvatar: (file: File) => void;
+  onResetAvatar: () => void;
   onDelete: () => void;
   onOpenSelfChat?: () => void;
   assetEpoch: number;
@@ -942,6 +968,7 @@ function ProfileSection({
           <Avatar
             src={userAvatarUrl(u.id, assetEpoch)}
             label={u.name || u.username}
+            letter={avatarLetterFromUser(u)}
             size={120}
           />
           <label
@@ -991,6 +1018,31 @@ function ProfileSection({
               }}
             />
           </label>
+          {u.has_avatar && !uploading ? (
+            <button
+              type="button"
+              onClick={onResetAvatar}
+              title="Сбросить фото"
+              aria-label="Сбросить фото"
+              style={{
+                position: "absolute",
+                bottom: -2,
+                left: -2,
+                width: 38,
+                height: 38,
+                borderRadius: "50%",
+                background: "var(--danger)",
+                color: "var(--on-danger)",
+                display: "grid",
+                placeItems: "center",
+                cursor: "pointer",
+                border: "2.5px solid var(--bg-elevated)",
+                padding: 0,
+              }}
+            >
+              <IconTrash size={18} />
+            </button>
+          ) : null}
         </div>
 
         {/* Справа от аватара — единственное основное действие.
@@ -1150,17 +1202,19 @@ function SecuritySection({
   onChangeLogin,
   onChangePassword,
   onChangeEmail,
+  onLogout,
 }: {
   currentLogin: string;
   emailAddress: string;
   onChangeLogin: () => void;
   onChangePassword: () => void;
   onChangeEmail: () => void;
+  onLogout?: () => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <SecurityCard
-        icon={<IconAtSign size={22} />}
+        icon={<IconUser size={22} />}
         title="Логин"
         description={currentLogin || "Загрузка…"}
         actionLabel="Сменить"
@@ -1193,6 +1247,206 @@ function SecuritySection({
         Изменения каждого параметра подтверждаются вводом текущего пароля или
         кода из письма. Это защищает аккаунт от несанкционированного доступа.
       </p>
+      <SessionsSection onLogout={onLogout} />
+    </div>
+  );
+}
+
+/* =============================================================
+   Sessions section — список активных сессий пользователя с возможностью
+   удалить любую из них. Удаление текущей сессии завершает логин.
+   ============================================================= */
+
+interface SessionItem {
+  session_id: string;
+  user_id: number;
+  user_agent: string;
+  creation_datetime: number;
+  expiration_datetime: number;
+  is_current: boolean;
+}
+
+function formatUnixDateTime(unix: number): string {
+  if (!unix || !Number.isFinite(unix)) return "—";
+  const d = new Date(unix * 1000);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return (
+    `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
+function SessionsSection({ onLogout }: { onLogout?: () => void }) {
+  const { alert, confirm } = useDialogs();
+  const [sessions, setSessions] = useState<SessionItem[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiJson<SessionItem[]>("/users/me/sessions");
+      setSessions(data);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Не удалось загрузить сессии");
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const deleteOne = async (sid: string, isCurrent: boolean) => {
+    const ok = await confirm({
+      title: "Завершить сессию?",
+      message: isCurrent
+        ? "Это текущая сессия — после удаления вы выйдете из аккаунта."
+        : "Устройство будет немедленно отключено от аккаунта.",
+      confirmLabel: "Завершить",
+      danger: true,
+    });
+    if (!ok) return;
+    setDeleting(sid);
+    try {
+      await apiFetch("/users/me/sessions", {
+        method: "DELETE",
+        body: JSON.stringify({ session_id: sid }),
+      });
+      if (isCurrent) {
+        // Сервер отозвал нашу куку — корректно выходим из приложения через
+        // тот же путь, что и обычный logout (закрывает WS, чистит state).
+        onLogout?.();
+        return;
+      }
+      setSessions((prev) => (prev ? prev.filter((s) => s.session_id !== sid) : prev));
+    } catch (e) {
+      void alert(
+        e instanceof ApiError ? e.message : "Не удалось завершить сессию",
+        "Ошибка",
+      );
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 2px",
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>Активные сессии</div>
+        <button
+          type="button"
+          className="ui-btn ui-btn--ghost ui-btn--sm"
+          onClick={() => void load()}
+          disabled={loading}
+          title="Обновить список"
+          aria-label="Обновить список"
+        >
+          <IconRefresh size={16} />
+        </button>
+      </div>
+      {loading && !sessions ? (
+        <div className="ui-loader-center" style={{ minHeight: 80 }}>
+          <span className="ui-spinner ui-spinner--xl" aria-hidden="true" />
+        </div>
+      ) : error && (!sessions || sessions.length === 0) ? (
+        <ValidationError message={error} />
+      ) : sessions && sessions.length === 0 ? (
+        <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+          Активных сессий не найдено.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {sessions?.map((s) => {
+            const isCurrent = s.is_current;
+            return (
+              <div
+                key={s.session_id}
+                className="ui-card"
+                style={{
+                  padding: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  borderColor: isCurrent ? "var(--accent)" : undefined,
+                  borderWidth: isCurrent ? 2 : undefined,
+                  background: isCurrent ? "var(--accent-soft)" : undefined,
+                }}
+              >
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    background: isCurrent ? "var(--accent-soft)" : "var(--bg-muted)",
+                    color: isCurrent ? "var(--accent)" : "var(--text-muted)",
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <IconMonitor size={20} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        maxWidth: "100%",
+                      }}
+                      title={s.user_agent}
+                    >
+                      {s.user_agent || "Неизвестное устройство"}
+                    </span>
+                    {isCurrent ? (
+                      <span className="ui-chip ui-chip--accent">Текущая</span>
+                    ) : null}
+                  </div>
+                  <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                    Создана: {formatUnixDateTime(s.creation_datetime)} · истекает:{" "}
+                    {formatUnixDateTime(s.expiration_datetime)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="ui-icon-btn ui-icon-btn--danger"
+                  onClick={() => void deleteOne(s.session_id, isCurrent)}
+                  disabled={deleting === s.session_id}
+                  title={isCurrent ? "Завершить текущую сессию" : "Завершить сессию"}
+                  aria-label="Завершить сессию"
+                >
+                  {deleting === s.session_id ? (
+                    <span className="ui-spinner" aria-hidden="true" />
+                  ) : (
+                    <IconTrash size={18} />
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

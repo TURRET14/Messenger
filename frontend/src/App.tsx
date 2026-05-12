@@ -6,7 +6,13 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { ApiError, apiFetch, apiJson } from "./api/client";
+import {
+  ApiError,
+  AUTH_EXPIRED_EVENT,
+  apiFetch,
+  apiJson,
+  resetAuthExpiredLatch,
+} from "./api/client";
 import type { CurrentUser } from "./api/types";
 import {
   IconAtSign,
@@ -77,6 +83,21 @@ export default function App() {
       /* сессия могла уже истечь */
     }
     setScreen({ name: "login" });
+    resetAuthExpiredLatch();
+  }, []);
+
+  // Глобальная обработка 401: api/client стреляет CustomEvent, когда любой
+  // запрос вернул «недействительный токен». Не показываем собственный
+  // диалог — сообщение об ошибке уже выводится в catch-блоке вызывающего
+  // кода. Просто молча возвращаемся на экран входа, чтобы пользователь
+  // оказался там сразу, как только закроет уже открытый диалог.
+  useEffect(() => {
+    const onAuthExpired = () => {
+      setScreen({ name: "login" });
+      resetAuthExpiredLatch();
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
   }, []);
 
   if (screen.name === "loading") {
@@ -86,11 +107,9 @@ export default function App() {
           height: "100%",
           display: "grid",
           placeItems: "center",
-          color: "var(--text-muted)",
-          gap: 12,
         }}
       >
-        <span className="ui-spinner ui-spinner--lg" aria-hidden="true" />
+        <span className="ui-spinner ui-spinner--xl" aria-hidden="true" />
       </div>
     );
   }
@@ -426,7 +445,7 @@ function AuthShell({
             <form noValidate onSubmit={(e) => void handleLogin(e)} style={formStack}>
               <label className="ui-field">
                 <span className="ui-field-label">Логин</span>
-                <FieldWithIcon icon={<IconAtSign size={18} />}>
+                <FieldWithIcon icon={<IconUser size={18} />}>
                   <input
                     className="ui-input"
                     style={inputWithIconStyle}

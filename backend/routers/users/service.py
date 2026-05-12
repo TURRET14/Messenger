@@ -182,6 +182,7 @@ async def confirm_password_reset(
 
 async def get_all_sessions(
     selected_user: User,
+    current_session_id: str | None,
     redis_client: RedisClient) -> fastapi.responses.JSONResponse:
 
     user_sessions_data_list_raw: list[SessionModel] = await redis_client.get_all_user_sessions_data(selected_user.id)
@@ -194,7 +195,8 @@ async def get_all_sessions(
         user_id = session_data.user_id,
         user_agent = session_data.user_agent,
         creation_datetime = session_data.creation_datetime,
-        expiration_datetime = session_data.expiration_datetime))
+        expiration_datetime = session_data.expiration_datetime,
+        is_current = (session_data.session_id == current_session_id)))
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_sessions_data_list), status_code = fastapi.status.HTTP_200_OK)
 
@@ -224,6 +226,7 @@ async def get_user(
     selected_user: User,
     is_current_user: bool) -> fastapi.responses.JSONResponse:
 
+    has_avatar: bool = selected_user.avatar_photo_path is not None
     if is_current_user:
         user_data: CurrentUserResponseModel | UserResponseModel = CurrentUserResponseModel(
             id = selected_user.id,
@@ -236,7 +239,8 @@ async def get_user(
             email_address = selected_user.email_address,
             phone_number = selected_user.phone_number,
             about = selected_user.about,
-            date_and_time_registered = selected_user.date_and_time_registered)
+            date_and_time_registered = selected_user.date_and_time_registered,
+            has_avatar = has_avatar)
     else:
         user_data = UserResponseModel(
             id = selected_user.id,
@@ -248,7 +252,8 @@ async def get_user(
             gender = selected_user.gender,
             phone_number = selected_user.phone_number,
             about = selected_user.about,
-            date_and_time_registered = selected_user.date_and_time_registered)
+            date_and_time_registered = selected_user.date_and_time_registered,
+            has_avatar = has_avatar)
 
     return fastapi.responses.JSONResponse(fastapi.encoders.jsonable_encoder(user_data), status_code = fastapi.status.HTTP_200_OK)
 
@@ -397,6 +402,22 @@ async def update_user_avatar(
         await minio_client.delete_file(MinioBucket.users_avatars, old_avatar_photo_path)
 
     return fastapi.responses.Response(status_code=fastapi.status.HTTP_204_NO_CONTENT)
+
+
+async def delete_user_avatar(
+    selected_user: User,
+    minio_client: MinioClient,
+    db: sqlalchemy.ext.asyncio.AsyncSession) -> fastapi.responses.Response:
+
+    old_avatar_photo_path: str | None = selected_user.avatar_photo_path
+    if old_avatar_photo_path is None:
+        return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
+
+    selected_user.avatar_photo_path = None
+    await db.commit()
+    await minio_client.delete_file(MinioBucket.users_avatars, old_avatar_photo_path)
+
+    return fastapi.responses.Response(status_code = fastapi.status.HTTP_204_NO_CONTENT)
 
 
 async def delete_user(

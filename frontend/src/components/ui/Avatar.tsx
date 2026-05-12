@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { apiUrl } from "../../api/client";
 
 const wrap = (size: number, clickable: boolean): CSSProperties => ({
@@ -28,19 +28,29 @@ const wrap = (size: number, clickable: boolean): CSSProperties => ({
 export function Avatar({
   src,
   label,
+  letter: letterOverride,
   size = 40,
   alt = "",
   onClick,
 }: {
   src: string | null;
-  /** Подпись и буква-заглушка (например ФИО или имя, не username) */
+  /** Подпись для title/aria. Буква-заглушка берётся из letter, если указана. */
   label: string;
+  /** Явная буква-заглушка (для user-аватаров — первая буква username). */
+  letter?: string;
   size?: number;
   alt?: string;
   onClick?: () => void;
 }) {
   const [failed, setFailed] = useState(false);
-  const letter = (label.trim()[0] ?? "?").toUpperCase();
+  // При смене src (например, после загрузки новой аватарки — cache-bust меняет
+  // URL) сбрасываем failed, иначе компонент так и останется на букве-заглушке
+  // до перемонтирования.
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+  const baseLetter = letterOverride ?? label.trim()[0] ?? "?";
+  const letter = baseLetter.toUpperCase();
 
   const wrapperStyle = wrap(size, !!onClick);
   const wrapperProps = onClick

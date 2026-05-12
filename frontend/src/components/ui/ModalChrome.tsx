@@ -1,5 +1,23 @@
-import { useEffect, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { IconX } from "../Icons";
+
+// Стек активных ModalChrome — нужен, чтобы Escape закрывал только самый
+// верхний модал. Иначе при открытом профиле поверх меню одно нажатие
+// Escape закрывало бы и профиль, и меню одновременно (раньше каждый
+// ModalChrome вешал свой собственный document keydown-листенер).
+type EscCloser = () => void;
+const escStack: EscCloser[] = [];
+let escListenerInstalled = false;
+
+function ensureEscListener(): void {
+  if (escListenerInstalled) return;
+  escListenerInstalled = true;
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const top = escStack[escStack.length - 1];
+    if (top) top();
+  });
+}
 
 const overlay: CSSProperties = {
   position: "fixed",
@@ -54,13 +72,17 @@ export function ModalChrome({
   hideHeader?: boolean;
   closeOnBackdrop?: boolean;
 }) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    ensureEscListener();
+    const closer: EscCloser = () => onCloseRef.current();
+    escStack.push(closer);
+    return () => {
+      const idx = escStack.lastIndexOf(closer);
+      if (idx >= 0) escStack.splice(idx, 1);
     };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, []);
 
   return (
     <div

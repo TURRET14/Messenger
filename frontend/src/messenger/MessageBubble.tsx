@@ -63,6 +63,7 @@ export function MessageBubble({
   chatId: _chatId,
   currentUserId,
   displaySender,
+  senderAvatarLetter,
   replySnippet,
   replySenderLabel,
   onReply,
@@ -81,6 +82,8 @@ export function MessageBubble({
   chatId: number;
   currentUserId: number;
   displaySender: string;
+  /** Первая буква username отправителя для аватара-заглушки. */
+  senderAvatarLetter?: string;
   replySnippet?: string | null;
   replySenderLabel?: string | null;
   onReply?: () => void;
@@ -219,6 +222,7 @@ export function MessageBubble({
               <Avatar
                 src={userAvatarUrl(m.sender_user_id, avatarEpoch)}
                 label={displaySender}
+                letter={senderAvatarLetter}
                 size={26}
                 alt=""
                 onClick={handleAuthorClick}
@@ -315,6 +319,50 @@ export function MessageBubble({
   );
 }
 
+/**
+ * Видео-превью со скрытием плеера, если браузер не поддерживает кодек.
+ * preload="metadata" заставляет браузер скачать только заголовки —
+ * если декодер не находит подходящий codec, сработает onError и плеер
+ * пропадёт; ниже останется только карточка с расширением и кнопкой
+ * «открыть». Иначе пустой чёрный плеер вводил пользователя в заблуждение.
+ */
+function VideoPreview({ url }: { url: string }) {
+  const [unsupported, setUnsupported] = useState(false);
+  if (unsupported) return null;
+  return (
+    <video
+      src={url}
+      controls
+      preload="metadata"
+      playsInline
+      onError={(e) => {
+        const v = e.currentTarget;
+        // MEDIA_ERR_SRC_NOT_SUPPORTED = 4 — неподдерживаемый формат/кодек.
+        // Прочие ошибки (сеть, прерывание) тоже скрывают плеер, чтобы не
+        // оставлять пустой чёрный прямоугольник.
+        if (v.error) setUnsupported(true);
+      }}
+      style={{ maxHeight: 240, width: "100%", display: "block" }}
+    />
+  );
+}
+
+function AudioPreview({ url }: { url: string }) {
+  const [unsupported, setUnsupported] = useState(false);
+  if (unsupported) return null;
+  return (
+    <audio
+      src={url}
+      controls
+      preload="metadata"
+      onError={(e) => {
+        if (e.currentTarget.error) setUnsupported(true);
+      }}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
 function AttachmentPreview({
   att,
   url,
@@ -369,21 +417,8 @@ function AttachmentPreview({
           />
         </button>
       ) : null}
-      {kind === "video" ? (
-        // preload="metadata" — браузер скачает только заголовки видео
-        // (несколько КБ): длительность, разрешение, кодеки. Сам поток
-        // начнётся по нажатию play, перемотка через HTTP Range мгновенна.
-        <video
-          src={url}
-          controls
-          preload="metadata"
-          playsInline
-          style={{ maxHeight: 240, width: "100%" }}
-        />
-      ) : null}
-      {kind === "audio" ? (
-        <audio src={url} controls preload="metadata" style={{ width: "100%" }} />
-      ) : null}
+      {kind === "video" ? <VideoPreview url={url} /> : null}
+      {kind === "audio" ? <AudioPreview url={url} /> : null}
       <div
         style={{
           padding: 8,

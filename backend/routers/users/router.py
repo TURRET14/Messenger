@@ -106,10 +106,11 @@ description =
 Маршрут получения данных всех действительных сессий пользователя с краткой о них информацией.
 """)
 async def get_all_sessions(
+    session_id: str | None = fastapi.Cookie(default = None),
     current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
     redis_client: RedisClient = fastapi.Depends(redis_handler.get_redis_client)) -> fastapi.responses.JSONResponse:
 
-    return await service.get_all_sessions(current_user, redis_client)
+    return await service.get_all_sessions(current_user, session_id, redis_client)
 
 
 @users_router.delete("/users/me/sessions", response_class = fastapi.responses.Response,
@@ -286,6 +287,20 @@ async def update_user_avatar(
     db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
 
     return await service.update_user_avatar(current_user, file, minio_client, db)
+
+
+@users_router.delete("/users/me/avatar", response_class = fastapi.responses.Response,
+description =
+"""
+Маршрут сброса фотографии профиля текущего пользователя — удаляет файл
+из хранилища и сбрасывает avatar_photo_path в NULL.
+""")
+async def delete_user_avatar(
+    current_user: User = fastapi.Depends(backend.routers.dependencies.get_session_user),
+    minio_client: MinioClient = fastapi.Depends(minio_handler.get_minio_client),
+    db: sqlalchemy.ext.asyncio.AsyncSession = fastapi.Depends(database.get_db)) -> fastapi.responses.Response:
+
+    return await service.delete_user_avatar(current_user, minio_client, db)
 
 
 @users_router.delete("/users/me", response_class = fastapi.responses.Response,
