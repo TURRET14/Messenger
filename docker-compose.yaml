@@ -52,11 +52,13 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
-      FRONTEND_URL: ${FRONTEND_URL}
+      # Собирается из единого источника PUBLIC_SCHEME/PUBLIC_HOST в .env
+      FRONTEND_URL: ${PUBLIC_SCHEME}://${PUBLIC_HOST}
       BACKEND_PORT: ${BACKEND_PORT}
-      SMTP_FROM: ${SMTP_FROM}
+      # Адрес отправителя и логин SMTP — из единого ADMIN_EMAIL в .env
+      SMTP_FROM: ${ADMIN_EMAIL}
       SMTP_HOSTNAME: ${SMTP_HOSTNAME}
-      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_USERNAME: ${ADMIN_EMAIL}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
     expose:
       - "${BACKEND_PORT}"
@@ -71,13 +73,14 @@ services:
       context: .
       dockerfile: DockerfileFrontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        # Собирается из единого источника PUBLIC_SCHEME/PUBLIC_HOST в .env
+        VITE_API_BASE_URL: ${PUBLIC_SCHEME}://${PUBLIC_HOST}
     container_name: frontend
     expose:
       - "${FRONTEND_PORT}"
     environment:
       FRONTEND_STATIC_PORT: ${FRONTEND_PORT}
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+      VITE_API_BASE_URL: ${PUBLIC_SCHEME}://${PUBLIC_HOST}
     depends_on:
       - backend-service
     restart: always
@@ -86,11 +89,12 @@ services:
     image: caddy:2-alpine
     container_name: caddy
     ports:
-      - ${NGINX_HTTP_PORT}:80
-      - ${NGINX_HTTPS_PORT}:443
+      - ${CADDY_HTTP_PORT}:80
+      - ${CADDY_HTTPS_PORT}:443
     environment:
-      SSL_SERVER_NAME: ${SSL_SERVER_NAME}
-      SSL_CONTACT_EMAIL: ${SSL_CONTACT_EMAIL}
+      # Имя сертификата и контакт Let's Encrypt — из единого источника в .env
+      SSL_SERVER_NAME: ${PUBLIC_HOST}
+      SSL_CONTACT_EMAIL: ${ADMIN_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
