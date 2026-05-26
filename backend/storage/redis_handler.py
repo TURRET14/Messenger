@@ -206,6 +206,18 @@ class RedisClient:
             await asyncio.gather(*coroutines)
 
 
+    async def rate_limit_hit(self, key: str, limit: int, window_seconds: int) -> bool:
+        """Фиксированное окно: инкремент счётчика по ключу, TTL ставится при
+        первом попадании. Возвращает True, если запрос в пределах лимита,
+        False — если лимит превышен. Атомарность INCR гарантирует корректный
+        подсчёт при конкурентных запросах."""
+        redis_key = f"ratelimit:{key}"
+        current: int = await self.client.incr(redis_key)
+        if current == 1:
+            await self.client.expire(redis_key, window_seconds)
+        return current <= limit
+
+
     async def pubsub_subscribe(self, subscription: RedisPubsubChannel) -> redis.asyncio.client.PubSub:
         pubsub: redis.asyncio.client.PubSub = self.client.pubsub()
         await pubsub.subscribe(subscription.value)

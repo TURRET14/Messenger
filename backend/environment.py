@@ -4,6 +4,12 @@ import dotenv
 
 dotenv.load_dotenv()
 
+# ВАЖНО: реальные секреты (пароли БД/Redis/MinIO, пароль SMTP, адрес почты)
+# в исходный код НЕ зашиваются. Значения по умолчанию ниже — это безопасные
+# плейсхолдеры только для локальной разработки. В продакшене все значения
+# обязательно задаются через переменные окружения (.env / docker-compose),
+# см. .env.example.
+
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "messenger_db")
@@ -13,7 +19,7 @@ POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minio")
-MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minio_minio")
+MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minio")
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
 
 
@@ -37,9 +43,12 @@ else:
 
 BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
 
-SMTP_HOSTNAME = os.getenv("SMTP_HOSTNAME", "smtp.yandex.ru")
-SMTP_USERNAME = os.getenv("SMTP_USERNAME", "EmelyanenkoSemyon2006@ya.ru")
-SMTP_FROM = os.getenv("SMTP_FROM", "EmelyanenkoSemyon2006@ya.ru")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "txfuzygooolnpqjv")
+# Реквизиты SMTP берутся ТОЛЬКО из окружения. Пустые значения по умолчанию
+# означают «почта не настроена» — отправка письма аккуратно завершится
+# ошибкой email_delivery_error, секреты в коде/Git не хранятся.
+SMTP_HOSTNAME = os.getenv("SMTP_HOSTNAME", "")
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 
 SERVICE_PUBLIC_NAME = os.getenv("SERVICE_PUBLIC_NAME", "Мессенджер")

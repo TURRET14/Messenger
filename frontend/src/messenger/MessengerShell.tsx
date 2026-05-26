@@ -231,7 +231,7 @@ export function MessengerShell({
     nameInflightRef.current.add(uid);
     try {
       // fetchUser автоматически батчит несколько одновременных запросов
-      // в один POST /users/by-ids — N запросов превращаются в 1.
+      // в один GET /users/by-ids — N запросов превращаются в 1.
       const u = await fetchUser(uid);
       const label = u ? userListLabel(u) : `#${uid}`;
       setUserNames((p) => (p[uid] ? p : { ...p, [uid]: label }));

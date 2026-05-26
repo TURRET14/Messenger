@@ -3,12 +3,12 @@ import type { UserInList } from "./types";
 
 /**
  * Кросс-компонентный кеш загруженных UserInList с дедупликацией in-flight
- * запросов и батчингом одиночных запросов в bulk POST /users/by-ids.
+ * запросов и батчингом одиночных запросов в bulk GET /users/by-ids.
  *
  * Принцип работы:
  * 1. Запросы одного user_id, поступающие в течение одного microtask-кадра,
  *    собираются в один pending-набор.
- * 2. На следующем microtask один POST /users/by-ids отправляется со всеми ID.
+ * 2. На следующем microtask один GET /users/by-ids отправляется со всеми ID.
  * 3. Полученные пользователи кешируются и резолвят все ожидающие промисы.
  * 4. Повторные запросы тех же ID моментально берутся из кеша.
  *
@@ -69,7 +69,7 @@ function flush(): void {
 
 /**
  * Запрашивает пользователя по ID. Несколько вызовов в течение одного
- * microtask-кадра объединяются в один POST /users/by-ids.
+ * microtask-кадра объединяются в один GET /users/by-ids.
  * Возвращает null если пользователь не найден на сервере.
  */
 export function fetchUser(userId: number): Promise<UserInList | null> {

@@ -87,9 +87,17 @@ class MinioClient:
         if not file.filename or not file.content_type:
             raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.error_uploading_file_error.error_status_code, detail = ErrorRegistry.error_uploading_file_error)
 
-        file_bytes: bytes = bytes()
         image_extension: str = pathlib.Path(file.filename).suffix.lower()
         minio_file_name = f"{uuid.uuid4().hex}{image_extension}"
+
+        # Достоверный размер берём с серверной стороны: UploadFile.file —
+        # это SpooledTemporaryFile (после порога живёт на диске, не в RAM).
+        # Перемещаемся в конец, читаем позицию, возвращаемся в начало —
+        # сам файл при этом в память целиком не загружается.
+        stream = file.file
+        stream.seek(0, io.SEEK_END)
+        file_size = stream.tell()
+        stream.seek(0)
 
         match bucket_name:
             case MinioBucket.users_avatars | MinioBucket.chats_avatars:
@@ -101,29 +109,25 @@ class MinioClient:
                     raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_type_not_allowed_error.error_status_code,
                     detail = ErrorRegistry.file_type_not_allowed_error)
 
-                if file.size is not None and file.size > parameters.MAX_AVATAR_SIZE_BYTES:
-                    raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_size_too_large.error_status_code,
-                    detail = ErrorRegistry.file_size_too_large)
-
-                file_bytes = file.file.read()
-
-                if len(file_bytes) > parameters.MAX_AVATAR_SIZE_BYTES:
+                if file_size > parameters.MAX_AVATAR_SIZE_BYTES:
                     raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_size_too_large.error_status_code,
                     detail = ErrorRegistry.file_size_too_large)
 
             case MinioBucket.messages_attachments:
-                if file.size is not None and file.size > parameters.MAX_ATTACHMENT_SIZE_BYTES:
+                if file_size > parameters.MAX_ATTACHMENT_SIZE_BYTES:
                     raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_size_too_large.error_status_code,
                     detail = ErrorRegistry.file_size_too_large)
 
-                file_bytes = file.file.read()
-
-                if len(file_bytes) > parameters.MAX_ATTACHMENT_SIZE_BYTES:
-                    raise fastapi.exceptions.HTTPException(status_code = ErrorRegistry.file_size_too_large.error_status_code,
-                    detail = ErrorRegistry.file_size_too_large)
-
-
-        self.client.put_object(str(bucket_name.value), minio_file_name, io.BytesIO(file_bytes), len(file_bytes), file.content_type)
+        # Отдаём в MinIO поток напрямую: клиент читает его частями
+        # (part_size), весь файл в память сервера не помещается.
+        self.client.put_object(
+            str(bucket_name.value),
+            minio_file_name,
+            stream,
+            file_size,
+            file.content_type,
+            part_size = parameters.MINIO_UPLOAD_PART_SIZE_BYTES,
+        )
 
         return minio_file_name
 

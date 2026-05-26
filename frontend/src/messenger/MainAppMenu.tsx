@@ -467,7 +467,7 @@ export function MainAppMenu({
         });
         if (batch.length < PAGE) setIDone(true);
       }
-      // Bulk-загрузка отправителей одним POST /users/by-ids вместо N запросов.
+      // Bulk-загрузка отправителей одним GET /users/by-ids вместо N запросов.
       const senderIds = batch.map((r) => r.sender_user_id);
       void fetchUsers(senderIds).then((map) => {
         if (map.size === 0) return;

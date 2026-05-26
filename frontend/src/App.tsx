@@ -13,6 +13,7 @@ import {
   apiJson,
   resetAuthExpiredLatch,
 } from "./api/client";
+import { clearUserCache } from "./api/userCache";
 import type { CurrentUser } from "./api/types";
 import {
   IconAtSign,
@@ -82,6 +83,9 @@ export default function App() {
     } catch {
       /* сессия могла уже истечь */
     }
+    // Кеш пользователей — модульный, страница не перезагружается: чистим
+    // вручную, иначе данные предыдущего аккаунта утекут в следующий вход.
+    clearUserCache();
     setScreen({ name: "login" });
     resetAuthExpiredLatch();
   }, []);
@@ -93,6 +97,7 @@ export default function App() {
   // оказался там сразу, как только закроет уже открытый диалог.
   useEffect(() => {
     const onAuthExpired = () => {
+      clearUserCache();
       setScreen({ name: "login" });
       resetAuthExpiredLatch();
     };

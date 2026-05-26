@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import enum
 import dataclasses
 import fastapi
@@ -60,6 +62,7 @@ class Error(enum.Enum):
     invalid_email_code_error = "INVALID_EMAIL_CODE_ERROR"
     empty_message_error = "EMPTY_MESSAGE_ERROR"
     email_delivery_error = "EMAIL_DELIVERY_ERROR"
+    too_many_requests_error = "TOO_MANY_REQUESTS_ERROR"
 
 
 class ErrorRegistry:
@@ -114,3 +117,4 @@ class ErrorRegistry:
     invalid_email_code_error = ErrorInfo(error_code = Error.invalid_email_code_error, error_message ="Введенный код подтверждения не является действительным!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     empty_message_error = ErrorInfo(error_code = Error.empty_message_error, error_message = "Сообщение не может быть пустым!", error_status_code = fastapi.status.HTTP_400_BAD_REQUEST)
     email_delivery_error = ErrorInfo(error_code = Error.email_delivery_error, error_message = "Не удалось отправить письмо. Проверьте адрес электронной почты или попробуйте позже.", error_status_code = fastapi.status.HTTP_503_SERVICE_UNAVAILABLE)
+    too_many_requests_error = ErrorInfo(error_code = Error.too_many_requests_error, error_message = "Слишком много запросов. Пожалуйста, попробуйте позже.", error_status_code = fastapi.status.HTTP_429_TOO_MANY_REQUESTS)

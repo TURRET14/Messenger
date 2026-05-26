@@ -1,7 +1,9 @@
 import os
 import fastapi
 import fastapi.middleware.cors
+import sqlalchemy.exc
 import uvicorn
+from backend.routers.errors import ErrorRegistry
 import backend.routers.users.router
 import backend.routers.chats.router
 import backend.routers.chats.websockets.websockets
@@ -46,6 +48,25 @@ async def http_exception_handler(request: fastapi.requests.Request, exception: f
     return fastapi.responses.JSONResponse(
         fastapi.encoders.jsonable_encoder(exception.detail),
         status_code = exception.status_code)
+
+
+@app.exception_handler(sqlalchemy.exc.IntegrityError)
+async def integrity_error_handler(request: fastapi.requests.Request, exception: sqlalchemy.exc.IntegrityError):
+    # Гонки уникальных ограничений (например, два параллельных создания
+    # пользователя с одним username/login) превращаем в осмысленный 409
+    # вместо сырого 500 с трейсбэком.
+    return fastapi.responses.JSONResponse(
+        fastapi.encoders.jsonable_encoder(ErrorRegistry.data_conflict_error),
+        status_code = ErrorRegistry.data_conflict_error.error_status_code)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: fastapi.requests.Request, exception: Exception):
+    # Любая необработанная ошибка отдаётся как обобщённый 500 без утечки
+    # трейсбэка/внутренних деталей наружу.
+    return fastapi.responses.JSONResponse(
+        fastapi.encoders.jsonable_encoder(ErrorRegistry.internal_server_error),
+        status_code = ErrorRegistry.internal_server_error.error_status_code)
 
 
 if __name__ == "__main__":

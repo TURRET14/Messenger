@@ -27,11 +27,21 @@ from backend.routers.users.response_models import (
     SessionResponseModel)
 
 from backend.routers.common_models import (IDModel)
+from backend.routers.rate_limit import rate_limiter
 
 
 users_router = fastapi.APIRouter()
 
+# Лимиты подобраны так, чтобы не мешать обычным пользователям и тестам,
+# но делать перебор паролей и 6-значных кодов (пространство 1e6, TTL 15 мин)
+# практически невозможным.
+_LOGIN_RATE_LIMIT = rate_limiter("login", limit = 20, window_seconds = 300)
+_REGISTER_RATE_LIMIT = rate_limiter("register", limit = 10, window_seconds = 600)
+_CODE_RATE_LIMIT = rate_limiter("code_confirm", limit = 20, window_seconds = 600)
+_PASSWORD_RESET_RATE_LIMIT = rate_limiter("password_reset", limit = 10, window_seconds = 600)
+
 @users_router.post("/users/register", response_class = fastapi.responses.Response,
+dependencies = [fastapi.Depends(_REGISTER_RATE_LIMIT)],
 description =
 """
 Маршрут запроса на регистрацию пользователя.
@@ -46,6 +56,7 @@ async def register(
 
 
 @users_router.post("/users", response_class = fastapi.responses.JSONResponse, response_model = IDModel,
+dependencies = [fastapi.Depends(_CODE_RATE_LIMIT)],
 description =
 """
 Маршрут ввода отправленного на электронную почту кода подтверждения регистрации и создания нового пользователя при прохождении данными повторной валидации.
@@ -59,6 +70,7 @@ async def create_user(
 
 
 @users_router.post("/login", response_class = fastapi.responses.Response,
+dependencies = [fastapi.Depends(_LOGIN_RATE_LIMIT)],
 description =
 """
 Маршрут входа пользователя в систему с указанным логином и паролем и получения сессионного токена, который хранится в Cookie и Redis.
@@ -73,6 +85,7 @@ async def login(
 
 
 @users_router.post("/users/password/reset", response_class = fastapi.responses.Response,
+dependencies = [fastapi.Depends(_PASSWORD_RESET_RATE_LIMIT)],
 description =
 """
 Маршрут запроса кода восстановления пароля на электронную почту пользователя.
@@ -87,6 +100,7 @@ async def request_password_reset(
 
 
 @users_router.post("/users/password/reset/confirm", response_class = fastapi.responses.Response,
+dependencies = [fastapi.Depends(_CODE_RATE_LIMIT)],
 description =
 """
 Маршрут подтверждения восстановления пароля по коду из письма и установки нового пароля.
@@ -200,6 +214,7 @@ async def update_user_email(
 
 
 @users_router.patch("/users/me/email/confirm", response_class = fastapi.responses.Response,
+dependencies = [fastapi.Depends(_CODE_RATE_LIMIT)],
 description =
 """
 Маршрут подтверждения обновления адреса электронной почты пользователя путем ввода кода подтверждения, отправленного на новую электронную почту.

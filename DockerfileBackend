@@ -1,12 +1,22 @@
-FROM python
+FROM python:3.14-slim
 LABEL authors="Семен"
 
 WORKDIR /app
 
 COPY /backend/requirements.txt .
 
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY /backend /app/backend
 
-CMD ["python", "-m", "backend.app"]
+# Запуск от непривилегированного пользователя — контейнер не должен
+# работать под root.
+RUN useradd --create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+# Прод-запуск: uvicorn с --proxy-headers (за обратным прокси Caddy, чтобы
+# request.client.host содержал реальный IP клиента — это критично для
+# rate-limiting и флага secure у cookie) и несколькими воркерами.
+# BACKEND_PORT прокидывается из окружения (см. .env / docker-compose).
+CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${BACKEND_PORT:-8000} --workers 28 --proxy-headers --forwarded-allow-ips=*"]

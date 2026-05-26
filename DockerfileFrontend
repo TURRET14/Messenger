@@ -1,15 +1,17 @@
-FROM node AS build
+FROM node:24-alpine AS build
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 COPY frontend/ .
-ARG VITE_API_BASE_URL=https://94.29.32.133
+# Базовый URL API задаётся при сборке из docker-compose (PUBLIC_SCHEME/
+# PUBLIC_HOST). Хардкод убран — пустое значение означает same-origin.
+ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 
-FROM python
+FROM python:3.14-slim
 
 WORKDIR /app
 COPY frontend_server/requirements.txt .
@@ -17,6 +19,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY frontend_server/app ./app
 COPY --from=build /app/dist ./app/static
+
+RUN useradd --create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
 
 ENV FRONTEND_STATIC_PORT=8080
 EXPOSE 8080
