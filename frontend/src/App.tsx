@@ -26,6 +26,7 @@ import {
   IconUserPlus,
 } from "./components/Icons";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
+import { ModalChrome } from "./components/ui/ModalChrome";
 import { ValidationError } from "./components/ui/ValidationError";
 import { SERVICE_DISPLAY_NAME } from "./config";
 import {
@@ -194,9 +195,23 @@ function AuthShell({
   const [resetCode, setResetCode] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
 
+  // Согласие на обработку персональных данных (152-ФЗ). Обязательно к
+  // подтверждению при регистрации — без галочки форма не отправляется.
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+
   // Очищаем ошибки при смене экрана
   useEffect(() => {
     setError(null);
+  }, [screen.name]);
+
+  // Состояние согласия и модального окна не должно «прилипать» к форме при
+  // переходе на другой экран и обратно — каждый раз требуем явного действия.
+  useEffect(() => {
+    if (screen.name !== "register") {
+      setAgreedToTerms(false);
+      setConsentModalOpen(false);
+    }
   }, [screen.name]);
 
   const handleLogin = async (e: FormEvent) => {
@@ -243,6 +258,13 @@ function AuthShell({
     });
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setError(
+        "Необходимо подтвердить согласие на обработку персональных данных.",
+      );
       return;
     }
 
@@ -669,6 +691,54 @@ function AuthShell({
                 </FieldWithIcon>
               </label>
 
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  fontSize: "0.92rem",
+                  lineHeight: 1.45,
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => {
+                    setAgreedToTerms(e.target.checked);
+                    setError(null);
+                  }}
+                  style={{
+                    marginTop: 3,
+                    width: 18,
+                    height: 18,
+                    accentColor: "var(--accent)",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                />
+                <span>
+                  Я даю{" "}
+                  <button
+                    type="button"
+                    onClick={() => setConsentModalOpen(true)}
+                    style={{
+                      border: "none",
+                      background: "none",
+                      color: "var(--accent)",
+                      cursor: "pointer",
+                      padding: 0,
+                      font: "inherit",
+                      fontWeight: 600,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    согласие на обработку персональных данных
+                  </button>{" "}
+                  и подтверждаю, что ознакомлен с его условиями.
+                </span>
+              </label>
               <ValidationError message={error} />
               <button
                 type="submit"
@@ -902,6 +972,81 @@ function AuthShell({
           </>
         ) : null}
       </div>
+
+      {consentModalOpen ? (
+        <ConsentModal onClose={() => setConsentModalOpen(false)} />
+      ) : null}
     </div>
+  );
+}
+
+function ConsentModal({ onClose }: { onClose: () => void }) {
+  const sectionTitle: CSSProperties = {
+    margin: "16px 0 6px",
+    fontSize: "0.98rem",
+    fontWeight: 700,
+  };
+  const paragraph: CSSProperties = {
+    margin: "0 0 8px",
+    fontSize: "0.92rem",
+    lineHeight: 1.55,
+    color: "var(--text)",
+  };
+  return (
+    <ModalChrome
+      title="Согласие на обработку персональных данных"
+      onClose={onClose}
+    >
+      <p style={paragraph}>
+        Регистрируясь в сервисе «{SERVICE_DISPLAY_NAME}» (далее — Сервис),
+        пользователь предоставляет Оператору согласие на обработку своих
+        персональных данных в соответствии с Федеральным законом от
+        27.07.2006 № 152-ФЗ «О персональных данных».
+      </p>
+
+      <h3 style={sectionTitle}>1. Состав персональных данных</h3>
+      <p style={paragraph}>
+        Имя пользователя, фамилия, имя, отчество, адрес электронной почты,
+        логин и пароль (пароль хранится исключительно в виде криптографического
+        хэша), дата рождения, пол, номер телефона, сведения «о себе»,
+        фотография профиля, передаваемые пользователем сообщения и вложения,
+        а также технические данные сессии: идентификатор сессии, IP-адрес и
+        сведения о программном обеспечении пользователя.
+      </p>
+
+      <h3 style={sectionTitle}>2. Цели обработки</h3>
+      <p style={paragraph}>
+        Создание и ведение учётной записи; идентификация пользователя;
+        обеспечение работоспособности и безопасности Сервиса; доставка
+        сообщений и иного содержимого, направляемого пользователем; направление
+        служебных уведомлений (подтверждение регистрации, изменение адреса
+        электронной почты, восстановление пароля).
+      </p>
+
+      <h3 style={sectionTitle}>3. Условия обработки</h3>
+      <p style={paragraph}>
+        Обработка осуществляется с использованием средств автоматизации.
+        Передача персональных данных третьим лицам не производится, за
+        исключением случаев, прямо предусмотренных законодательством
+        Российской Федерации.
+      </p>
+
+      <h3 style={sectionTitle}>4. Срок действия и отзыв согласия</h3>
+      <p style={paragraph}>
+        Согласие действует с момента регистрации и до удаления учётной записи
+        пользователя. Пользователь вправе отозвать согласие в любое время
+        путём удаления учётной записи в интерфейсе Сервиса. После удаления
+        учётной записи персональные данные подлежат удалению, за исключением
+        сведений, обязательное хранение которых установлено законом.
+      </p>
+
+      <h3 style={sectionTitle}>5. Права пользователя</h3>
+      <p style={paragraph}>
+        Пользователь вправе получать сведения об обработке своих персональных
+        данных, требовать их уточнения, удаления или прекращения обработки, а
+        также реализовывать иные права, предусмотренные законодательством
+        Российской Федерации.
+      </p>
+    </ModalChrome>
   );
 }
