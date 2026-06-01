@@ -43,12 +43,18 @@ else:
 
 BACKEND_PORT = os.getenv("BACKEND_PORT", "8000")
 
+# Единый адрес администратора. Если SMTP_FROM/SMTP_USERNAME не заданы
+# отдельно, они берутся из ADMIN_EMAIL — так в .env достаточно указать
+# один адрес (см. .env.example). docker-compose.yaml тоже прокидывает
+# их явно, но фолбэк нужен, когда бэкенд запускается напрямую.
+_admin_email = os.getenv("ADMIN_EMAIL", "")
+
 # Реквизиты SMTP берутся ТОЛЬКО из окружения. Пустые значения по умолчанию
 # означают «почта не настроена» — отправка письма аккуратно завершится
 # ошибкой email_delivery_error, секреты в коде/Git не хранятся.
 SMTP_HOSTNAME = os.getenv("SMTP_HOSTNAME", "")
-SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "")
+SMTP_USERNAME = os.getenv("SMTP_USERNAME") or _admin_email
+SMTP_FROM = os.getenv("SMTP_FROM") or _admin_email
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 
 SERVICE_PUBLIC_NAME = os.getenv("SERVICE_PUBLIC_NAME", "Мессенджер")
